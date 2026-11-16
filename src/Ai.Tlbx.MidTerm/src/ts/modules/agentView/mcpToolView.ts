@@ -1,4 +1,5 @@
 import { t } from '../i18n';
+import { isHistoryError } from './historyVisibility';
 import type { AppServerControlHistoryEntry } from './types';
 
 function text(key: string): string {
@@ -82,8 +83,11 @@ export function createMcpToolDisclosure(
     server.title = server.textContent;
     address.textContent = mcp.serverAddress || text('addressUnavailable');
     address.title = address.textContent;
-    status.textContent = presentation.outcome || entry.sourceStatus || '';
-    preview.textContent = mcp.parameters?.replace(/\s+/g, ' ') || text('parametersUnavailable');
+    const failed = isHistoryError(entry);
+    details.dataset.error = String(failed);
+    status.textContent = failed ? presentation.outcome || entry.sourceStatus || '' : '';
+    preview.textContent =
+      mcp.parameters?.slice(0, 512).replace(/\s+/g, ' ') || text('parametersUnavailable');
     updateBody();
   };
   const mount = () => {

@@ -14909,7 +14909,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
   color: var(--text-secondary);
 }
 .agent-mcp-truncated { color: var(--text-muted); font-size: 0.7rem; }
-.agent-history-mcp.agent-history-attention .agent-mcp-status { color: var(--accent-gold); }
+.agent-mcp-tool[data-error='true'] .agent-mcp-status { color: var(--accent-gold); }
 @media (pointer: coarse) {
   .agent-mcp-tool > summary { min-height: 44px; }
 }

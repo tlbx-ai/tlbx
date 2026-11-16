@@ -240,7 +240,7 @@ public static class AppServerControlToolPresentationProjector
             }
         }
         if (string.IsNullOrWhiteSpace(serverName) && NormalizeKey(itemType) != "mcptoolcall") return;
-        var parameters = input is { ValueKind: not JsonValueKind.Undefined and not JsonValueKind.Null }
+        var parameters = input is { ValueKind: not JsonValueKind.Undefined }
             ? input.Value.GetRawText() : null;
         presentation.Mcp = AppServerControlToolPresentationProtocol.CloneMcp(new()
         {
