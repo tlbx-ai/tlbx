@@ -6,7 +6,14 @@
  */
 
 import { createLogger } from '../logging';
-import { getActiveTab, onTabActivated, onTabDeactivated } from '../sessionTabs';
+import {
+  ensureSessionWrapper,
+  getTabPanel,
+  switchTab,
+  getActiveTab,
+  onTabActivated,
+  onTabDeactivated,
+} from '../sessionTabs';
 import { addProcessStateListener } from '../process';
 import { addGitRepoCacheListener } from '../git';
 import {
@@ -17,8 +24,9 @@ import {
   getTreeSelection,
   setTreeSelection,
   getTreeEntry,
+  revealTreeFile,
 } from './treeView';
-import { renderPreview, clearPreview } from './filePreview';
+import { renderPreview, clearPreview, openPreviewEditor } from './filePreview';
 import { $activeSessionId, $processStates } from '../../stores';
 import { confirmFileNavigation, filePathAffected } from '../fileViewer/editState';
 import { beginFileOpen, isFileOpenCurrent } from '../fileViewer/loadState';
@@ -34,6 +42,20 @@ const sessionCwds = new Map<string, string>();
 const previewContainers = new Map<string, HTMLElement>();
 const navigators = new Map<string, BrowserNavigation>();
 const paneResizers = new Map<string, ReturnType<typeof resizeFilePane>>();
+
+/** Open the current disk file in the session's existing Files tab, never a modal. */
+export async function openFileInEditor(sessionId: string, path: string): Promise<boolean> {
+  ensureSessionWrapper(sessionId);
+  const panel = getTabPanel(sessionId, 'files');
+  if (!panel) return false;
+  ensureFileBrowserForSession(sessionId, panel);
+  switchTab(sessionId, 'files', { forceHidden: true });
+  const accepted = await navigators.get(sessionId)?.navigate(path);
+  const preview = previewContainers.get(sessionId);
+  if (!accepted || !preview) return false;
+  openPreviewEditor(preview, preview.dataset.selectedPath ?? path);
+  return true;
+}
 
 export function initFileBrowser(): void {
   // Cold Git status arrives independently from the directory listing.
@@ -180,7 +202,7 @@ function ensureFileBrowserForSession(sessionId: string, panel: HTMLDivElement): 
         confirm: () => confirmFileNavigation(previewContainer),
         file: async (entry) => {
           if (!(await selectFile(entry))) return false;
-          setTreeSelection(sessionId, entry.fullPath);
+          revealTreeFile(sessionId, entry);
           return true;
         },
         apply: (path, data) => {

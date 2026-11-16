@@ -2,6 +2,7 @@ import { t } from '../i18n';
 import { registerBackButtonLayer } from '../navigation/backButtonGuard';
 import { fetchDiffView, fetchGitRepos } from '../git/gitApi';
 import { renderPatchFile } from '../git/gitDiffView';
+import { openFileInEditor } from '../fileBrowser';
 import {
   getHistoryChangedFiles,
   buildRenderedDiffLines,
@@ -30,7 +31,21 @@ export function openHistoryFileDiff(
   close.addEventListener('click', () => {
     closeDialog();
   });
-  header.append(title, close);
+  const actions = document.createElement('div');
+  actions.className = 'agent-file-diff-actions';
+  if (file.path !== t('git.showDiff')) {
+    const edit = document.createElement('button');
+    edit.type = 'button';
+    edit.className = 'btn-secondary';
+    edit.textContent = t('appServerControl.files.openEditor');
+    edit.addEventListener('click', () => {
+      closeDialog();
+      void openFileInEditor(sessionId, file.path);
+    });
+    actions.append(edit);
+  }
+  actions.append(close);
+  header.append(title, actions);
   const scope = document.createElement('p');
   scope.className = 'agent-file-diff-scope';
   scope.textContent = t(

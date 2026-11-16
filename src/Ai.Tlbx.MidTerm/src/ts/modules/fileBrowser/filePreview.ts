@@ -34,6 +34,16 @@ import { pathDetailsButton } from '../fileViewer/pathDetails';
 
 const log = createLogger('filePreview');
 const previewLoads = new WeakMap<HTMLElement, FileViewLoad>();
+const requestedEditors = new WeakMap<HTMLElement, string>();
+
+/** Select edit mode after an explicit Files-tab handoff, including a pending load. */
+export function openPreviewEditor(container: HTMLElement, path: string): void {
+  const button = container.querySelector<HTMLButtonElement>(
+    '.file-document-mode[data-mode="edit"]',
+  );
+  if (button) button.click();
+  else requestedEditors.set(container, path);
+}
 
 function formatBinaryPreviewMetadata(entry: FileTreeEntry): string {
   const parts = [entry.mimeType || t('fileViewer.binaryFile')];
@@ -179,6 +189,7 @@ export function renderPreview(
   entry: FileTreeEntry,
   sessionId: string,
 ): void {
+  requestedEditors.delete(container);
   previewLoads.get(container)?.abort();
   const load = new FileViewLoad(entry.fullPath, sessionId, container);
   previewLoads.set(container, load);
@@ -342,7 +353,9 @@ function renderTextContent(
   load: FileViewLoad,
   previousOffsets: number[] = [],
 ): void {
-  const previousMode = getDocumentViewMode(container);
+  const requestedEditor = requestedEditors.get(container) === entry.fullPath;
+  requestedEditors.delete(container);
+  const previousMode = requestedEditor ? 'edit' : getDocumentViewMode(container);
   let version = snapshot.version;
   const { shell, body, actions } = createPreviewShell(entry);
   const edit = new FileEditState(
@@ -421,9 +434,12 @@ function renderTextContent(
     });
   body.append(createNotice(), status, view.root);
   container.replaceChildren(shell);
+  if (requestedEditor)
+    container.querySelector<HTMLTextAreaElement>('textarea')?.focus({ preventScroll: true });
 }
 
 export function clearPreview(container: HTMLElement): void {
+  requestedEditors.delete(container);
   previewLoads.get(container)?.abort();
   previewLoads.delete(container);
   releaseFileEdits(container);

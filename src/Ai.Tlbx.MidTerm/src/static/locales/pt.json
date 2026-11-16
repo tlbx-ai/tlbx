@@ -1,4 +1,5 @@
 {
+  "appServerControl.files.openEditor": "Abrir no editor de arquivos",
   "appServerControl.mcp.parameters": "Parâmetros",
   "appServerControl.mcp.output": "Saída",
   "appServerControl.mcp.parametersUnavailable": "Parâmetros não fornecidos",

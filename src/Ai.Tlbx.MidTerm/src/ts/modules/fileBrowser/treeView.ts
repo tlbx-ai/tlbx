@@ -32,6 +32,7 @@ interface TreeState {
   sessionId: string;
   expandedPaths: Set<string>;
   selectedPath: string | null;
+  revealedFile: FileTreeEntry | null;
   treeData: Map<string, FileTreeEntry[]>;
   visibleEntries: Map<string, FileTreeEntry>;
   container: HTMLElement;
@@ -87,6 +88,35 @@ export function setTreeSelection(sessionId: string, path: string): void {
 export function getTreeEntry(sessionId: string, path: string): FileTreeEntry | undefined {
   const state = treeStates.get(sessionId);
   return state ? findEntry(state, path) : undefined;
+}
+
+/** An explicitly opened file stays visible without changing global hidden-file preferences. */
+export function revealTreeFile(sessionId: string, entry: FileTreeEntry): void {
+  const state = treeStates.get(sessionId);
+  if (!state) return;
+  const entries = state.treeData.get(state.rootPath);
+  state.revealedFile = entries?.some((item) => item.fullPath === entry.fullPath) ? null : entry;
+  state.selectedPath = entry.fullPath;
+  retainRevealedFile(state, entries);
+  const filter = state.controls.root.querySelector<HTMLInputElement>('input[type="search"]');
+  if (filter?.value) {
+    filter.value = '';
+    filter.dispatchEvent(new Event('input'));
+  }
+  setTreeSelection(sessionId, entry.fullPath);
+  Array.from(state.rowsRoot.querySelectorAll<HTMLElement>('.tree-node'))
+    .find((node) => node.dataset.path === entry.fullPath)
+    ?.scrollIntoView({ block: 'nearest' });
+}
+
+function retainRevealedFile(state: TreeState, entries: FileTreeEntry[] | undefined): void {
+  const entry = state.revealedFile;
+  if (
+    entries &&
+    entry?.fullPath === state.selectedPath &&
+    !entries.some((item) => item.fullPath === entry.fullPath)
+  )
+    entries.push(entry);
 }
 
 export function createTreeView(
@@ -179,6 +209,7 @@ export function createTreeView(
     sessionId,
     expandedPaths: new Set(),
     selectedPath: null,
+    revealedFile: null,
     treeData: new Map(),
     visibleEntries: new Map(),
     container,
@@ -230,6 +261,7 @@ export function applyTreeRoot(sessionId: string, rootPath: string, data: FileTre
     });
   const saved = state.savedRoots.get(rootPath);
   state.rootPath = rootPath;
+  state.revealedFile = null;
   state.expandedPaths = new Set(saved?.expanded ?? []);
   state.selectedPath = saved?.selected ?? null;
   state.viewSelection = [...(saved?.paths ?? [])];
@@ -253,6 +285,7 @@ export async function applyTreeVisibility(
   const scroll = state.container.scrollTop;
   const preferences = getFileVisibility();
   const loaded = new Map<string, FileTreeEntry[]>([[rootPath, data.entries]]);
+  retainRevealedFile(state, data.entries);
   const expanded = [...state.expandedPaths];
   for (let index = 0; index < expanded.length; index += 4) {
     const pages = await Promise.all(
