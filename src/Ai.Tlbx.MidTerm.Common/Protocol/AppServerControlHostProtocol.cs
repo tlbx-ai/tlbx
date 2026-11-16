@@ -330,6 +330,7 @@ public sealed class AppServerControlToolPresentation
     public string Category { get; set; } = "other";
     public string Label { get; set; } = "Used tool";
     public string? ToolName { get; set; }
+    public AppServerControlMcpToolPresentation? Mcp { get; set; }
     public string? Subject { get; set; }
     public string? Outcome { get; set; }
     public string? Evidence { get; set; }
@@ -339,6 +340,14 @@ public sealed class AppServerControlToolPresentation
     public int TotalLineCount { get; set; }
     public int OmittedLineCount { get; set; }
     public List<string> Paths { get; set; } = [];
+}
+
+public sealed class AppServerControlMcpToolPresentation
+{
+    public string? ServerName { get; set; }
+    public string? ServerAddress { get; set; }
+    public string? Parameters { get; set; }
+    public bool ParametersTruncated { get; set; }
 }
 
 public static class AppServerControlToolPresentationProtocol
@@ -365,6 +374,7 @@ public static class AppServerControlToolPresentationProtocol
             Category = Bound(source.Category, MaxCategoryChars) ?? "other",
             Label = Bound(source.Label, MaxLabelChars) ?? "Used tool",
             ToolName = Bound(source.ToolName, MaxToolNameChars),
+            Mcp = CloneMcp(source.Mcp),
             Subject = Bound(source.Subject, MaxSubjectChars),
             Outcome = Bound(source.Outcome, MaxOutcomeChars),
             Evidence = Bound(source.Evidence, MaxEvidenceChars),
@@ -384,6 +394,15 @@ public static class AppServerControlToolPresentationProtocol
         }
         return clone;
     }
+
+    public static AppServerControlMcpToolPresentation? CloneMcp(AppServerControlMcpToolPresentation? source) =>
+        source is null ? null : new()
+        {
+            ServerName = Bound(source.ServerName, 160),
+            ServerAddress = Bound(source.ServerAddress, 2_048),
+            Parameters = Bound(source.Parameters, 32_768),
+            ParametersTruncated = source.ParametersTruncated || source.Parameters?.Length > 32_768
+        };
 
     private static string? Bound(string? value, int maxChars)
     {
@@ -716,6 +735,7 @@ public sealed class AppServerControlAttachRuntimeRequest
 public sealed class AppServerControlMcpServer
 {
     public string? ScopeIdentity { get; set; }
+    public string? DisplayAddress { get; set; }
     public string Command { get; set; } = string.Empty;
     public List<string> Arguments { get; set; } = [];
     public Dictionary<string, string> EnvironmentVariables { get; set; } = new(StringComparer.Ordinal);

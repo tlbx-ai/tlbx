@@ -41,6 +41,7 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
     private string? _sessionId;
     private string? _workingDirectory;
     private AppServerControlMcpCredentials? _mcpCredentials;
+    private readonly AppServerControlMcpToolRegistry _mcpTools = new();
     private bool _mcpBindingMustReload;
     private string? _providerThreadId;
     private string? _activeTurnId;
@@ -185,6 +186,7 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
         var attachPoint = attach.AttachPoint;
         if (IsAttachSatisfied(attachPoint, attach.ResumeThreadId))
         {
+            if (attach.McpServer is not null) _mcpTools.ConfigureNative(attach.McpServer);
             if (attach.McpServer is not null && _mcpCredentials?.CanRefresh(attach.McpServer) == true)
                 _mcpCredentials.Refresh(attach.McpServer);
             if (attach.McpServer is not null &&
@@ -228,6 +230,7 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
             attach.McpServer = _mcpCredentials.Server;
         }
         else { _mcpCredentials?.Dispose(); _mcpCredentials = null; }
+        _mcpTools.Configure(attach.McpServer);
 
         if (attachPoint is not null)
         {
@@ -292,6 +295,7 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
         }
 
         _providerThreadId = providerThreadId;
+        _ = TryRefreshMcpToolAddressesAsync(providerThreadId, _shutdown.Token);
         // model/list describes catalog defaults, not this opened thread's config.
         // Adopt the native start/resume readback before publishing ready controls.
         _quickSettings.Model = GetString(threadResult, "model") ?? _quickSettings.Model;
@@ -3488,7 +3492,7 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
                ?? string.Empty;
     }
 
-    private static AppServerControlProviderItemPayload BuildCodexToolItemPayload(
+    private AppServerControlProviderItemPayload BuildCodexToolItemPayload(
         string itemType,
         string status,
         string? title,
@@ -3501,7 +3505,8 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
             itemType,
             status,
             title,
-            payload);
+            payload,
+            _mcpTools.Resolve);
         if (string.IsNullOrWhiteSpace(presentation.Subject) && !string.IsNullOrWhiteSpace(subjectFallback))
         {
             presentation.Subject = subjectFallback.Length <= 2_048

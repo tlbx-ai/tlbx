@@ -1,4 +1,10 @@
 {
+  "appServerControl.mcp.parameters": "Parameters",
+  "appServerControl.mcp.output": "Output",
+  "appServerControl.mcp.parametersUnavailable": "Parameters not provided",
+  "appServerControl.mcp.serverUnavailable": "Server not provided",
+  "appServerControl.mcp.addressUnavailable": "Address not provided",
+  "appServerControl.mcp.parametersTruncated": "Parameters truncated at the recording limit.",
   "appServerControl.request.answerInPrompt": "Answer in prompt box",
   "appServerControl.request.noLongerOpen": "This question is no longer open.",
   "appServerControl.activity.label": "Tool calls:",

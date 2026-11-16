@@ -22,6 +22,7 @@ internal static class TlbxMcpRuntimeConfiguration
             return new AppServerControlMcpServer
             {
                 Command = command,
+                DisplayAddress = new UriBuilder("https", "localhost", port).Uri.GetLeftPart(UriPartial.Authority),
                 Arguments = arguments,
                 EnvironmentVariables = new(StringComparer.Ordinal)
                 {

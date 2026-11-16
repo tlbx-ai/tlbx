@@ -1,6 +1,7 @@
 import { t } from '../i18n';
 import { createAttachmentControl } from './attachmentView';
 import { createToolActivityDisclosure, syncToolActivityDisclosure } from './toolActivityView';
+import { createMcpToolDisclosure, isMcpToolEntry, syncMcpToolDisclosure } from './mcpToolView';
 import { appendHighlightedCommand, commandPreview } from './commandHighlight';
 import { createPdfView } from '../fileViewer/pdfView';
 import { createFileChangeHistoryBody, createHistoryDiffBody } from './fileChangeView';
@@ -10,7 +11,7 @@ import {
   isHistoryError,
   showAgentTechnicalDetails,
 } from './historyVisibility';
-import { $currentSettings, getSession } from '../../stores';
+import { getSession } from '../../stores';
 import { wireMarkdownTables } from '../../utils/markdown';
 import {
   createAssistantImagePreviewBlock,
@@ -33,7 +34,12 @@ import {
 } from '../appServerControl/input';
 import { createAppServerControlTurnRequestWithQuickSettings } from '../appServerControl/quickSettings';
 import { hasInlineCommandPresentation, resolveHistoryBodyPresentation } from './historyContent';
-import { DEFAULT_TOOL_CALL_OUTPUT_LINES, MAX_TOOL_CALL_OUTPUT_LINES } from './historyConstants';
+import {
+  clampToolCallOutputLines,
+  resolveToolCallOutputLineLimit,
+  selectProjectedToolEvidenceLines,
+} from './toolOutput';
+export { resolveToolCallOutputLineLimit } from './toolOutput';
 import type {
   ArtifactClusterInfo,
   HistoryBodyPresentation,
@@ -45,44 +51,6 @@ import type {
 
 const BUSY_SWEEP_WALLCLOCK_CYCLE_MS = 4901;
 const BUSY_SWEEP_WALLCLOCK_LEG_MS = BUSY_SWEEP_WALLCLOCK_CYCLE_MS / 2;
-
-export function resolveToolCallOutputLineLimit(): number {
-  const configured = $currentSettings.get()?.toolCallOutputLines;
-  if (typeof configured !== 'number' || !Number.isFinite(configured)) {
-    return DEFAULT_TOOL_CALL_OUTPUT_LINES;
-  }
-
-  return Math.max(0, Math.min(MAX_TOOL_CALL_OUTPUT_LINES, Math.trunc(configured)));
-}
-
-function clampToolCallOutputLines(lines: readonly string[], fromEnd = false): string[] {
-  const lineLimit = resolveToolCallOutputLineLimit();
-  if (lineLimit <= 0) return [];
-  return fromEnd ? lines.slice(-lineLimit) : lines.slice(0, lineLimit);
-}
-
-function selectProjectedToolEvidenceLines(entry: AppServerControlHistoryEntry): string[] {
-  const presentation = entry.toolPresentation;
-  if (!presentation?.evidence) {
-    return [];
-  }
-
-  const lines = presentation.evidence.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
-  const lineLimit = resolveToolCallOutputLineLimit();
-  if (lineLimit <= 0 || lines.length === 0) {
-    return [];
-  }
-  if (lines.length <= lineLimit) {
-    return lines;
-  }
-  if (presentation.evidenceKind === 'error' || presentation.category === 'command') {
-    return lines.slice(lines.length - lineLimit);
-  }
-  if (presentation.category === 'read' || lineLimit === 1) {
-    return lines.slice(0, lineLimit);
-  }
-  return [lines[0] ?? '', ...lines.slice(lines.length - (lineLimit - 1))];
-}
 
 function appServerControlText(key: string, fallback: string): string {
   const translated = t(key);
@@ -410,6 +378,7 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     } = {},
   ): HTMLElement {
     const artifactCluster = options.artifactCluster ?? null;
+    const expandedEntries = deps.getState(sessionId)?.historyExpandedEntries;
     if (entry.busyIndicator) {
       return createBusyIndicatorEntry(entry);
     }
@@ -426,8 +395,15 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
           (element, item) => {
             syncHistoryEntry(element, item, sessionId);
           },
-          deps.getState(sessionId)?.historyExpandedEntries,
+          expandedEntries,
         ),
+      );
+      return article;
+    }
+
+    if (isMcpToolEntry(entry)) {
+      article.appendChild(
+        createMcpToolDisclosure(entry, expandedEntries, selectProjectedToolEvidenceLines),
       );
       return article;
     }
@@ -516,6 +492,11 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
       showAssistantBadge?: boolean;
     } = {},
   ): void {
+    const currentMcp = article.querySelector<HTMLDetailsElement>(':scope > .agent-mcp-tool');
+    if (currentMcp && entry.toolPresentation?.mcp && syncMcpToolDisclosure(currentMcp, entry)) {
+      applyHistoryEntryChrome(article, entry, options.artifactCluster ?? null);
+      return;
+    }
     const currentActivity = article.querySelector<HTMLDetailsElement>('.agent-tool-activity');
     if (
       currentActivity &&
@@ -545,6 +526,7 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     article.className = `agent-history-entry agent-history-${entry.kind} agent-history-${entry.tone}`;
     article.dataset.kind = entry.kind;
     article.dataset.tone = entry.tone;
+    article.classList.toggle('agent-history-mcp', !!entry.toolPresentation?.mcp);
     article.classList.toggle('agent-history-file-changes', isFileChangeHistoryEntry(entry));
     if (artifactCluster) {
       article.dataset.artifactPosition = artifactCluster.position;

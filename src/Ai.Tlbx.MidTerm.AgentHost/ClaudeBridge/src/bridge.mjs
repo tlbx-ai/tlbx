@@ -302,11 +302,20 @@ async function handle(command, isCancelled = () => false, signal) {
       }
       await startRuntime(command);
       const initialized = await runtime.initializationResult();
+      let mcpServers = [];
       if (configuration.mcpServers?.tlbx) {
         const deadline = Date.now() + 30_000;
         let connected = false;
         while (Date.now() < deadline) {
           const servers = await runtime.mcpServerStatus();
+          mcpServers = servers.map((server) => {
+            const config = server.config;
+            let address = config?.command;
+            if (config?.url) {
+              try { address = new URL(config.url).origin; } catch { address = undefined; }
+            }
+            return { name: server.name, address };
+          });
           const tlbx = servers.find((server) => server.name === "tlbx");
           if (tlbx?.status === "connected") { connected = true; break; }
           if (tlbx && tlbx.status !== "pending") break;
@@ -321,6 +330,7 @@ async function handle(command, isCancelled = () => false, signal) {
         sdkVersion: __CLAUDE_AGENT_SDK_VERSION__,
         models: initialized.models ?? [],
         commands: initialized.commands ?? [],
+        mcpServers,
       });
       goals.setSupported((initialized.commands ?? []).some((command) =>
         (typeof command === "string" ? command : command.name)?.replace(/^\//, "") === "goal"));

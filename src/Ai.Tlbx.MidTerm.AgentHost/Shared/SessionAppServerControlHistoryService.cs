@@ -2199,6 +2199,7 @@ public sealed partial class SessionAppServerControlHistoryService
     private static int EstimateHistoryEntryHeightPx(AppServerControlHistoryItem entry, int? viewportWidth = null)
     {
         ArgumentNullException.ThrowIfNull(entry);
+        if (entry.ToolPresentation?.Mcp is not null) return viewportWidth <= 520 ? 76 : 56;
 
         var effectiveViewportWidth = Math.Clamp(viewportWidth ?? 960, 240, 2400);
         var horizontalChrome = ResolveHistoryHorizontalChromePx(entry.Kind);

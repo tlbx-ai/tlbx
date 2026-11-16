@@ -43,7 +43,11 @@ export function filterReadingHistory(
     if (entry.kind === 'user' || entry.kind === 'assistant' || entry.busyIndicator) {
       return true;
     }
-    if (isFileChangeHistoryEntry(entry) || entry.sourceItemType === 'proposed_plan') {
+    if (
+      entry.toolPresentation?.mcp ||
+      isFileChangeHistoryEntry(entry) ||
+      entry.sourceItemType === 'proposed_plan'
+    ) {
       return true;
     }
     return (

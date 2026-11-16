@@ -1,4 +1,10 @@
 {
+  "appServerControl.mcp.parameters": "Параметры",
+  "appServerControl.mcp.output": "Вывод",
+  "appServerControl.mcp.parametersUnavailable": "Параметры не переданы",
+  "appServerControl.mcp.serverUnavailable": "Сервер не указан",
+  "appServerControl.mcp.addressUnavailable": "Адрес не указан",
+  "appServerControl.mcp.parametersTruncated": "Параметры сокращены до предела записи.",
   "workspace.title": "Save sessions for a restart",
   "workspace.description": "Save resume hints and close every session on this host before shutting down. Restore them here later. In-progress work is interrupted; shell memory and terminal scrollback are not restored.",
   "workspace.save": "Save and close all sessions",

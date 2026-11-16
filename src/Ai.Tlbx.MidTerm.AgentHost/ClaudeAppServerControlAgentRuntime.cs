@@ -31,6 +31,7 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
     private string? _sessionId;
     private string? _workingDirectory;
     private AppServerControlMcpCredentials? _mcpCredentials;
+    private readonly AppServerControlMcpToolRegistry _mcpTools = new();
     private string? _binaryPath;
     private string? _userProfileDirectory;
     private string? _providerThreadId;
@@ -134,6 +135,7 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
         _userProfileDirectory = attach.UserProfileDirectory;
         _mcpCredentials?.Dispose();
         _mcpCredentials = attach.McpServer is null ? null : new AppServerControlMcpCredentials(attach.McpServer);
+        _mcpTools.Configure(attach.McpServer);
         _newProviderSessionId = Guid.NewGuid().ToString();
         _quickSettings = CreateDefaultQuickSettings();
         _providerThreadId = AppServerControlQuickSettings.NormalizeOptionalValue(attach.ResumeThreadId);
@@ -578,6 +580,7 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
                 break;
             }
             case "bridge.ready":
+                if (root.TryGetProperty("mcpServers", out var mcpServers)) _mcpTools.Observe(mcpServers);
                 ApplyClaudeNativeCatalogue(root, rawLine);
                 // Goal readbacks can follow ready immediately on this pipe. The Query
                 // has now acknowledged the exact sessionId supplied at initialize.
@@ -849,7 +852,8 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
             Presentation = AppServerControlToolPresentationProjector.FromClaude(
                 state.Title,
                 "in_progress",
-                input)
+                input,
+                _mcpTools.Resolve)
         };
         _tools[state.ProviderItemId ?? itemId] = tool;
 
@@ -1681,7 +1685,7 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
         return builder.ToString();
     }
 
-    private static bool TryUpdateClaudePresentationFromInputJson(ClaudeToolState tool)
+    private bool TryUpdateClaudePresentationFromInputJson(ClaudeToolState tool)
     {
         if (tool.InputJson.Length == 0 || tool.InputJson.IsTruncated)
         {
@@ -1700,10 +1704,13 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
             var updated = AppServerControlToolPresentationProjector.FromClaude(
                 tool.Title,
                 "in_progress",
-                document.RootElement);
+                document.RootElement,
+                _mcpTools.Resolve);
             var previousSubject = tool.Presentation.Subject;
+            var previousParameters = tool.Presentation.Mcp?.Parameters;
             AppServerControlToolPresentationProjector.Merge(tool.Presentation, updated);
-            return !string.Equals(previousSubject, tool.Presentation.Subject, StringComparison.Ordinal);
+            return !string.Equals(previousSubject, tool.Presentation.Subject, StringComparison.Ordinal) ||
+                   !string.Equals(previousParameters, tool.Presentation.Mcp?.Parameters, StringComparison.Ordinal);
         }
         catch (JsonException)
         {

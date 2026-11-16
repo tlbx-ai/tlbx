@@ -1,4 +1,10 @@
 {
+  "appServerControl.mcp.parameters": "パラメーター",
+  "appServerControl.mcp.output": "出力",
+  "appServerControl.mcp.parametersUnavailable": "パラメーター未提供",
+  "appServerControl.mcp.serverUnavailable": "サーバー未提供",
+  "appServerControl.mcp.addressUnavailable": "アドレス未提供",
+  "appServerControl.mcp.parametersTruncated": "記録上限でパラメーターが省略されました。",
   "workspace.title": "Save sessions for a restart",
   "workspace.description": "Save resume hints and close every session on this host before shutting down. Restore them here later. In-progress work is interrupted; shell memory and terminal scrollback are not restored.",
   "workspace.save": "Save and close all sessions",
