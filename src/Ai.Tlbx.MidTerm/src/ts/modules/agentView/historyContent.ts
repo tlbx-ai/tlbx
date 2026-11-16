@@ -1,5 +1,5 @@
 import { t } from '../i18n';
-import { isFileChangeHistoryEntry, isHistoryError } from './historyVisibility';
+import { hasMcpParameters, isFileChangeHistoryEntry, isHistoryError } from './historyVisibility';
 import {
   COLLAPSIBLE_HISTORY_BODY_MIN_CHARS,
   COLLAPSIBLE_HISTORY_BODY_MIN_LINES,
@@ -697,12 +697,16 @@ function resolveHistoryEntryBaseHeight(kind: HistoryKind): number {
   }
 }
 
+function estimateMcpHistoryHeight(entry: AppServerControlHistoryEntry): number {
+  return hasMcpParameters(entry.toolPresentation?.mcp?.parameters) ? 56 : 36;
+}
+
 export function estimateHistoryEntryHeight(
   entry: AppServerControlHistoryEntry,
   viewportWidth = 960,
 ): number {
   if (entry.toolActivityCount != null) return 18;
-  if (entry.toolPresentation?.mcp) return 56;
+  if (entry.toolPresentation?.mcp) return estimateMcpHistoryHeight(entry);
   if (entry.busyIndicator) {
     return 52;
   }

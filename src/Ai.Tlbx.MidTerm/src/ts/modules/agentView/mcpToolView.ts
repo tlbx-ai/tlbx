@@ -1,5 +1,5 @@
 import { t } from '../i18n';
-import { isHistoryError } from './historyVisibility';
+import { hasMcpParameters, isHistoryError } from './historyVisibility';
 import type { AppServerControlHistoryEntry } from './types';
 
 function text(key: string): string {
@@ -38,26 +38,22 @@ export function createMcpToolDisclosure(
   protocol.textContent = 'MCP';
   const name = document.createElement('strong');
   name.className = 'agent-mcp-name';
-  const server = document.createElement('span');
-  server.className = 'agent-mcp-server';
   const address = document.createElement('span');
   address.className = 'agent-mcp-address';
   const status = document.createElement('span');
   status.className = 'agent-mcp-status';
-  heading.append(protocol, name, server, address, status);
+  heading.append(protocol, name, address, status);
   const preview = document.createElement('span');
   preview.className = 'agent-mcp-preview';
   summary.append(heading, preview);
   details.append(summary);
-  let body: HTMLElement | null = null;
-  let parameters: HTMLPreElement | null = null;
-  let output: HTMLPreElement | null = null;
-  let truncated: HTMLElement | null = null;
+  let body: ReturnType<typeof createBody> | null = null;
   let lastParameters: string | null | undefined;
   const updateBody = () => {
-    if (!details.open || !body || !parameters || !output || !truncated) return;
+    if (!details.open || !body) return;
     const mcp = entry.toolPresentation?.mcp;
-    if (lastParameters !== mcp?.parameters || !parameters.textContent) {
+    body.requestSection.hidden = !hasMcpParameters(mcp?.parameters) && !mcp?.parametersTruncated;
+    if (lastParameters !== mcp?.parameters || !body.parameters.textContent) {
       lastParameters = mcp?.parameters;
       let value = lastParameters ?? text('parametersUnavailable');
       try {
@@ -65,22 +61,22 @@ export function createMcpToolDisclosure(
       } catch {
         /* Partial streaming JSON. */
       }
-      parameters.textContent = value;
+      body.parameters.textContent = value;
     }
-    truncated.hidden = mcp?.parametersTruncated !== true;
+    body.truncated.hidden = mcp?.parametersTruncated !== true;
     const evidence = outputLines(entry).join('\n');
-    output.hidden = !evidence;
-    output.textContent = evidence;
+    body.output.hidden = !evidence;
+    body.output.textContent = evidence;
+    body.emptyOutput.hidden = !!evidence;
   };
   const update = (next: AppServerControlHistoryEntry) => {
     entry = next;
     const presentation = entry.toolPresentation;
     const mcp = presentation?.mcp;
     if (!presentation || !mcp) return;
-    name.textContent = presentation.toolName || presentation.label || 'MCP';
+    const toolName = presentation.toolName || presentation.label || 'MCP';
+    name.textContent = mcp.serverName ? `${mcp.serverName}.${toolName}` : toolName;
     name.title = name.textContent;
-    server.textContent = mcp.serverName || text('serverUnavailable');
-    server.title = server.textContent;
     address.textContent = mcp.serverAddress || text('addressUnavailable');
     address.title = address.textContent;
     const failed = isHistoryError(entry);
@@ -88,22 +84,13 @@ export function createMcpToolDisclosure(
     status.textContent = failed ? presentation.outcome || entry.sourceStatus || '' : '';
     preview.textContent =
       mcp.parameters?.slice(0, 512).replace(/\s+/g, ' ') || text('parametersUnavailable');
+    preview.hidden = !hasMcpParameters(mcp.parameters);
     updateBody();
   };
   const mount = () => {
     if (!body) {
-      body = document.createElement('div');
-      body.className = 'agent-mcp-body';
-      parameters = document.createElement('pre');
-      parameters.setAttribute('aria-label', text('parameters'));
-      output = document.createElement('pre');
-      output.className = 'agent-mcp-output';
-      output.setAttribute('aria-label', text('output'));
-      truncated = document.createElement('p');
-      truncated.className = 'agent-mcp-truncated';
-      truncated.textContent = text('parametersTruncated');
-      body.append(parameters, truncated, output);
-      details.append(body);
+      body = createBody();
+      details.append(body.root);
     }
     updateBody();
   };
@@ -118,4 +105,36 @@ export function createMcpToolDisclosure(
     } else expanded?.delete(entry.id);
   });
   return details;
+}
+
+function createBody() {
+  const root = document.createElement('div');
+  root.className = 'agent-mcp-body';
+  const requestSection = createSection(text('parameters'));
+  const parameters = document.createElement('pre');
+  parameters.setAttribute('aria-label', text('parameters'));
+  const truncated = document.createElement('p');
+  truncated.className = 'agent-mcp-truncated';
+  truncated.textContent = text('parametersTruncated');
+  requestSection.append(parameters, truncated);
+  const responseSection = createSection(text('output'));
+  const output = document.createElement('pre');
+  output.className = 'agent-mcp-output';
+  output.setAttribute('aria-label', text('output'));
+  const emptyOutput = document.createElement('p');
+  emptyOutput.className = 'agent-mcp-empty-output';
+  emptyOutput.textContent = text('outputUnavailable');
+  responseSection.append(output, emptyOutput);
+  root.append(requestSection, responseSection);
+  return { root, requestSection, parameters, truncated, output, emptyOutput };
+}
+
+function createSection(label: string): HTMLElement {
+  const section = document.createElement('section');
+  section.className = 'agent-mcp-section';
+  const heading = document.createElement('h4');
+  heading.className = 'agent-mcp-section-label';
+  heading.textContent = label;
+  section.append(heading);
+  return section;
 }
