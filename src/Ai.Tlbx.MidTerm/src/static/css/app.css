@@ -14362,7 +14362,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
 .agent-history-file-change-list { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .agent-history-file-change-label { color: var(--text-secondary); font-size: 10px; line-height: 1.3; }
 .agent-history-file-change-link {
-  display: block;
+  display: flex;
   width: fit-content;
   max-width: 100%;
   padding: 0;
@@ -14376,10 +14376,14 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
   line-height: 1.5;
   text-align: left;
   text-decoration: underline;
-  overflow-wrap: anywhere;
+  overflow: hidden;
+  white-space: nowrap;
   user-select: text;
   cursor: pointer;
 }
+.agent-file-path-start { flex: 0 1 auto; min-width: 4ch; overflow: hidden; text-overflow: ellipsis; }
+.agent-file-path-end { display: flex; justify-content: flex-end; flex: 0 0 auto; max-width: calc(100% - 4ch); overflow: hidden; }
+.agent-file-path-end > span { flex: 0 0 auto; }
 .agent-history-file-change-link:hover { color: var(--text-primary); background: transparent; }
 .git-workspace-dialog.agent-file-diff-dialog { width: min(1100px, calc(100vw - 24px)); flex-direction: column; gap: 10px; overflow: hidden; }
 .agent-file-diff-dialog[open] { display: flex; }
@@ -14840,14 +14844,12 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
 .agent-command-string { color: var(--accent-gold); }
 .agent-mcp-tool {
   min-width: 0;
-  border-left: 2px solid color-mix(in srgb, var(--accent-violet) 38%, transparent);
-  padding-left: 10px;
   font: 400 0.76rem/1.5 var(--agent-history-mono-font-family, var(--font-mono));
   color: var(--workspace-reading-text-primary, var(--text-primary));
 }
 .agent-mcp-tool > summary {
   display: block;
-  min-height: 38px;
+  min-height: 20px;
   cursor: pointer;
   list-style: none;
 }
@@ -14874,7 +14876,6 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
   flex: 0 0 auto;
 }
 .agent-mcp-name,
-.agent-mcp-server,
 .agent-mcp-address,
 .agent-mcp-status {
   overflow: hidden;
@@ -14883,7 +14884,6 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
   min-width: 0;
 }
 .agent-mcp-name { font-weight: 500; flex: 0 1 auto; }
-.agent-mcp-server { color: var(--text-secondary); flex: 0 1 auto; }
 .agent-mcp-address { color: var(--text-muted); flex: 1 1 auto; }
 .agent-mcp-status { color: var(--text-muted); margin-left: auto; flex: 0 1 auto; font-size: 0.68rem; }
 .agent-mcp-preview {
@@ -14894,7 +14894,12 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
   white-space: nowrap;
   color: var(--text-secondary);
 }
-.agent-mcp-body { margin: 6px 0 6px 17px; }
+.agent-mcp-preview[hidden],
+.agent-mcp-tool[open] .agent-mcp-preview { display: none; }
+.agent-mcp-body { display: flex; flex-direction: column; gap: 8px; margin: 6px 0 6px 17px; }
+.agent-mcp-section[hidden] { display: none; }
+.agent-mcp-section-label { margin: 0; color: var(--text-secondary); font: 500 0.68rem/1.5 var(--font-ui); }
+.agent-mcp-empty-output { margin: 0; color: var(--text-muted); font-size: 0.7rem; }
 .agent-mcp-body pre {
   margin: 0;
   padding: 4px 0;
@@ -14909,8 +14914,6 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
   max-height: none;
 }
 .agent-mcp-body .agent-mcp-output {
-  margin-top: 6px;
-  border-top: 1px solid color-mix(in srgb, var(--text-muted) 20%, transparent);
   color: var(--text-secondary);
 }
 .agent-mcp-truncated { color: var(--text-muted); font-size: 0.7rem; }

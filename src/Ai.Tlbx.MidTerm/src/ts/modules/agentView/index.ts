@@ -2114,11 +2114,13 @@ function renderHistoryViewportNow(
   state: SessionAppServerControlViewState,
 ): void {
   clearPendingHistoryViewportRender(state);
-  if (
-    !isAppServerControlViewVisible(sessionId) ||
-    hasActiveAppServerControlSelectionInPanel(state.panel)
-  ) {
+  if (!isAppServerControlViewVisible(sessionId)) {
     state.renderDirty = true;
+    return;
+  }
+  if (hasActiveAppServerControlSelectionInPanel(state.panel)) {
+    state.renderDirty = true;
+    historyRender.renderHistory(state.panel, state.historyEntries, sessionId, true);
     return;
   }
   if (state.renderDirty || state.historyRenderScheduled !== null) {
@@ -2847,6 +2849,11 @@ function commitAgentViewRender(sessionId: string, force = false): void {
 
   if (!force && hasActiveAppServerControlSelectionInPanel(state.panel)) {
     state.renderDirty = true;
+    if (state.snapshot) {
+      acceptPendingHistoryViewportSnapshot(sessionId, state);
+      renderAgentView(state.panel, state.snapshot, state.streamConnected, state, true);
+      completePendingHistoryViewportCommit(sessionId, state);
+    }
     return;
   }
 
@@ -3076,7 +3083,7 @@ function renderAgentView(
     renderCurrentAgentView,
     updateBusyIndicatorElapsed: historyRender.updateBusyIndicatorElapsed,
   });
-  historyDom.renderRuntimeStats(panel, runtimeStats);
+  if (!historyOnly) historyDom.renderRuntimeStats(panel, runtimeStats);
   historyRender.renderHistory(panel, renderedEntries, snapshot.sessionId);
   if (!historyOnly)
     historyRender.renderComposerInterruption(panel, snapshot.sessionId, snapshot.requests, state);

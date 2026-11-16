@@ -1,7 +1,8 @@
 {
   "appServerControl.files.openEditor": "फ़ाइल संपादक में खोलें",
-  "appServerControl.mcp.parameters": "पैरामीटर",
-  "appServerControl.mcp.output": "आउटपुट",
+  "appServerControl.mcp.parameters": "अनुरोध पैरामीटर",
+  "appServerControl.mcp.output": "परिणाम",
+  "appServerControl.mcp.outputUnavailable": "कोई आउटपुट उपलब्ध नहीं",
   "appServerControl.mcp.parametersUnavailable": "पैरामीटर उपलब्ध नहीं",
   "appServerControl.mcp.serverUnavailable": "सर्वर उपलब्ध नहीं",
   "appServerControl.mcp.addressUnavailable": "पता उपलब्ध नहीं",

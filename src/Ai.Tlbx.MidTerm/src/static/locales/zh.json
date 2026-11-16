@@ -1,7 +1,8 @@
 {
   "appServerControl.files.openEditor": "在文件编辑器中打开",
-  "appServerControl.mcp.parameters": "参数",
-  "appServerControl.mcp.output": "输出",
+  "appServerControl.mcp.parameters": "请求参数",
+  "appServerControl.mcp.output": "结果",
+  "appServerControl.mcp.outputUnavailable": "暂无输出",
   "appServerControl.mcp.parametersUnavailable": "未提供参数",
   "appServerControl.mcp.serverUnavailable": "未提供服务器",
   "appServerControl.mcp.addressUnavailable": "未提供地址",

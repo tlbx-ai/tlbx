@@ -1,4 +1,5 @@
 import { resolveHistoryWheelMotion } from './historyWheel';
+import { captureHistorySelection, restoreHistorySelection } from './historySelection';
 import { syncQuestionAnswer } from '../smartInput/questionAnswer';
 import { t } from '../i18n';
 import { getHistoryImagePreviewToken } from './userHistoryReading';
@@ -1833,6 +1834,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
     if (!state) {
       return;
     }
+    const selection = captureHistorySelection(state);
 
     let canvas = state.historyCanvas;
     if (!canvas || canvas.parentElement !== container) {
@@ -1857,13 +1859,32 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
     }
 
     const visibleKeys = new Set<string>();
+    const concreteRows: Array<{ node: HTMLElement; order: number }> = [];
     for (const visibleEntry of plan.visibleEntries) {
       visibleKeys.add(visibleEntry.key);
-      const node = resolveRenderedHistoryNode(sessionId, state, visibleEntry);
+      const selected = selection?.rows.get(visibleEntry.key);
+      const node = selected?.node ?? resolveRenderedHistoryNode(sessionId, state, visibleEntry);
+      if (selected) {
+        state.historyRenderedNodes.set(visibleEntry.key, selected);
+        state.historyRetainedNodes?.delete(visibleEntry.key);
+      }
+      delete node.dataset.historySelectionRetained;
+      node.style.bottom = '';
       const top = `${visibleEntry.offsetTopPx}px`;
       if (node.style.top !== top) node.style.top = top;
-      nextChildren.push(node);
+      concreteRows.push({ node, order: visibleEntry.entry.order });
     }
+    for (const [key, row] of selection?.rows ?? []) {
+      if (visibleKeys.has(key)) continue;
+      // Keep selected text connected and copyable, outside the viewport and
+      // without extending the canvas's positive scroll range across page shifts.
+      row.node.dataset.historySelectionRetained = 'true';
+      row.node.style.top = '';
+      row.node.style.bottom = 'calc(100% + 100vh)';
+      concreteRows.push({ node: row.node, order: row.entry.order });
+    }
+    concreteRows.sort((a, b) => a.order - b.order);
+    nextChildren.push(...concreteRows.map((row) => row.node));
 
     const retained = (state.historyRetainedNodes ??= new Map());
     for (const [cacheKey, rendered] of state.historyRenderedNodes) {
@@ -1895,6 +1916,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
     }
 
     syncOrderedChildren(canvas, nextChildren);
+    restoreHistorySelection(selection);
     state.historyLastVirtualWindowKey = plan.virtualWindowKey;
   }
 

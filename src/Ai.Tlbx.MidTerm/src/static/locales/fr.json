@@ -1,7 +1,8 @@
 {
   "appServerControl.files.openEditor": "Ouvrir dans l’éditeur de fichiers",
-  "appServerControl.mcp.parameters": "Paramètres",
-  "appServerControl.mcp.output": "Sortie",
+  "appServerControl.mcp.parameters": "Paramètres de la requête",
+  "appServerControl.mcp.output": "Résultat",
+  "appServerControl.mcp.outputUnavailable": "Aucune sortie disponible",
   "appServerControl.mcp.parametersUnavailable": "Paramètres non fournis",
   "appServerControl.mcp.serverUnavailable": "Serveur non fourni",
   "appServerControl.mcp.addressUnavailable": "Adresse non fournie",

@@ -1,7 +1,8 @@
 {
   "appServerControl.files.openEditor": "Abrir en el editor de archivos",
-  "appServerControl.mcp.parameters": "Parámetros",
-  "appServerControl.mcp.output": "Salida",
+  "appServerControl.mcp.parameters": "Parámetros de la solicitud",
+  "appServerControl.mcp.output": "Resultado",
+  "appServerControl.mcp.outputUnavailable": "No hay salida disponible",
   "appServerControl.mcp.parametersUnavailable": "Parámetros no disponibles",
   "appServerControl.mcp.serverUnavailable": "Servidor no disponible",
   "appServerControl.mcp.addressUnavailable": "Dirección no disponible",

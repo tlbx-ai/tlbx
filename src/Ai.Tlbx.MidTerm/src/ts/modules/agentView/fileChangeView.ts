@@ -145,7 +145,9 @@ export function createFileChangeHistoryBody(
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'agent-history-file-change-link';
-    button.textContent = file.path;
+    button.title = file.path;
+    button.setAttribute('aria-label', file.path);
+    appendFilePath(button, file.path);
     button.addEventListener('click', () => {
       // Resolve a retained turn patch on demand; do not copy its hunks into every tool row.
       const recorded =
@@ -173,6 +175,21 @@ export function createFileChangeHistoryBody(
     body.append(error);
   }
   return body;
+}
+
+/** CSS shrinks the directory first, retaining the filename and path ends without layout reads. */
+function appendFilePath(button: HTMLElement, path: string): void {
+  const separator = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
+  const split = separator >= 0 ? separator + 1 : Math.ceil(path.length / 2);
+  const start = document.createElement('span');
+  start.className = 'agent-file-path-start';
+  start.textContent = path.slice(0, split);
+  const end = document.createElement('span');
+  end.className = 'agent-file-path-end';
+  const filename = document.createElement('span');
+  filename.textContent = path.slice(split);
+  end.append(filename);
+  button.append(start, end);
 }
 
 function createDiffLineGutterNode(

@@ -1,7 +1,8 @@
 {
   "appServerControl.files.openEditor": "ফাইল সম্পাদকে খুলুন",
-  "appServerControl.mcp.parameters": "প্যারামিটার",
-  "appServerControl.mcp.output": "আউটপুট",
+  "appServerControl.mcp.parameters": "অনুরোধের প্যারামিটার",
+  "appServerControl.mcp.output": "ফলাফল",
+  "appServerControl.mcp.outputUnavailable": "কোনো আউটপুট উপলব্ধ নেই",
   "appServerControl.mcp.parametersUnavailable": "প্যারামিটার দেওয়া হয়নি",
   "appServerControl.mcp.serverUnavailable": "সার্ভার দেওয়া হয়নি",
   "appServerControl.mcp.addressUnavailable": "ঠিকানা দেওয়া হয়নি",

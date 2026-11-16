@@ -119,6 +119,7 @@ export function resolveHistoryEstimatedEntryHeight(
   entry: AppServerControlHistoryEntry,
   clientWidth: number,
 ): number {
+  if (entry.toolPresentation?.mcp) return estimateHistoryEntryHeight(entry, clientWidth);
   return (
     normalizeEstimatedHeight(entry.estimatedHeightPx) ??
     estimateHistoryEntryHeight(entry, clientWidth)

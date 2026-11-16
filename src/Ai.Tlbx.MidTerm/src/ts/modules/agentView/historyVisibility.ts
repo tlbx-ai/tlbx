@@ -26,6 +26,10 @@ export function isHistoryError(entry: AppServerControlHistoryEntry): boolean {
   );
 }
 
+export function hasMcpParameters(parameters: string | null | undefined): boolean {
+  return !!parameters?.trim() && !/^(?:\{\s*\}|null)$/.test(parameters.trim());
+}
+
 export function filterReadingHistory(
   entries: readonly AppServerControlHistoryEntry[],
   requests: readonly AppServerControlHistoryRequestSummary[],

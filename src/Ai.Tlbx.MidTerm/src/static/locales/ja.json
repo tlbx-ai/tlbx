@@ -1,7 +1,8 @@
 {
   "appServerControl.files.openEditor": "ファイルエディターで開く",
-  "appServerControl.mcp.parameters": "パラメーター",
-  "appServerControl.mcp.output": "出力",
+  "appServerControl.mcp.parameters": "リクエストパラメーター",
+  "appServerControl.mcp.output": "結果",
+  "appServerControl.mcp.outputUnavailable": "出力はありません",
   "appServerControl.mcp.parametersUnavailable": "パラメーター未提供",
   "appServerControl.mcp.serverUnavailable": "サーバー未提供",
   "appServerControl.mcp.addressUnavailable": "アドレス未提供",

@@ -1,7 +1,8 @@
 {
   "appServerControl.files.openEditor": "Открыть в редакторе файлов",
-  "appServerControl.mcp.parameters": "Параметры",
-  "appServerControl.mcp.output": "Вывод",
+  "appServerControl.mcp.parameters": "Параметры запроса",
+  "appServerControl.mcp.output": "Результат",
+  "appServerControl.mcp.outputUnavailable": "Вывод недоступен",
   "appServerControl.mcp.parametersUnavailable": "Параметры не переданы",
   "appServerControl.mcp.serverUnavailable": "Сервер не указан",
   "appServerControl.mcp.addressUnavailable": "Адрес не указан",
