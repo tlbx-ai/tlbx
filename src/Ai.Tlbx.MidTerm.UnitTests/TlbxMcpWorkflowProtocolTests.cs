@@ -39,7 +39,8 @@ public sealed class TlbxMcpWorkflowProtocolTests
     public void WorkflowRoutingKeepsCallerFilesProcessesArtifactsAndUpdateRecoveryLocal(string json, bool local)
     {
         using var document = JsonDocument.Parse(json);
-        var arguments = document.RootElement.EnumerateObject().ToDictionary(property => property.Name,
+        using var properties = document.RootElement.EnumerateObject();
+        var arguments = properties.ToDictionary(property => property.Name,
             property => property.Value.Clone(), StringComparer.Ordinal);
         Assert.Equal(local, TlbxMcpNativeWorkflow.RequiresCallerLocalExecution(new CallToolRequestParams
         {

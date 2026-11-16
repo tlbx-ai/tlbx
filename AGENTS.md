@@ -21,6 +21,12 @@ same question for the frozen candidate and wait for his run/skip decision. An ex
 skip permits promotion; an explicit run must finish and its result must be reviewed.
 Never dispatch automatically or repeat the question after a decision for an unchanged
 candidate. Include security/SBOM generation in the question so it cannot be forgotten.
+An explicitly requested verification run includes repairing actionable failures in the
+task's scope and rerunning the affected checks through Tests (on demand), including on
+the repaired successor candidate. Do this without another permission question. Keep
+the existing checks enabled, review the complete result, and continue until green or
+until a concrete blocker requires user input. This does not authorize unrelated work
+or automatic test dispatch from CI/release workflows.
 Local build and release scripts also never start test suites. -TestCategories selects build/analysis/integrity checks, not permission to run tests. Use run-release-tests.ps1 separately only when an explicit test run was requested.
 Tests must exercise a concrete contract or failure. Do not assert source text,
 workflow job layout, documentation wording or arbitrary catalog counts. Reuse

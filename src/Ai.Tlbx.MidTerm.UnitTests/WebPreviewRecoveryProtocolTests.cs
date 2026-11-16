@@ -39,7 +39,7 @@ public sealed class WebPreviewRecoveryProtocolTests : IDisposable
         Assert.True(after.Active);
         Assert.Equal(before.Url, after.Url);
         Assert.Equal(before.TargetRevision + 1, after.TargetRevision);
-        Assert.NotEqual(before.RouteKey, after.RouteKey);
+        Assert.NotEqual(before.RouteKey, after.RouteKey, StringComparer.Ordinal);
         Assert.Null(restored.GetPreviewSessionByRouteKey(before.RouteKey));
         Assert.Equal("https://example.invalid/b", restored.GetTargetUrl("surviving", "docs"));
         Assert.Equal("https://other.invalid/", restored.GetTargetUrl("other", "canvas"));
@@ -48,7 +48,7 @@ public sealed class WebPreviewRecoveryProtocolTests : IDisposable
         Assert.True(reloaded.IsAgentControlled("surviving"));
         var freshRegistry = new BrowserPreviewRegistry();
         var freshClient = freshRegistry.Create("surviving", "canvas", after.RouteKey, "profile:offline-tab");
-        Assert.NotEqual(oldClient.PreviewToken, freshClient.PreviewToken);
+        Assert.NotEqual(oldClient.PreviewToken, freshClient.PreviewToken, StringComparer.Ordinal);
         Assert.False(freshRegistry.TryValidate(oldClient.PreviewId, oldClient.PreviewToken, out _));
         Assert.True(freshRegistry.TryValidate(freshClient.PreviewId, freshClient.PreviewToken, out _));
         var persistedJson = File.ReadAllText(Path.Combine(_directory, "session-control.json"));
@@ -187,7 +187,7 @@ public sealed class WebPreviewRecoveryProtocolTests : IDisposable
         var seeded = restartedStorage.CreateBootstrap("session", "canvas", restored.RouteKey, restored.TargetRevision, "https://first.invalid", "profile:tab-a")!;
         Assert.Equal("[1,2]", seeded.Local["todos"]);
         Assert.Equal("tab-a", seeded.Session["draft"]);
-        Assert.NotEqual(first.Token, seeded.Token);
+        Assert.NotEqual(first.Token, seeded.Token, StringComparer.Ordinal);
         Assert.False(restartedStorage.Apply(restored.RouteKey, Write(first.Token, 2, Set("local", "todos", "stale"))));
         Assert.DoesNotContain(first.Token, File.ReadAllText(Path.Combine(_directory, "session-control.json")), StringComparison.Ordinal);
     }

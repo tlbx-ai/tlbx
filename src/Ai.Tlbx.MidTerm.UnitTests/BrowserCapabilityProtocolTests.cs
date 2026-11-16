@@ -40,7 +40,7 @@ public sealed class BrowserCapabilityProtocolTests
         Assert.Equal("observed", result["page"]?["state"]?.GetValue<string>());
         Assert.Equal("denied", result["page"]?["indexedDB"]?.GetValue<string>());
         Assert.Equal("hidden", result["page"]?["visibility"]?.GetValue<string>());
-        Assert.Contains("unverified", result["limits"]!.GetValue<string>());
+        Assert.Contains("unverified", result["limits"]!.GetValue<string>(), StringComparison.Ordinal);
         Assert.Null(result["status"]?["clients"]);
         Assert.Null(result["status"]?["defaultClient"]);
     }
@@ -57,7 +57,7 @@ public sealed class BrowserCapabilityProtocolTests
 
         Assert.True(result["status"]?["controllable"]?.GetValue<bool>());
         Assert.Equal("unavailable", result["page"]?["state"]?.GetValue<string>());
-        Assert.DoesNotContain("private page content", result.ToJsonString());
+        Assert.DoesNotContain("private page content", result.ToJsonString(), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -85,9 +85,9 @@ public sealed class BrowserCapabilityProtocolTests
 
         Assert.Equal("not-probed", result["page"]?["state"]?.GetValue<string>());
         Assert.Equal("offline-owner", result["status"]?["owner"]?.GetValue<string>());
-        Assert.Contains("browser_claim", result["recovery"]!.ToJsonString());
-        Assert.Contains("do not auto-claim", result["recovery"]!.ToJsonString());
-        Assert.DoesNotContain("mt_", result.ToJsonString());
+        Assert.Contains("browser_claim", result["recovery"]!.ToJsonString(), StringComparison.Ordinal);
+        Assert.Contains("do not auto-claim", result["recovery"]!.ToJsonString(), StringComparison.Ordinal);
+        Assert.DoesNotContain("mt_", result.ToJsonString(), StringComparison.Ordinal);
     }
 
     [Theory]
@@ -115,8 +115,8 @@ public sealed class BrowserCapabilityProtocolTests
         var nativeJson = JsonSerializer.Serialize(native, McpJsonContext.Default.JsonObject);
 
         Assert.True(Encoding.UTF8.GetByteCount(nativeJson) < Encoding.UTF8.GetByteCount(cliJson) / 2);
-        Assert.Contains("mt_status", cli.FastCommands);
-        Assert.Contains("browser_outline", nativeJson);
-        Assert.DoesNotContain("mt_", nativeJson);
+        Assert.Contains("mt_status", cli.FastCommands, StringComparer.Ordinal);
+        Assert.Contains("browser_outline", nativeJson, StringComparison.Ordinal);
+        Assert.DoesNotContain("mt_", nativeJson, StringComparison.Ordinal);
     }
 }

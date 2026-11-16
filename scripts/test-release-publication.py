@@ -39,7 +39,8 @@ class PublicationTests(unittest.TestCase):
         self.assertEqual(self.patch['make_latest'], 'false')
         self.assertIn('Terminal input sizing fix.', self.patch['body'])
         self.assertIn('Available: linux-arm64, linux-x64, win-x64, win-x86.', self.patch['body'])
-        self.assertIn('Unavailable in this release: osx-arm64, osx-x64.', self.patch['body'])
+        self.assertIn('Unavailable in this release: osx-arm64.', self.patch['body'])
+        self.assertIn('On demand: osx-x64 (manual Release workflow, platform=osx-x64).', self.patch['body'])
 
     def test_any_single_complete_platform_is_valid(self):
         for rid in ['linux-arm64', 'linux-x64', 'osx-arm64', 'osx-x64', 'win-x64', 'win-x86']:

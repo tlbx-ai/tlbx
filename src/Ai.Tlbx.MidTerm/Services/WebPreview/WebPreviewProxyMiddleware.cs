@@ -37,7 +37,7 @@ public sealed partial class WebPreviewProxyMiddleware
           var mtInjectionRoute="__MT_PROXY_ROUTE__";
           var mtParentContext=arguments.length?arguments[0]:null;
           // Transport coordinates must stay native beneath an older Location-rewriting proxy.
-          var mtNativeLocation=window["location"];
+          var mtNativeLocation=Reflect.get(window,"location");
           var mtInnerAdapterRoutes=/*__MT_INNER_ADAPTER_ROUTES__*/[];
           function mtRoutePosition(route){
             if(typeof route!=="string"||!/^\/webpreview\/[^/]+(?:\/_access\/[^/]+\/[^/]+)?$/.test(route))return -1;
