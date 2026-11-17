@@ -1,4 +1,5 @@
 import { SocketReadiness, resumeProbeTimeoutMs } from './socketReadiness';
+import { getSessions } from '../../api/client';
 import { recordTextActivity } from '../sidebar/heatIndicator';
 /**
  * State Channel Module
@@ -113,7 +114,7 @@ interface LayoutStateMessage {
 
 interface StateUpdateMessage {
   type?: undefined;
-  sessions?: { sessions: Session[] };
+  sessions?: { sessions: Session[] } | null;
   update?: UpdateInfo | null;
   layout?: LayoutStateMessage | null;
   managerBarQueue?: ManagerBarQueueEntry[];
@@ -156,6 +157,8 @@ type StateWsMessage =
 const log = createLogger('state');
 const stateReconnect = new ReconnectController();
 const stateReadiness = new SocketReadiness();
+const LINK_SESSION_FALLBACK_DELAY_MS = 1500;
+let stopSessionFallback: (() => void) | undefined;
 import {
   stateWs,
   sessionTerminals,
@@ -395,11 +398,11 @@ function handleStateSocketMessage(data: StateWsMessage): void {
     return;
   }
 
-  const sessionList = data.sessions?.sessions ?? [];
   if (data.terminalSizeControls !== undefined) {
     setTerminalSizeControls(data.terminalSizeControls);
   }
-  handleStateUpdate(sessionList, data.layout);
+  if (Array.isArray(data.sessions?.sessions))
+    handleStateUpdate(data.sessions.sessions, data.layout);
   if (data.managerBarQueue !== undefined) {
     setManagerBarQueue(data.managerBarQueue);
   }
@@ -411,6 +414,7 @@ function handleStateSocketMessage(data: StateWsMessage): void {
  * Automatically reconnects with exponential backoff on disconnect.
  */
 export function connectStateWebSocket(): void {
+  stopSessionFallback?.();
   stateReconnect.cancel();
   rejectPendingCommands('Connection replaced');
   closeWebSocket(stateWs, setStateWs);
@@ -420,6 +424,31 @@ export function connectStateWebSocket(): void {
   const wsPath = isSharedSessionRoute() ? '/ws/share/state' : '/ws/state';
   const ws = new WebSocket(createWsUrl(wsPath));
   setStateWs(ws);
+
+  // A confirmed WebSocket snapshot owns readiness and layout. Recover just
+  // the list over HTTP when Link has not delivered its initial snapshot.
+  const fallback = new AbortController();
+  const fallbackTimer =
+    window.__tlbxConnectPreview && !isSharedSessionRoute()
+      ? window.setTimeout(() => {
+          void getSessions(fallback.signal)
+            .then(({ data, response }) => {
+              if (fallback.signal.aborted || stateWs !== ws || !response.ok) return;
+              if (Array.isArray(data?.sessions)) handleStateUpdate(data.sessions);
+            })
+            .catch((error: unknown) => {
+              if (!fallback.signal.aborted) {
+                log.warn(() => `Link session fallback failed: ${String(error)}`);
+              }
+            });
+        }, LINK_SESSION_FALLBACK_DELAY_MS)
+      : undefined;
+  const cancelFallback = (): void => {
+    clearTimeout(fallbackTimer);
+    fallback.abort();
+    if (stopSessionFallback === cancelFallback) stopSessionFallback = undefined;
+  };
+  stopSessionFallback = cancelFallback;
 
   ws.onopen = () => {
     if (stateWs !== ws) return;
@@ -437,7 +466,10 @@ export function connectStateWebSocket(): void {
     try {
       const data = JSON.parse(event.data as string) as StateWsMessage;
       handleStateSocketMessage(data);
-      if ('sessions' in data) $stateWsConnected.set(true);
+      if ('sessions' in data && Array.isArray(data.sessions?.sessions)) {
+        cancelFallback();
+        $stateWsConnected.set(true);
+      }
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
       log.error(() => `Error parsing state: ${message}`);
@@ -445,6 +477,7 @@ export function connectStateWebSocket(): void {
   };
 
   ws.onclose = (event) => {
+    cancelFallback();
     if (stateWs !== ws) return;
     $stateWsConnected.set(false);
 

@@ -413,8 +413,8 @@ export async function getBootstrapLogin(): ClientGetResult<'/api/bootstrap/login
 
 // --- Sessions ---
 
-export async function getSessions(): ClientGetResult<'/api/sessions'> {
-  return client.GET('/api/sessions', { cache: 'no-store' });
+export async function getSessions(signal?: AbortSignal): ClientGetResult<'/api/sessions'> {
+  return client.GET('/api/sessions', { cache: 'no-store', signal: signal ?? null });
 }
 
 export async function createSession(

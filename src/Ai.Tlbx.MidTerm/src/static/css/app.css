@@ -4835,10 +4835,11 @@ body::before {
 
 @media (max-width: 768px) {
   .terminal-container .scaled-overlay {
-    inset: auto 12px 12px;
-    min-height: 64px;
+    inset: auto 12px 12px auto;
+    min-width: 44px;
+    min-height: 44px;
     justify-content: center;
-    padding: 12px 14px;
+    padding: 8px;
     transform: none;
     background-color: var(--bg-dropdown-opaque);
     color: var(--text-primary);
@@ -4861,11 +4862,14 @@ body::before {
     bottom: 40px;
   }
 
+  .terminal-container .scaled-overlay-copy,
+  .terminal-container .scaled-overlay-action > span {
+    display: none;
+  }
+
   .terminal-container .scaled-overlay-action {
-    flex: 1 0 100%;
-    margin-left: 0;
+    margin: 0;
     min-width: 0;
-    text-align: center;
   }
 }
 
@@ -21274,7 +21278,8 @@ body.keyboard-visible .adaptive-footer-dock:not([data-device='mobile']) .manager
   }
 
   body.keyboard-visible .terminal-page {
-    padding-bottom: 0;
+    /* Keep the composer clear of the keyboard edge in mobile Link frames. */
+    padding-bottom: 16px;
   }
 
   body.keyboard-replacement .smart-input-mobile-touch-host:not([hidden]) {
