@@ -20274,6 +20274,10 @@ body.keyboard-visible .adaptive-footer-dock:not([data-device='mobile']) .manager
     line-height: var(--smart-input-textarea-line-height);
   }
 
+  .adaptive-footer-dock[data-device='mobile'] .smart-input-textarea {
+    max-height: calc(var(--midterm-visual-viewport-height, 100dvh) / 2);
+  }
+
   .smart-input-textarea-shell {
     --smart-input-expand-hit-size: 44px;
   }
@@ -20317,9 +20321,11 @@ body.keyboard-visible .adaptive-footer-dock:not([data-device='mobile']) .manager
     max-height: min(18dvh, 156px);
   }
 
-  .adaptive-footer-dock[data-composer-expanded='true'] .smart-input-textarea {
-    --smart-input-textarea-min-height: clamp(180px, 34dvh, 360px);
-    --smart-input-textarea-max-visible-lines: 20;
+  .adaptive-footer-dock[data-composer-expanded='true'][data-device='mobile'] .smart-input-textarea {
+    flex: 1 1 0;
+    min-height: 0;
+    max-height: none;
+    overflow-y: auto;
   }
 
   .adaptive-footer-context {

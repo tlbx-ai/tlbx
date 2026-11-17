@@ -1277,6 +1277,11 @@ export function initSmartInput(): void {
     window.addEventListener('orientationchange', () => {
       syncSmartInputVisibility();
     });
+    window.addEventListener('midterm:visual-viewport-changed', () => {
+      if (activeTextarea?.getClientRects().length && isMobileViewport()) {
+        resizeSmartInputTextarea(activeTextarea);
+      }
+    });
   }
 
   onTabActivated('agent', (sessionId) => {
@@ -1544,6 +1549,9 @@ function createDockedDOM(): void {
       event.preventDefault();
       event.stopPropagation();
       setActiveSessionComposerExpanded(!isComposerExpanded($activeSessionId.get()));
+      // The tap is still active here. A later animation frame cannot reliably
+      // summon the mobile OS keyboard if the button was tapped from outside it.
+      focusSmartInput();
     },
     onAppServerControlEffortChange: () => {
       const sessionId = $activeSessionId.get();
