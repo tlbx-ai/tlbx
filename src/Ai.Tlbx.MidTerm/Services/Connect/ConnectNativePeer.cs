@@ -11,7 +11,7 @@ namespace Ai.Tlbx.MidTerm.Services.Connect;
 internal sealed class ConnectNativePeer : IAsyncDisposable
 {
     internal const int MaximumFrameSize = 65536;
-    internal const int MaximumBufferedBytes = 128 * 1024;
+    internal const int MaximumBufferedBytes = 8 * 1024;
     private static readonly ConcurrentDictionary<nint, ConnectNativePeer> Owners = new();
     private static int _nextToken;
     private static ConnectNativeApi? _loadedApi;
@@ -127,7 +127,8 @@ internal sealed class ConnectNativePeer : IAsyncDisposable
                 ObjectDisposedException.ThrowIf(Volatile.Read(ref _closed) != 0, this);
                 var channel = Volatile.Read(ref _channel);
                 if (channel < 0 || !_api.IsOpen(channel)) throw new IOException("The Connect data channel is not open.");
-                if (_api.BufferedAmount(channel) <= MaximumBufferedBytes - frame.Length)
+                // A larger legacy frame may still enter when the pending queue is empty.
+                if (_api.BufferedAmount(channel) <= Math.Max(MaximumBufferedBytes, frame.Length) - frame.Length)
                 {
                     _api.Send(channel, frame.Span);
                     return;

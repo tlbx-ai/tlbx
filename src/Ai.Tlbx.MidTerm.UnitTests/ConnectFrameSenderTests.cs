@@ -6,6 +6,37 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 public sealed class ConnectFrameSenderTests
 {
     [Fact]
+    public async Task ReadyInteractiveBurstDrainsBeforeTheNextBulkFragment()
+    {
+        var firstFrame = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var resume = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var frames = new List<byte[]>();
+        using var sender = new ConnectFrameSender(async (frame, ct) =>
+        {
+            frames.Add(frame.ToArray());
+            if (frames.Count == 1)
+            {
+                firstFrame.SetResult();
+                await resume.Task.WaitAsync(ct);
+            }
+        }, CancellationToken.None);
+        var bulk = sender.SendAsync(new byte[200000], CancellationToken.None);
+        await firstFrame.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        var replies = Enumerable.Range(0, 8)
+            .Select(async index => await sender.SendAsync([(byte)index], CancellationToken.None)).ToArray();
+        resume.SetResult();
+        await Task.WhenAll(replies.Append(bulk))
+            .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        var receiver = new ConnectFrames();
+        var complete = frames.Select(frame => receiver.Receive(frame)).OfType<byte[]>().ToArray();
+        Assert.Equal(9, complete.Length);
+        Assert.All(complete.Take(8), reply => Assert.Single(reply));
+        Assert.Equal(200000, complete[8].Length);
+        // All eight queued replies must pass before a second bulk fragment.
+        Assert.All(frames.Skip(1).Take(8), frame => Assert.Equal(14, frame.Length));
+    }
+
+    [Fact]
     public async Task SmallReplyCompletesBeforeAnInFlightBulkMessage()
     {
         var firstFrame = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
