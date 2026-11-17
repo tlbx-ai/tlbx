@@ -76,7 +76,17 @@ export function resolveHistoryScrollMode(args: {
     return nearBottom ? 'follow' : 'browse';
   }
 
-  // Reflow/clamping is not a request to leave follow mode.
+  // Reflow/clamping is not a request to leave follow mode. Native browsing
+  // without a wheel event (for example focus navigation) can still detach it.
+  if (
+    args.previousMode === 'follow' &&
+    userScrolledUp &&
+    args.previous?.scrollHeight === args.current.scrollHeight &&
+    args.previous.clientHeight === args.current.clientHeight
+  ) {
+    return 'browse';
+  }
+
   if (args.previousMode === 'follow') {
     return 'follow';
   }
