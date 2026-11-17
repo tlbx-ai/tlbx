@@ -12,7 +12,7 @@ internal sealed class ConnectFrames(TimeProvider? timeProvider = null)
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
     private readonly Dictionary<uint, Assembly> _messages = [];
     private int _buffered;
-    private uint _nextId;
+    private int _nextId;
 
     public byte[]? Receive(ReadOnlySpan<byte> frame)
     {
@@ -46,14 +46,16 @@ internal sealed class ConnectFrames(TimeProvider? timeProvider = null)
         return assembly.Bytes;
     }
 
-    public IEnumerable<byte[]> Encode(byte[] message)
+    public IEnumerable<byte[]> Encode(byte[] message, int chunkSize = ChunkSize)
     {
         ArgumentOutOfRangeException.ThrowIfGreaterThan(message.Length, MaximumMessageSize);
         ArgumentOutOfRangeException.ThrowIfZero(message.Length);
-        var id = unchecked(++_nextId);
-        for (var offset = 0; offset < message.Length; offset += ChunkSize)
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(chunkSize);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(chunkSize, ChunkSize);
+        var id = unchecked((uint)Interlocked.Increment(ref _nextId));
+        for (var offset = 0; offset < message.Length; offset += chunkSize)
         {
-            var count = Math.Min(ChunkSize, message.Length - offset);
+            var count = Math.Min(chunkSize, message.Length - offset);
             var frame = new byte[HeaderSize + count];
             frame[0] = 1;
             BinaryPrimitives.WriteUInt32LittleEndian(frame.AsSpan(1), id);
