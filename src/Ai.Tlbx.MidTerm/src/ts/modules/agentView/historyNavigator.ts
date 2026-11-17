@@ -112,6 +112,21 @@ export function shouldRefreshHistoryNavigatorFromScroll(args: {
   previous: HistoryScrollMetrics | null;
   current: HistoryScrollMetrics;
 }): boolean {
+  const previous = args.previous;
+  const current = args.current;
+  if (
+    previous &&
+    (previous.scrollHeight !== current.scrollHeight ||
+      previous.clientHeight !== current.clientHeight)
+  ) {
+    const clampedTop = Math.max(
+      0,
+      Math.min(previous.scrollTop, current.scrollHeight - current.clientHeight),
+    );
+    // A smaller canvas/viewport can move scrollTop without any new input,
+    // including during the tail of a recent wheel gesture.
+    if (Math.abs(current.scrollTop - clampedTop) <= 1) return false;
+  }
   // Correction callers record the resulting metrics synchronously. Their queued scroll event
   // has no movement left; subsequent user movement (including momentum) must still take effect.
   return (

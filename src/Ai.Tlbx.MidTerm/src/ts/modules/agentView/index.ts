@@ -42,6 +42,7 @@ import {
 } from './snapshotState';
 import {
   hasActiveAppServerControlSelectionInPanel,
+  isScrollContainerNearBottom,
   resolveHistoryScrollMode,
   setHistoryScrollMode,
   stabilizeHistoryEntryOrder,
@@ -1590,6 +1591,18 @@ function bindHistoryViewport(sessionId: string, state: SessionAppServerControlVi
       current.pendingHistoryLayoutAnchor = null;
     }
     current.historyViewportSyncSuppressUntil = 0;
+    // At a clamped edge there may be no further scroll event. A fresh downward
+    // input at the real live end is still an explicit request to follow.
+    if (
+      direction > 0 &&
+      current.snapshot?.hasNewerHistory === false &&
+      current.historyViewport &&
+      isScrollContainerNearBottom(current.historyViewport)
+    ) {
+      setHistoryScrollMode(current, 'follow');
+      current.historyNavigatorMode = 'follow-live';
+      historyRender.renderScrollToBottomControl(current.panel, current);
+    }
   };
   const detachFollowForExplicitBrowseIntent = () => {
     const current = viewStates.get(sessionId);
@@ -1603,6 +1616,16 @@ function bindHistoryViewport(sessionId: string, state: SessionAppServerControlVi
     }
 
     setHistoryScrollMode(current, 'browse');
+    // Stop an in-flight "back to bottom" animation before native browsing.
+    // Merely changing the mode leaves the browser's animator moving the reader.
+    const currentViewport = current.historyViewport;
+    if (currentViewport) {
+      currentViewport.scrollTo({ top: currentViewport.scrollTop, behavior: 'instant' });
+      current.historyLastScrollMetrics = historyRender.readHistoryScrollMetrics(
+        currentViewport,
+        current,
+      );
+    }
     current.historyNavigatorMode = 'browse';
     current.historyNavigatorDragTargetIndex = null;
     historyRender.renderScrollToBottomControl(current.panel, current);
