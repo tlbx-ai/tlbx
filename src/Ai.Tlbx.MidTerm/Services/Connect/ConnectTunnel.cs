@@ -26,10 +26,9 @@ internal sealed class ConnectTunnel : IAsyncDisposable
     private readonly ConnectPeerAuthentication _peer;
     private readonly HttpClient _http;
     private readonly AuthService _auth;
-    private readonly Func<ReadOnlyMemory<byte>, CancellationToken, Task> _send;
     private readonly CancellationTokenSource _lifetime;
     private readonly ConnectFrames _frames = new();
-    private readonly SemaphoreSlim _sendGate = new(1, 1);
+    private readonly ConnectFrameSender _sender;
     private readonly SemaphoreSlim _requestSlots = new(16, 16);
     private readonly ConcurrentDictionary<string, ConnectWebSocketRelay> _sockets = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, Task> _requests = new(StringComparer.Ordinal);
@@ -49,8 +48,8 @@ internal sealed class ConnectTunnel : IAsyncDisposable
         _previewRegistry = previewRegistry;
         _auth = auth;
         _peer = peer;
-        _send = send;
         _lifetime = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        _sender = new ConnectFrameSender(send, _lifetime.Token);
         _http = http;
     }
 
@@ -305,13 +304,7 @@ internal sealed class ConnectTunnel : IAsyncDisposable
     private async Task SendEnvelopeAsync(ConnectEnvelope envelope, CancellationToken ct)
     {
         var bytes = JsonSerializer.SerializeToUtf8Bytes(envelope, ConnectJsonContext.Default.ConnectEnvelope);
-        await _sendGate.WaitAsync(ct);
-        try
-        {
-            foreach (var frame in _frames.Encode(bytes))
-                await _send(frame, ct);
-        }
-        finally { _sendGate.Release(); }
+        await _sender.SendAsync(bytes, ct);
     }
 
     private static async Task<string> ReadBoundedBase64Async(Stream source, int limit, long? contentLength, bool gzip, CancellationToken ct)
@@ -351,7 +344,7 @@ internal sealed class ConnectTunnel : IAsyncDisposable
         foreach (var owner in sockets) await owner.DisposeAsync();
         foreach (var preview in _previews.Values) preview.Dispose();
         if (_cookie is not null) _auth.RevokeSessionToken(_cookie);
-        _sendGate.Dispose();
+        _sender.Dispose();
         _requestSlots.Dispose();
         _lifetime.Dispose();
     }

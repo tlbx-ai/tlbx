@@ -11,7 +11,7 @@ namespace Ai.Tlbx.MidTerm.Services.Connect;
 internal sealed class ConnectNativePeer : IAsyncDisposable
 {
     internal const int MaximumFrameSize = 65536;
-    internal const int MaximumBufferedBytes = 1024 * 1024;
+    internal const int MaximumBufferedBytes = 128 * 1024;
     private static readonly ConcurrentDictionary<nint, ConnectNativePeer> Owners = new();
     private static int _nextToken;
     private static ConnectNativeApi? _loadedApi;

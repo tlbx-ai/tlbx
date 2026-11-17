@@ -57,7 +57,7 @@ internal sealed unsafe class ConnectNativeApi
 #else
         logger(0, 0); // Never print native SDP, TURN URLs or credentials.
 #endif
-        var settings = new SctpSettings { ReceiveBuffer = 2 * 1024 * 1024, SendBuffer = 1024 * 1024, MaximumChunks = 1024 };
+        var settings = new SctpSettings { ReceiveBuffer = 2 * 1024 * 1024, SendBuffer = ConnectNativePeer.MaximumBufferedBytes, MaximumChunks = 1024 };
         var configure = (delegate* unmanaged[Cdecl]<SctpSettings*, int>)NativeLibrary.GetExport(library, "rtcSetSctpSettings");
         Check(configure(&settings));
     }
@@ -157,7 +157,7 @@ internal sealed unsafe class ConnectNativeApi
     public void AttachChannel(int id, nint token)
     {
         _user(id, token);
-        Check(_threshold(id, 512 * 1024));
+        Check(_threshold(id, ConnectNativePeer.MaximumBufferedBytes / 4));
         Check(_message(id, (nint)(delegate* unmanaged[Cdecl]<int, byte*, int, nint, void>)&ConnectNativePeer.NativeMessage));
         Check(_closed(id, (nint)(delegate* unmanaged[Cdecl]<int, nint, void>)&ConnectNativePeer.NativeClosed));
         Check(_error(id, (nint)(delegate* unmanaged[Cdecl]<int, byte*, nint, void>)&ConnectNativePeer.NativeError));
