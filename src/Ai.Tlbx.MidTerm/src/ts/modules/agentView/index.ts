@@ -1492,7 +1492,8 @@ function enterHistoryFollowLive(sessionId: string, state: SessionAppServerContro
     return;
   }
 
-  historyRender.scrollHistoryToBottom(sessionId, 'smooth');
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  historyRender.scrollHistoryToBottom(sessionId, reduceMotion ? 'instant' : 'smooth');
   void fillHistoryViewportIfNeeded(sessionId, state);
 }
 
