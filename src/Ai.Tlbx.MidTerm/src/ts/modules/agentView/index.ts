@@ -1768,6 +1768,13 @@ function bindHistoryViewport(sessionId: string, state: SessionAppServerControlVi
   );
   /* eslint-disable complexity -- key-driven index scrolling intentionally handles the compact browse command set in one place. */
   viewport.addEventListener('keydown', (event) => {
+    if (
+      event.defaultPrevented ||
+      (event.target instanceof HTMLElement &&
+        (event.target.isContentEditable || event.target.closest('input, textarea, select')))
+    ) {
+      return;
+    }
     const navigationDirection =
       event.key === 'ArrowUp' || event.key === 'PageUp' || event.key === 'Home'
         ? -1
