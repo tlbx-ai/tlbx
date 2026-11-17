@@ -276,6 +276,7 @@ The canonical history contract must satisfy the following:
 - Agent Controller Session should auto-follow the live edge by default.
 - If the user scrolls away from the bottom, automatic scrolling must stop immediately.
 - Automatic scrolling may resume only after the user reaches the bottom again, drags the progress navigator to exact max, or explicitly presses a "back to bottom" control.
+- Rejoining follow uses the actual physical end with at most one CSS pixel of rounding tolerance, never a wide near-bottom zone. Fresh upward browse input cancels any running smooth jump. Passive size changes/clamping neither detach follow nor count as new navigation, even within the recent-input window; do not add timer-based snapping between reader and follow positions.
 - When an Agent Controller Session surface is reopened, reactivated, or restored after being hidden, it should re-enter at the live edge in follow mode by default unless the user is in the middle of an explicit older-history navigation flow.
 - When the user seeks into older history, Agent Controller Session should expand or shift the history window deterministically without resetting the live Agent Controller Session or replaying the entire history from scratch.
 - Progress-nav jumps should target canonical absolute indexes, not estimated pixel offsets. Default jump alignment should center the target item, except that the first item should top-clamp and the last item should bottom-clamp when enough content exists above it.

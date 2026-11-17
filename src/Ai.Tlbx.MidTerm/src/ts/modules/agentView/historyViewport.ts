@@ -14,7 +14,9 @@ import {
   computeVisibleRange as computeVirtualizerVisibleRange,
 } from '../../utils/virtualizer';
 
-const AUTO_SCROLL_BOTTOM_THRESHOLD_PX = 64;
+// Only browser rounding counts as the end. A wide "near bottom" zone pulls
+// readers back down when wheel momentum briefly reverses after scrolling up.
+const AUTO_SCROLL_BOTTOM_THRESHOLD_PX = 1;
 export const HISTORY_VIRTUALIZE_AFTER = 50;
 export const APP_SERVER_CONTROL_HISTORY_OVERSCAN_ITEMS =
   DEFAULT_APP_SERVER_CONTROL_HISTORY_VIRTUALIZER_CONFIG.overscanItems;
@@ -64,7 +66,7 @@ export function resolveHistoryScrollMode(args: {
     args.previous !== null &&
     Number.isFinite(args.previous.scrollTop) &&
     Number.isFinite(args.current.scrollTop) &&
-    args.current.scrollTop < args.previous.scrollTop - 1;
+    args.current.scrollTop < args.previous.scrollTop;
 
   if (args.userInitiated) {
     if (userScrolledUp) {
@@ -74,10 +76,7 @@ export function resolveHistoryScrollMode(args: {
     return nearBottom ? 'follow' : 'browse';
   }
 
-  if (args.previousMode === 'follow' && userScrolledUp) {
-    return 'browse';
-  }
-
+  // Reflow/clamping is not a request to leave follow mode.
   if (args.previousMode === 'follow') {
     return 'follow';
   }
