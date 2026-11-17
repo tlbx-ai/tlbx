@@ -268,7 +268,9 @@ export function setupBrowserLifecycleRecovery(
 
   const handleOnline = (): void => {
     if (isDocumentHidden()) return;
-    forceTransportReconnect = true;
+    // Link owns the carrier lifecycle; online alone does not invalidate its sockets.
+    // A confirmed carrier replacement forces recovery through tlbx-link-restored.
+    forceTransportReconnect ||= !window.__tlbxConnectPreview;
     scheduleForegroundRecovery();
   };
 
