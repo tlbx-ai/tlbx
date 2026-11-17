@@ -1728,7 +1728,7 @@ export function connectMuxWebSocket(): void {
 
       // If state WS is connected, fetch fresh session list to ensure consistency
       // (state WS may have missed updates while mux was disconnected)
-      if ($stateWsConnected.get()) {
+      if ($stateWsConnected.get() && !window.__tlbxConnectPreview) {
         void refreshSessionList();
       }
     } else {
