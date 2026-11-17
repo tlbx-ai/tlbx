@@ -47,10 +47,7 @@ import {
   setHistoryScrollMode,
   stabilizeHistoryEntryOrder,
 } from './historyViewport';
-import {
-  resolveHistoryWindowViewportWidth,
-  resolveRepresentativeHistoryEntryHeight,
-} from './historyMeasurements';
+import { resolveHistoryWindowViewportWidth } from './historyMeasurements';
 import { createAgentHistoryDom } from './historyDom';
 import { syncAgentSessionTools, removeAgentSessionTools } from './sessionTools';
 import { filterReadingHistory, showAgentTechnicalDetails } from './historyVisibility';
@@ -1177,15 +1174,6 @@ function syncHistoryProgressNavigator(
   historyRender.syncViewportOffset(sessionId, options);
 }
 
-function resolveHistoryKeyboardStepPx(state: SessionAppServerControlViewState): number {
-  return Math.max(
-    24,
-    Math.round(
-      resolveRepresentativeHistoryEntryHeight(state.historyObservedHeights.values()) * 0.5,
-    ),
-  );
-}
-
 function resolveHistoryWheelDeltaYPx(event: WheelEvent, viewport: HTMLDivElement): number {
   if (event.deltaMode === 1) {
     return event.deltaY * HISTORY_WHEEL_LINE_DELTA_PX;
@@ -1781,20 +1769,14 @@ function bindHistoryViewport(sessionId: string, state: SessionAppServerControlVi
         : event.key === 'ArrowDown' || event.key === 'PageDown' || event.key === 'End'
           ? 1
           : 0;
-    if (navigationDirection !== 0) markUserScrollIntent(navigationDirection);
-    const current = viewStates.get(sessionId);
-    const keyboardStepPx = current ? resolveHistoryKeyboardStepPx(current) : 40;
-    const pageStepPx = Math.max(1, current?.historyViewport?.clientHeight ?? 0);
-    if (
-      event.key === 'ArrowUp' ||
-      event.key === 'PageUp' ||
-      event.key === 'Home' ||
-      event.key === 'ArrowDown' ||
-      event.key === 'PageDown' ||
-      event.key === 'End'
-    ) {
-      event.preventDefault();
-    }
+    if (navigationDirection === 0) return;
+    markUserScrollIntent(navigationDirection);
+    event.preventDefault();
+    const style = getComputedStyle(viewport);
+    const lineHeight = parseFloat(style.lineHeight) || parseFloat(style.fontSize) * 1.2;
+    const keyboardStepPx = Math.max(1, Math.round(lineHeight * 2));
+    const pageHeight = viewport.clientHeight;
+    const pageStepPx = Math.max(1, pageHeight - Math.min(keyboardStepPx, pageHeight / 4));
     if (event.key === 'ArrowUp' || event.key === 'PageUp' || event.key === 'Home') {
       detachFollowForExplicitBrowseIntent();
     }
