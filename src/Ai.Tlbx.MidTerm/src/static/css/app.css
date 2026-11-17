@@ -15664,6 +15664,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
 
 .agent-history-attachments {
   display: flex;
+  align-items: flex-start;
   flex-wrap: wrap;
   gap: 10px;
   margin-top: 8px;
@@ -15672,6 +15673,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
 .agent-history-inline-previews {
   display: flex;
   flex-wrap: wrap;
+  align-items: flex-start;
   gap: 8px;
   margin-top: 8px;
 }
@@ -15680,7 +15682,8 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
   display: flex;
   flex-direction: column;
   gap: 6px;
-  width: min(220px, 100%);
+  width: fit-content;
+  max-width: min(520px, 100%);
   padding: 8px;
   border: 1px solid color-mix(in srgb, var(--text-primary) 8%, transparent);
   border-radius: 12px;
@@ -15706,8 +15709,6 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
   align-items: center;
   justify-content: center;
   width: 100%;
-  min-height: 92px;
-  max-height: 160px;
   padding: 6px;
   border-radius: 9px;
   background: color-mix(in srgb, var(--text-primary) 4%, transparent);
@@ -15718,9 +15719,9 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
 .agent-history-inline-preview-image {
   display: block;
   max-width: 100%;
-  max-height: 148px;
-  width: 100%;
-  height: 148px;
+  max-height: min(360px, 45vh);
+  width: auto;
+  height: auto;
   object-fit: contain;
   border-radius: 6px;
 }
@@ -15750,7 +15751,8 @@ button.agent-history-attachment-image {
   display: flex;
   flex-direction: column;
   gap: 7px;
-  width: min(280px, 100%);
+  width: fit-content;
+  max-width: min(520px, 100%);
   padding: 10px;
   border: 1px solid color-mix(in srgb, var(--text-primary) 8%, transparent);
   border-radius: 14px;
@@ -15769,7 +15771,6 @@ button.agent-history-attachment-image {
   align-items: center;
   justify-content: center;
   width: 100%;
-  height: clamp(120px, 30vh, 260px);
   padding: 8px;
   border-radius: 10px;
   background: color-mix(in srgb, var(--text-primary) 4%, transparent);
@@ -15780,7 +15781,7 @@ button.agent-history-attachment-image {
 .agent-history-attachment-image-el {
   display: block;
   max-width: 100%;
-  max-height: 100%;
+  max-height: min(360px, 45vh);
   width: auto;
   height: auto;
   object-fit: contain;
