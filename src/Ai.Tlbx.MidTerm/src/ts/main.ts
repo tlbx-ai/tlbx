@@ -845,14 +845,15 @@ async function createSession(): Promise<void> {
 
   if (!selection) return;
 
+  let dimensions: { cols: number; rows: number };
   try {
-    await waitForApiReachability();
+    [dimensions] = await Promise.all([resolveNewSessionDimensions(), waitForApiReachability()]);
   } catch (error: unknown) {
     showSessionLaunchFailure(error);
     return;
   }
 
-  const { cols, rows } = await resolveNewSessionDimensions();
+  const { cols, rows } = dimensions;
   const tempId = createPendingSession(cols, rows);
   const shell = resolveLauncherShell();
   const workingDirectory = selection.workingDirectory?.trim() || undefined;
