@@ -132,6 +132,11 @@ function openProviderResumePickerInternal(
 
     function applyFilter(): void {
       const terms = search.value.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
+      if (terms.length === 0) {
+        visible = entries;
+        activeIndex = Math.min(activeIndex, Math.max(0, visible.length - 1));
+        return;
+      }
       visible = entries.filter((entry) => {
         const haystack = [entry.title, entry.previewText ?? '', entry.workingDirectory]
           .join('\n')
@@ -203,14 +208,7 @@ function openProviderResumePickerInternal(
     }
 
     function syncActiveOption(): void {
-      for (const row of list.querySelectorAll<HTMLElement>('[role="option"]')) {
-        const isActive = Number(row.dataset.index) === activeIndex;
-        row.classList.toggle('is-active', isActive);
-        row.setAttribute('aria-selected', isActive ? 'true' : 'false');
-        if (isActive) {
-          row.scrollIntoView({ block: 'nearest' });
-        }
-      }
+      list.children[activeIndex]?.scrollIntoView({ block: 'nearest' });
 
       if (visible.length > 0) {
         search.setAttribute('aria-activedescendant', `provider-resume-option-${activeIndex}`);
@@ -249,6 +247,19 @@ function openProviderResumePickerInternal(
       render();
     }
 
+    function moveSelection(step: number): void {
+      const nextIndex = Math.min(Math.max(activeIndex + step, 0), visible.length - 1);
+      if (nextIndex === activeIndex) return;
+      const previous = list.children[activeIndex];
+      previous?.classList.remove('is-active');
+      previous?.setAttribute('aria-selected', 'false');
+      activeIndex = nextIndex;
+      const next = list.children[activeIndex];
+      next?.classList.add('is-active');
+      next?.setAttribute('aria-selected', 'true');
+      syncActiveOption();
+    }
+
     function onKeyDown(event: KeyboardEvent): void {
       if (event.key === 'Escape') {
         event.preventDefault();
@@ -274,8 +285,7 @@ function openProviderResumePickerInternal(
       if (step !== undefined && visible.length > 0) {
         event.preventDefault();
         event.stopPropagation();
-        activeIndex = Math.min(Math.max(activeIndex + step, 0), visible.length - 1);
-        syncActiveOption();
+        moveSelection(step);
         return;
       }
 
