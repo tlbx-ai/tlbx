@@ -5061,6 +5061,8 @@ export interface components {
       /** Format: int32 */
       toolCallOutputLines: number;
       /** Format: int32 */
+      agentImagePreviewWidth: number;
+      /** Format: int32 */
       fontSize: number;
       fontFamily: string;
       terminalLigaturesEnabled: boolean;

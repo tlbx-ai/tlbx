@@ -257,6 +257,7 @@
   "settings.agentUi.messageFont": "Message Font",
   "settings.agentUi.showMessageTimestamps": "Show Timestamps On Agent Messages",
   "settings.agentUi.showAgentTechnicalDetails": "显示技术详情",
+  "settings.agentUi.agentImagePreviewWidth": "图片预览最大宽度（像素）",
   "settings.agentUi.toolCallOutputLines": "Tool call output lines",
   "settings.agentUi.codexYoloDefault": "Enable Codex --yolo by default",
   "settings.agentUi.codexEnv": "Codex Environment Variables",

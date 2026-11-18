@@ -654,6 +654,10 @@ export function applySettingsToTerminals(settingsOverride?: MidTermSettingsPubli
     '--agent-ui-font-family',
     buildAgentMessageFontStack(settings.agentMessageFontFamily),
   );
+  document.documentElement.style.setProperty(
+    '--agent-image-preview-width',
+    `${Number.isFinite(settings.agentImagePreviewWidth) ? settings.agentImagePreviewWidth : 520}px`,
+  );
   document.documentElement.dataset.commandBayLigatures = settings.commandBayLigaturesEnabled
     ? 'true'
     : 'false';

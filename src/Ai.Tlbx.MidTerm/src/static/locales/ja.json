@@ -254,6 +254,7 @@
   "settings.agentUi.messageFont": "Message Font",
   "settings.agentUi.showMessageTimestamps": "Show Timestamps On Agent Messages",
   "settings.agentUi.showAgentTechnicalDetails": "技術的な詳細を表示",
+  "settings.agentUi.agentImagePreviewWidth": "画像プレビューの最大幅（px）",
   "settings.agentUi.toolCallOutputLines": "Tool call output lines",
   "settings.agentUi.codexYoloDefault": "Enable Codex --yolo by default",
   "settings.agentUi.codexEnv": "Codex Environment Variables",

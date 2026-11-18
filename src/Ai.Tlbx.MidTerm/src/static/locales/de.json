@@ -273,6 +273,7 @@
   "settings.agentUi.messageFont": "Nachrichten-Schriftart",
   "settings.agentUi.showMessageTimestamps": "Show Timestamps On Agent Messages",
   "settings.agentUi.showAgentTechnicalDetails": "Technische Details anzeigen",
+  "settings.agentUi.agentImagePreviewWidth": "Maximale Breite der Bildvorschau (px)",
   "settings.agentUi.toolCallOutputLines": "Tool call output lines",
   "settings.agentUi.codexYoloDefault": "Enable Codex --yolo by default",
   "settings.agentUi.codexEnv": "Codex Environment Variables",
