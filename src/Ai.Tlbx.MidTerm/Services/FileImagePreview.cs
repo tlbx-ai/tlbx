@@ -4,7 +4,8 @@ namespace Ai.Tlbx.MidTerm.Services;
 
 internal static class FileImagePreview
 {
-    private const int MaxEdge = 320;
+    internal const int MaxWidth = 1000;
+    internal const int MaxHeight = 360;
     private const int MaxCacheBytes = 8 * 1024 * 1024;
     private const long MaxPixels = 64_000_000;
     private const long MaxEncodedBytes = 64 * 1024 * 1024;
@@ -65,17 +66,24 @@ internal static class FileImagePreview
         if (codec is null) return null;
         var original = codec.Info;
         if (original.Width <= 0 || original.Height <= 0 || (long)original.Width * original.Height > MaxPixels) return null;
-        var scale = Math.Min(1f, (float)MaxEdge / Math.Max(original.Width, original.Height));
+        var orientation = (int)codec.EncodedOrigin;
+        var swapped = orientation is >= 5 and <= 8;
+        var maxWidth = swapped ? MaxHeight : MaxWidth;
+        var maxHeight = swapped ? MaxWidth : MaxHeight;
+        var scale = Math.Min(1f, Math.Min((float)maxWidth / original.Width, (float)maxHeight / original.Height));
+        var width = Math.Max(1, (int)Math.Round(original.Width * scale));
+        var height = Math.Max(1, (int)Math.Round(original.Height * scale));
         var size = codec.GetScaledDimensions(scale);
+        // Some codecs round down to their nearest native decode size.
+        while (scale < 1f && (size.Width < width || size.Height < height))
+        {
+            scale = Math.Min(1f, scale * 2);
+            size = codec.GetScaledDimensions(scale);
+        }
         if (size.Width <= 0 || size.Height <= 0 || (long)size.Width * size.Height > MaxPixels) return null;
         var info = new SKImageInfo(size.Width, size.Height, SKColorType.Rgba8888, SKAlphaType.Premul);
         using var decoded = new SKBitmap(info);
         if (codec.GetPixels(info, decoded.GetPixels()) != SKCodecResult.Success) return null;
-        scale = Math.Min(1f, (float)MaxEdge / Math.Max(size.Width, size.Height));
-        var width = Math.Max(1, (int)Math.Round(size.Width * scale));
-        var height = Math.Max(1, (int)Math.Round(size.Height * scale));
-        var orientation = (int)codec.EncodedOrigin;
-        var swapped = orientation is >= 5 and <= 8;
         using var output = new SKBitmap(swapped ? height : width, swapped ? width : height, SKColorType.Rgba8888, SKAlphaType.Premul);
         using (var canvas = new SKCanvas(output))
         using (var image = SKImage.FromBitmap(decoded))
