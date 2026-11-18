@@ -388,7 +388,7 @@ public static class FileEndpoints
                 if (bytes is null) return Results.StatusCode(415);
                 context.Response.Headers.CacheControl = "private, no-cache";
                 return Results.File(bytes, "image/webp", lastModified: info.LastWriteTimeUtc,
-                    entityTag: new Microsoft.Net.Http.Headers.EntityTagHeaderValue($"\"{info.Length:x}-{info.LastWriteTimeUtc.Ticks:x}-320\""));
+                    entityTag: new Microsoft.Net.Http.Headers.EntityTagHeaderValue($"\"{info.Length:x}-{info.LastWriteTimeUtc.Ticks:x}-{FileImagePreview.MaxWidth}x{FileImagePreview.MaxHeight}\""));
             }
             catch (UnauthorizedAccessException) { return Results.StatusCode(403); }
             catch (IOException) { return Results.NotFound(); }
