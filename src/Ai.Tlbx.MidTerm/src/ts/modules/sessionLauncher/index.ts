@@ -577,7 +577,8 @@ function applyLauncherDirectoryResponse(
 
 export async function openSessionLauncher(): Promise<SessionLauncherSelection | null> {
   if (activeLauncherPromise) {
-    return activeLauncherPromise;
+    // Only the caller that opened the dialog may launch its selection.
+    return null;
   }
 
   activeLauncherPromise = openSessionLauncherInternal();
