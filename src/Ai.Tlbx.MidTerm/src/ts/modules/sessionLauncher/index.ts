@@ -711,6 +711,7 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
       render();
     });
 
+    let rootsController: AbortController | undefined;
     let pathFollowTimer: number | null = null;
     let skipNextPathCommit = false;
 
@@ -721,6 +722,7 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
     }
 
     function close(result: SessionLauncherSelection | null): void {
+      rootsController?.abort();
       clearPendingPathFollow();
       document.removeEventListener('keydown', onKeyDown);
       releaseHubStateSubscription();
@@ -900,6 +902,23 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
       return false;
     }
 
+    async function loadTargetRoots(target: SessionLauncherTarget): Promise<void> {
+      rootsController?.abort();
+      rootsController = new AbortController();
+      const { signal } = rootsController;
+      state.roots = [];
+      try {
+        const response = await fetch(`${getLauncherApiBasePath(target)}/roots`, { signal });
+        if (!response.ok) return;
+        const roots = (await response.json()) as LauncherDirectoryListResponse;
+        if (signal.aborted) return;
+        state.roots = roots.entries;
+        renderRoots();
+      } catch {
+        // Drive shortcuts are optional when the selected directory is accessible.
+      }
+    }
+
     async function loadSelectedTargetBrowser(
       target: SessionLauncherTarget,
       options?: { path?: string | null },
@@ -908,23 +927,16 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
       state.loading = true;
       state.loadingMessage = t('sessionLauncher.loading');
       state.error = null;
+      void loadTargetRoots(target);
       render();
 
       try {
-        const [pathResponse, rootsResponse] = await Promise.all([
-          fetchHomePath(target),
-          fetchLauncherRoots(target),
-        ]);
+        const pathResponse = await fetchHomePath(target);
         if (requestToken !== state.requestToken || state.selectedTargetId !== target.id) {
           return;
         }
 
-        const initialPath = applyLauncherBrowserDefaults(
-          state,
-          pathResponse,
-          rootsResponse.entries,
-          options?.path,
-        );
+        const initialPath = applyLauncherBrowserDefaults(state, pathResponse, options?.path);
         if (!initialPath) {
           state.loading = false;
           state.loadingMessage = null;
@@ -1264,17 +1276,6 @@ export function getSessionLauncherProviderDefinitions(
       supportsResume: installation.supportsResume,
     })),
   ];
-}
-
-async function fetchLauncherRoots(
-  target: SessionLauncherTarget,
-): Promise<LauncherDirectoryListResponse> {
-  const response = await fetch(`${getLauncherApiBasePath(target)}/roots`);
-  if (!response.ok) {
-    throw new Error(t('sessionLauncher.loadFailed'));
-  }
-
-  return (await response.json()) as LauncherDirectoryListResponse;
 }
 
 async function fetchDirectories(
