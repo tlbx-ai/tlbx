@@ -598,6 +598,7 @@ export async function resumeAgentConversation(
   threadId: string,
   workingDirectory: string,
 ): Promise<void> {
+  let resumed = false;
   closeAppServerControlStream(sessionId);
   try {
     const response = await fetch(
@@ -609,7 +610,9 @@ export async function resumeAgentConversation(
       },
     );
     if (!response.ok) throw new Error(await response.text());
-    setSession((await response.json()) as Session);
+    const session = (await response.json()) as Session;
+    setSession(session);
+    resumed = session.id === sessionId;
   } finally {
     // Both rejection and a lost acknowledgement reload the server's actual conversation.
     // Never replay the resume mutation or detach a replacement host during cleanup.
@@ -624,7 +627,7 @@ export async function resumeAgentConversation(
       const state = getOrCreateViewState(sessionId, panel);
       bindHistoryViewport(sessionId, state);
       prepareAppServerControlForForeground(state);
-      await activateAgentView(sessionId);
+      await activateAgentView(sessionId, resumed);
     }
   }
 }
@@ -777,7 +780,7 @@ export function showAppServerControlDebugScenario(sessionId: string, scenario = 
   return true;
 }
 
-async function activateAgentView(sessionId: string): Promise<void> {
+async function activateAgentView(sessionId: string, alreadyAttached = false): Promise<void> {
   // Background suspension is a lifecycle state. Foreground recovery starts attach.
   if (document.visibilityState === 'hidden' || sessionId.startsWith('pending-')) return;
   const existing = activationFlights.get(sessionId);
@@ -785,7 +788,7 @@ async function activateAgentView(sessionId: string): Promise<void> {
     return existing;
   }
 
-  const flight = activateAgentViewCore(sessionId).finally(() => {
+  const flight = activateAgentViewCore(sessionId, alreadyAttached).finally(() => {
     if (activationFlights.get(sessionId) === flight) {
       activationFlights.delete(sessionId);
     }
@@ -806,7 +809,7 @@ function tryRestoreExistingAppServerControlHistory(
   return tryLoadReadonlyAppServerControlHistory(sessionId, state, activationRunId);
 }
 
-async function activateAgentViewCore(sessionId: string): Promise<void> {
+async function activateAgentViewCore(sessionId: string, alreadyAttached: boolean): Promise<void> {
   const state = viewStates.get(sessionId);
   if (!state) {
     return;
@@ -876,21 +879,34 @@ async function activateAgentViewCore(sessionId: string): Promise<void> {
   );
   renderCurrentAgentView(sessionId);
 
-  const restoredReadonlyHistory = await tryRestoreExistingAppServerControlHistory(
-    sessionId,
-    state,
-    activationRunId,
-  );
-  ensureAppServerControlActivationIsCurrent(state, activationRunId);
-  if (restoredReadonlyHistory) {
-    renderCurrentAgentView(sessionId);
-    await resumeAppServerControlFromHistory(sessionId, state, activationRunId);
-    return;
+  if (!alreadyAttached) {
+    const restoredReadonlyHistory = await tryRestoreExistingAppServerControlHistory(
+      sessionId,
+      state,
+      activationRunId,
+    );
+    ensureAppServerControlActivationIsCurrent(state, activationRunId);
+    if (restoredReadonlyHistory) {
+      renderCurrentAgentView(sessionId);
+      await resumeAppServerControlFromHistory(sessionId, state, activationRunId);
+      return;
+    }
   }
 
+  await connectAppServerControlHistory(sessionId, state, activationRunId, alreadyAttached);
+}
+
+async function connectAppServerControlHistory(
+  sessionId: string,
+  state: SessionAppServerControlViewState,
+  activationRunId: number,
+  alreadyAttached: boolean,
+): Promise<void> {
   try {
-    await attachSessionAppServerControl(sessionId);
-    ensureAppServerControlActivationIsCurrent(state, activationRunId);
+    if (!alreadyAttached) {
+      await attachSessionAppServerControl(sessionId);
+      ensureAppServerControlActivationIsCurrent(state, activationRunId);
+    }
     setActivationState(
       state,
       'waiting-history-window',
