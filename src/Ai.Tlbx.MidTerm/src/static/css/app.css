@@ -15683,7 +15683,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
   flex-direction: column;
   gap: 6px;
   width: fit-content;
-  max-width: min(520px, 100%);
+  max-width: min(var(--agent-image-preview-width, 520px), 100%);
   padding: 8px;
   border: 1px solid color-mix(in srgb, var(--text-primary) 8%, transparent);
   border-radius: 12px;
@@ -15752,7 +15752,7 @@ button.agent-history-attachment-image {
   flex-direction: column;
   gap: 7px;
   width: fit-content;
-  max-width: min(520px, 100%);
+  max-width: min(var(--agent-image-preview-width, 520px), 100%);
   padding: 10px;
   border: 1px solid color-mix(in srgb, var(--text-primary) 8%, transparent);
   border-radius: 14px;

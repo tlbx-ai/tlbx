@@ -6788,6 +6788,7 @@
           "showAgentMessageTimestamps",
           "showAgentTechnicalDetails",
           "toolCallOutputLines",
+          "agentImagePreviewWidth",
           "fontSize",
           "fontFamily",
           "terminalLigaturesEnabled",
@@ -6910,6 +6911,10 @@
             "type": "boolean"
           },
           "toolCallOutputLines": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "agentImagePreviewWidth": {
             "type": "integer",
             "format": "int32"
           },

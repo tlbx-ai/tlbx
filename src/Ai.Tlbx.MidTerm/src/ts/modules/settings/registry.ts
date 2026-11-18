@@ -165,6 +165,12 @@ export const SETTINGS_REGISTRY: readonly SettingsRegistryEntry[] = [
       applyMode: 'immediate',
     },
   ),
+  controlEntry('agentImagePreviewWidth', 'setting-agent-image-preview-width', 'int', 520, {
+    editable: true,
+    storage: 'settings.json',
+    validation: 'integer, 120-1000 px',
+    applyMode: 'immediate',
+  }),
   controlEntry('toolCallOutputLines', 'setting-tool-call-output-lines', 'int', 5, {
     editable: true,
     storage: 'settings.json',

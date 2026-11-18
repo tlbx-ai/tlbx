@@ -23,6 +23,7 @@ public sealed partial class MidTermSettingsPublic
     public bool ShowAgentMessageTimestamps { get; set; } = false;
     public bool ShowAgentTechnicalDetails { get; set; } = false;
     public int ToolCallOutputLines { get; set; } = 5;
+    public int AgentImagePreviewWidth { get; set; } = 520;
 
     // Terminal Appearance
     public int FontSize { get; set; } = 14;

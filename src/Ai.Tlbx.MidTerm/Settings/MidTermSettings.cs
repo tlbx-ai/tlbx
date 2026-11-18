@@ -31,6 +31,7 @@ public sealed class MidTermSettings
     public bool ShowAgentMessageTimestamps { get; set; } = false;
     public bool ShowAgentTechnicalDetails { get; set; } = false;
     public int ToolCallOutputLines { get; set; } = 5;
+    public int AgentImagePreviewWidth { get; set; } = 520;
 
     private static ShellType GetPlatformDefaultShell()
     {

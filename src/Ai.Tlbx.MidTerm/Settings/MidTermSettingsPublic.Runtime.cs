@@ -60,6 +60,7 @@ public sealed partial class MidTermSettingsPublic
             ShowAgentMessageTimestamps = settings.ShowAgentMessageTimestamps,
             ShowAgentTechnicalDetails = settings.ShowAgentTechnicalDetails,
             ToolCallOutputLines = NormalizeToolCallOutputLines(settings.ToolCallOutputLines),
+            AgentImagePreviewWidth = Math.Clamp(settings.AgentImagePreviewWidth, 120, 1000),
             FontSize = settings.FontSize,
             FontFamily = settings.FontFamily,
             TerminalLigaturesEnabled = settings.TerminalLigaturesEnabled,
@@ -169,6 +170,7 @@ public sealed partial class MidTermSettingsPublic
         settings.ShowAgentMessageTimestamps = ShowAgentMessageTimestamps;
         settings.ShowAgentTechnicalDetails = ShowAgentTechnicalDetails;
         settings.ToolCallOutputLines = NormalizeToolCallOutputLines(ToolCallOutputLines);
+        settings.AgentImagePreviewWidth = Math.Clamp(AgentImagePreviewWidth, 120, 1000);
         settings.FontSize = FontSize;
         settings.FontFamily = FontFamily;
         settings.TerminalLigaturesEnabled = TerminalLigaturesEnabled;
