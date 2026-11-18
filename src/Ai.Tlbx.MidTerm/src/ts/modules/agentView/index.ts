@@ -1688,6 +1688,8 @@ function bindHistoryViewport(sessionId: string, state: SessionAppServerControlVi
   viewport.addEventListener(
     'wheel',
     (event) => {
+      // Shift+wheel pans wide code and tables horizontally in the browser.
+      if (event.shiftKey) return;
       if (event.ctrlKey || event.metaKey || event.defaultPrevented || event.deltaY === 0) return;
       const deltaYPx = resolveHistoryWheelDeltaYPx(event, viewport);
       markUserScrollIntent(deltaYPx < 0 ? -1 : deltaYPx > 0 ? 1 : 0, true, true);
