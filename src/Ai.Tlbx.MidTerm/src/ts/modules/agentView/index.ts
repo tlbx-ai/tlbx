@@ -1941,7 +1941,10 @@ function bindHistoryViewport(sessionId: string, state: SessionAppServerControlVi
     };
 
     progressNav.addEventListener('pointerdown', (event) => {
+      if (!event.isPrimary || event.button !== 0 || activeHistoryNavigatorPointerId !== null)
+        return;
       clearNavigatorFrame();
+      navigatorClientY = event.clientY;
       activeHistoryNavigatorPointerId = event.pointerId;
       const current = viewStates.get(sessionId);
       if (current) {
@@ -1971,7 +1974,6 @@ function bindHistoryViewport(sessionId: string, state: SessionAppServerControlVi
       navigatorFrame = window.requestAnimationFrame(() => {
         navigatorFrame = null;
         const clientY = navigatorClientY;
-        navigatorClientY = null;
         if (
           clientY !== null &&
           activeHistoryNavigatorPointerId === pointerId &&
@@ -1986,18 +1988,21 @@ function bindHistoryViewport(sessionId: string, state: SessionAppServerControlVi
         return;
       }
 
+      const finalY = event.type === 'pointerup' ? event.clientY : navigatorClientY;
+      activeHistoryNavigatorPointerId = null;
       clearNavigatorFrame();
       Reflect.deleteProperty(progressNav.dataset, 'dragging');
-      progressNav.releasePointerCapture(event.pointerId);
-      updateNavigatorTarget(event.clientY, true);
+      if (progressNav.hasPointerCapture(event.pointerId))
+        progressNav.releasePointerCapture(event.pointerId);
+      if (finalY !== null) updateNavigatorTarget(finalY, true);
       const current = viewStates.get(sessionId);
       if (current) current.historyNavigatorDragMapping = null;
-      activeHistoryNavigatorPointerId = null;
       activeHistoryNavigatorThumbOffsetPx = null;
     };
 
     progressNav.addEventListener('pointerup', finishNavigatorDrag);
     progressNav.addEventListener('pointercancel', finishNavigatorDrag);
+    progressNav.addEventListener('lostpointercapture', finishNavigatorDrag);
   }
 
   const scrollButton = state.panel.querySelector<HTMLButtonElement>(
