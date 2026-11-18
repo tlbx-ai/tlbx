@@ -148,47 +148,54 @@ internal sealed class SessionRegistry
         {
             Sessions = SessionCache.Values
                 .Where(s => includeHidden || !HiddenSessions.ContainsKey(s.Id))
-                .Select(s =>
-                {
-                    var spaceId = GetSpaceId(s.Id);
-                    var launchOrigin = ResolveLaunchOrigin(s.Id, spaceId);
-                    return new SessionInfoDto
-                    {
-                        Id = s.Id,
-                        Pid = s.Pid,
-                        CreatedAt = s.CreatedAt,
-                        IsRunning = s.IsRunning,
-                        ExitCode = s.ExitCode,
-                        Cols = s.Cols,
-                        Rows = s.Rows,
-                        ShellType = s.ShellType,
-                        Name = s.Name,
-                        TerminalTitle = s.TerminalTitle,
-                        Topic = SessionTopics.TryGetValue(s.Id, out var topic) ? topic : null,
-                        Notes = SessionNotes.TryGetValue(s.Id, out var notes) ? notes : null,
-                        ManuallyNamed = s.ManuallyNamed,
-                        CurrentDirectory = IsAppServerControlOnly(s.Id) ? GetWorkspacePath(s.Id) ?? s.CurrentDirectory : s.CurrentDirectory,
-                        ForegroundPid = s.ForegroundPid,
-                        ForegroundName = s.ForegroundName,
-                        ForegroundCommandLine = s.ForegroundCommandLine,
-                        AgentAttachPoint = s.AgentAttachPoint,
-                        Order = SessionOrder.TryGetValue(s.Id, out var order) ? order : int.MaxValue,
-                        ParentSessionId = TmuxParentSessions.TryGetValue(s.Id, out var parentId) ? parentId : null,
-                        BookmarkId = BookmarkLinks.TryGetValue(s.Id, out var bookmarkId) ? bookmarkId : null,
-                        SpaceId = spaceId,
-                        WorkspacePath = GetWorkspacePath(s.Id),
-                        Surface = GetSurface(s.Id),
-                        IsAdHoc = IsAdHoc(launchOrigin),
-                        AgentControlled = IsAgentControlled(s.Id),
-                        AppServerControlOnly = IsAppServerControlOnly(s.Id),
-                        ProfileHint = GetProfileHint(s.Id),
-                        AppServerControlResumeThreadId = GetAppServerControlResumeThreadId(s.Id),
-                        ForegroundDisplayName = s.ForegroundDisplayName,
-                        ForegroundProcessIdentity = s.ForegroundProcessIdentity
-                    };
-                })
+                .Select(CreateSessionDto)
                 .OrderBy(s => s.Order)
                 .ToList()
+        };
+    }
+
+    public SessionInfoDto? GetVisibleSessionDto(string id)
+    {
+        return !IsHidden(id) && GetSession(id) is { } session ? CreateSessionDto(session) : null;
+    }
+
+    private SessionInfoDto CreateSessionDto(SessionInfo s)
+    {
+        var spaceId = GetSpaceId(s.Id);
+        var launchOrigin = ResolveLaunchOrigin(s.Id, spaceId);
+        return new SessionInfoDto
+        {
+            Id = s.Id,
+            Pid = s.Pid,
+            CreatedAt = s.CreatedAt,
+            IsRunning = s.IsRunning,
+            ExitCode = s.ExitCode,
+            Cols = s.Cols,
+            Rows = s.Rows,
+            ShellType = s.ShellType,
+            Name = s.Name,
+            TerminalTitle = s.TerminalTitle,
+            Topic = SessionTopics.TryGetValue(s.Id, out var topic) ? topic : null,
+            Notes = SessionNotes.TryGetValue(s.Id, out var notes) ? notes : null,
+            ManuallyNamed = s.ManuallyNamed,
+            CurrentDirectory = IsAppServerControlOnly(s.Id) ? GetWorkspacePath(s.Id) ?? s.CurrentDirectory : s.CurrentDirectory,
+            ForegroundPid = s.ForegroundPid,
+            ForegroundName = s.ForegroundName,
+            ForegroundCommandLine = s.ForegroundCommandLine,
+            AgentAttachPoint = s.AgentAttachPoint,
+            Order = SessionOrder.TryGetValue(s.Id, out var order) ? order : int.MaxValue,
+            ParentSessionId = TmuxParentSessions.TryGetValue(s.Id, out var parentId) ? parentId : null,
+            BookmarkId = BookmarkLinks.TryGetValue(s.Id, out var bookmarkId) ? bookmarkId : null,
+            SpaceId = spaceId,
+            WorkspacePath = GetWorkspacePath(s.Id),
+            Surface = GetSurface(s.Id),
+            IsAdHoc = IsAdHoc(launchOrigin),
+            AgentControlled = IsAgentControlled(s.Id),
+            AppServerControlOnly = IsAppServerControlOnly(s.Id),
+            ProfileHint = GetProfileHint(s.Id),
+            AppServerControlResumeThreadId = GetAppServerControlResumeThreadId(s.Id),
+            ForegroundDisplayName = s.ForegroundDisplayName,
+            ForegroundProcessIdentity = s.ForegroundProcessIdentity
         };
     }
 

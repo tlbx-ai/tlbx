@@ -796,8 +796,7 @@ public static partial class SessionApiEndpoints
         app.MapPost("/api/sessions/{id}/agent-control/resume", async (
             string id, SessionResumeRequest request, CancellationToken ct) =>
         {
-            var session = GetSessionListDto(sessionManager, sessionSupervisor, appServerControlRuntime)
-                .Sessions.FirstOrDefault(item => item.Id == id);
+            var session = TryGetSessionDto(sessionManager, sessionSupervisor, appServerControlRuntime, id);
             if (session is null) return Results.NotFound();
             var directory = request.WorkingDirectory?.Trim() ?? session.CurrentDirectory;
             if (string.IsNullOrWhiteSpace(request.ResumeThreadId) || string.IsNullOrWhiteSpace(directory) || !Directory.Exists(directory))
@@ -819,13 +818,8 @@ public static partial class SessionApiEndpoints
             int? viewportWidth = null,
             CancellationToken ct = default) =>
         {
-            if (sessionManager.GetSession(id) is null)
-            {
-                return Results.NotFound();
-            }
-
-            var session = GetSessionListDto(sessionManager, sessionSupervisor, appServerControlRuntime)
-                .Sessions.First(item => item.Id == id);
+            var session = TryGetSessionDto(sessionManager, sessionSupervisor, appServerControlRuntime, id);
+            if (session is null) return Results.NotFound();
 
             if (!appServerControlRuntime.IsAttached(id)
                 && !await appServerControlRuntime.EnsureAttachedAsync(id, session, ct: ct).ConfigureAwait(false)
@@ -2019,8 +2013,7 @@ public static partial class SessionApiEndpoints
         var response = sessionManager.GetSessionList();
         foreach (var session in response.Sessions)
         {
-            session.Supervisor = sessionSupervisor.Describe(session);
-            session.HasAppServerControlHistory = appServerControlRuntime.HasHistory(session.Id);
+            ApplySessionRuntimeMetadata(session, sessionSupervisor, appServerControlRuntime);
         }
 
         return response;
@@ -2080,7 +2073,28 @@ public static partial class SessionApiEndpoints
         SessionAppServerControlRuntimeService appServerControlRuntime,
         string sessionId)
     {
-        return GetSessionListDto(sessionManager, sessionSupervisor, appServerControlRuntime).Sessions.First(s => s.Id == sessionId);
+        return TryGetSessionDto(sessionManager, sessionSupervisor, appServerControlRuntime, sessionId)
+            ?? throw new InvalidOperationException("Session is unavailable.");
+    }
+
+    private static SessionInfoDto? TryGetSessionDto(
+        TtyHostSessionManager sessionManager,
+        SessionSupervisorService sessionSupervisor,
+        SessionAppServerControlRuntimeService appServerControlRuntime,
+        string sessionId)
+    {
+        var session = sessionManager.GetVisibleSessionDto(sessionId);
+        if (session is not null) ApplySessionRuntimeMetadata(session, sessionSupervisor, appServerControlRuntime);
+        return session;
+    }
+
+    private static void ApplySessionRuntimeMetadata(
+        SessionInfoDto session,
+        SessionSupervisorService sessionSupervisor,
+        SessionAppServerControlRuntimeService appServerControlRuntime)
+    {
+        session.Supervisor = sessionSupervisor.Describe(session);
+        session.HasAppServerControlHistory = appServerControlRuntime.HasHistory(session.Id);
     }
 
     internal sealed record SessionPromptExecutionPlan(
