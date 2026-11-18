@@ -849,15 +849,27 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         var response = _registry.GetSessionList(includeHidden);
         foreach (var session in response.Sessions)
         {
-            var descriptor = _foregroundProcessService.Describe(
-                session.ForegroundName,
-                session.ForegroundCommandLine,
-                session.AgentAttachPoint);
-            session.ForegroundDisplayName = string.IsNullOrWhiteSpace(descriptor.DisplayName) ? null : descriptor.DisplayName;
-            session.ForegroundProcessIdentity = string.IsNullOrWhiteSpace(descriptor.ProcessIdentity) ? null : descriptor.ProcessIdentity;
+            ApplyForegroundDescriptor(session);
         }
 
         return response;
+    }
+
+    public SessionInfoDto? GetVisibleSessionDto(string id)
+    {
+        var session = _registry.GetVisibleSessionDto(id);
+        if (session is not null) ApplyForegroundDescriptor(session);
+        return session;
+    }
+
+    private void ApplyForegroundDescriptor(SessionInfoDto session)
+    {
+        var descriptor = _foregroundProcessService.Describe(
+            session.ForegroundName,
+            session.ForegroundCommandLine,
+            session.AgentAttachPoint);
+        session.ForegroundDisplayName = string.IsNullOrWhiteSpace(descriptor.DisplayName) ? null : descriptor.DisplayName;
+        session.ForegroundProcessIdentity = string.IsNullOrWhiteSpace(descriptor.ProcessIdentity) ? null : descriptor.ProcessIdentity;
     }
 
     public async Task<bool> CloseSessionAsync(string sessionId, CancellationToken ct = default)
