@@ -760,9 +760,8 @@ function resolveHistoryNavigatorEstimatedAnchorIndex(
   }
 
   const canonicalIds = new Set((state.snapshot?.history ?? []).map((entry) => entry.entryId));
-  const visibleCanonicalEntries = state.historyEntries
-    .slice(visibleRange.start, visibleRange.end)
-    .filter((entry) => canonicalIds.has(entry.id));
+  const visibleEntries = state.historyEntries.slice(visibleRange.start, visibleRange.end);
+  const visibleCanonicalEntries = visibleEntries.filter((entry) => canonicalIds.has(entry.id));
   const firstVisibleEntry = visibleCanonicalEntries[0];
   const lastVisibleEntry = visibleCanonicalEntries[visibleCanonicalEntries.length - 1];
   if (!firstVisibleEntry || !lastVisibleEntry) {
@@ -787,8 +786,8 @@ function resolveHistoryNavigatorEstimatedAnchorIndex(
     return 0;
   }
 
-  let top = -metrics.scrollTop;
-  const rows = state.historyEntries.flatMap((entry) => {
+  let top = visibleRange.topSpacerPx - metrics.scrollTop;
+  const rows = visibleEntries.flatMap((entry) => {
     const height = resolveHistoryEntryHeight(entry, state, metrics.clientWidth);
     const row = { absoluteIndex: entry.order - 1, top, bottom: top + height };
     top += height;

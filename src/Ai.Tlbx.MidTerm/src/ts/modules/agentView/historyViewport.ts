@@ -1,6 +1,5 @@
 import { estimateHistoryEntryHeight } from './historyContent';
 import type {
-  HistoryIndexRange,
   HistoryScrollMetrics,
   HistoryScrollMode,
   HistoryVirtualWindow,
@@ -11,7 +10,6 @@ import { DEFAULT_APP_SERVER_CONTROL_HISTORY_VIRTUALIZER_CONFIG } from './history
 import {
   buildVirtualizerWindowKey,
   computeVirtualWindow as computeVirtualizerWindow,
-  computeVisibleRange as computeVirtualizerVisibleRange,
 } from '../../utils/virtualizer';
 
 // Only browser rounding counts as the end. A wide "near bottom" zone pulls
@@ -154,11 +152,11 @@ export function computeHistoryVisibleRange(
   clientHeight: number,
   clientWidth = typeof window === 'undefined' ? 960 : window.innerWidth,
   resolveEntryHeight?: HistoryHeightResolver,
-): HistoryIndexRange {
+): HistoryVirtualWindow {
   const resolveHeight =
     resolveEntryHeight ??
     ((entry: AppServerControlHistoryEntry) => estimateHistoryEntryHeight(entry, clientWidth));
-  return computeVirtualizerVisibleRange({
+  return computeVirtualizerWindow({
     items: entries,
     scrollTop,
     clientHeight,
