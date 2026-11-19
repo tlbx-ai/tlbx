@@ -146,11 +146,11 @@ internal sealed unsafe class ConnectNativeApi
         fixed (byte* mediaId = media) Check(_addCandidate(peer, value, mediaId));
     }
 
-    public bool ReliableTlbxChannel(int id)
+    public bool IsReliableChannel(int id, ReadOnlySpan<byte> label)
     {
         var bytes = new byte[32]; int size;
         fixed (byte* buffer = bytes) size = _label(id, buffer, bytes.Length);
-        if (size < 0 || !bytes.AsSpan().StartsWith("tlbx\0"u8)) return false;
+        if (size < 0 || !bytes.AsSpan().StartsWith(label)) return false;
         var reliability = new Reliability();
         return _reliability(id, &reliability) >= 0 && reliability.Unordered == 0 && reliability.Unreliable == 0;
     }

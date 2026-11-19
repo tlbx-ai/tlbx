@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
+using System.Threading.Channels;
 
 namespace Ai.Tlbx.MidTerm.Services.Connect;
 
@@ -43,6 +44,28 @@ internal static class ConnectTransportWorker
             finally { writer.Release(); }
         }
 
+        // The parent keeps one bulk fragment in flight. Its native backpressure
+        // must never block the worker's primary pipe reader.
+        var bulkFrames = Channel.CreateBounded<byte[]>(new BoundedChannelOptions(1) { SingleReader = true, SingleWriter = true });
+        Task bulkWriter = Task.CompletedTask;
+        async Task SendBulkAsync(ConnectNativePeer active)
+        {
+            try
+            {
+                await foreach (var frame in bulkFrames.Reader.ReadAllAsync(lifetime.Token).ConfigureAwait(false))
+                {
+                    await active.SendAsync(frame, lifetime.Token, bulk: true).ConfigureAwait(false);
+                    await SendAsync(ConnectWorkerMessage.BulkFrameSent, ReadOnlyMemory<byte>.Empty).ConfigureAwait(false);
+                }
+            }
+            catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { }
+            catch (Exception)
+            {
+                await lifetime.CancelAsync().ConfigureAwait(false);
+                throw;
+            }
+        }
+
         ConnectNativePeer? transport = null;
         try
         {
@@ -50,7 +73,9 @@ internal static class ConnectTransportWorker
                 signal => SendAsync(ConnectWorkerMessage.Signal, JsonSerializer.SerializeToUtf8Bytes(signal, ConnectJsonContext.Default.ConnectSignal)),
                 frame => SendAsync(ConnectWorkerMessage.Frame, frame),
                 () => SendAsync(ConnectWorkerMessage.Open, ReadOnlyMemory<byte>.Empty),
+                () => SendAsync(ConnectWorkerMessage.BulkOpen, ReadOnlyMemory<byte>.Empty),
                 lifetime.Cancel, lifetime.Token).ConfigureAwait(false);
+            bulkWriter = SendBulkAsync(transport);
             await SendAsync(ConnectWorkerMessage.Ready, ReadOnlyMemory<byte>.Empty).ConfigureAwait(false);
             while (await ConnectWorkerProtocol.ReadAsync(input, lifetime.Token).ConfigureAwait(false) is { } message)
             {
@@ -64,6 +89,10 @@ internal static class ConnectTransportWorker
                     case ConnectWorkerMessage.Frame:
                         await transport.SendAsync(message.Payload, lifetime.Token).ConfigureAwait(false);
                         break;
+                    case ConnectWorkerMessage.BulkFrame:
+                        if (!bulkFrames.Writer.TryWrite(message.Payload))
+                            throw new InvalidDataException("Link worker bulk send exceeded its queue limit.");
+                        break;
                     default: throw new InvalidDataException("Unexpected Link worker command.");
                 }
             }
@@ -76,6 +105,8 @@ internal static class ConnectTransportWorker
             // The parent also enforces a three-second exit deadline.
             try { if (transport is not null) await transport.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(2), CancellationToken.None).ConfigureAwait(false); }
             catch (Exception) { KillSelf(); }
+            try { await bulkWriter.WaitAsync(TimeSpan.FromSeconds(2), CancellationToken.None).ConfigureAwait(false); }
+            catch (TimeoutException) { KillSelf(); }
             try { await parentWatch.ConfigureAwait(false); } catch (OperationCanceledException) { }
         }
     }
