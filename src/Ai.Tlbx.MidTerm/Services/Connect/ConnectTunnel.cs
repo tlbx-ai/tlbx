@@ -29,6 +29,8 @@ internal sealed class ConnectTunnel : IAsyncDisposable
     private readonly CancellationTokenSource _lifetime;
     private readonly ConnectFrames _frames = new();
     private readonly ConnectFrameSender _sender;
+    private readonly Func<ReadOnlyMemory<byte>, CancellationToken, Task>? _sendBulk;
+    private readonly Func<bool>? _bulkOpen;
     private readonly SemaphoreSlim _requestSlots = new(16, 16);
     private readonly ConcurrentDictionary<string, ConnectWebSocketRelay> _sockets = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, Task> _requests = new(StringComparer.Ordinal);
@@ -39,7 +41,8 @@ internal sealed class ConnectTunnel : IAsyncDisposable
 
     public ConnectTunnel(ServerBindingInfo binding, BrowserPreviewOriginService previewOrigin, BrowserPreviewRegistry previewRegistry,
         AuthService auth, HttpClient http,
-        Func<ReadOnlyMemory<byte>, CancellationToken, Task> send, ConnectPeerAuthentication peer, CancellationToken ct)
+        Func<ReadOnlyMemory<byte>, CancellationToken, Task> send, ConnectPeerAuthentication peer, CancellationToken ct,
+        Func<ReadOnlyMemory<byte>, CancellationToken, Task>? sendBulk = null, Func<bool>? bulkOpen = null)
     {
         var host = binding.BindAddress is "0.0.0.0" or "*" or "+" ? "127.0.0.1"
             : binding.BindAddress == "::" ? "::1" : binding.BindAddress;
@@ -50,6 +53,8 @@ internal sealed class ConnectTunnel : IAsyncDisposable
         _peer = peer;
         _lifetime = CancellationTokenSource.CreateLinkedTokenSource(ct);
         _sender = new ConnectFrameSender(send, _lifetime.Token);
+        _sendBulk = sendBulk;
+        _bulkOpen = bulkOpen;
         _http = http;
     }
 
@@ -83,7 +88,7 @@ internal sealed class ConnectTunnel : IAsyncDisposable
         {
             _peer.AcceptProof(message);
             _cookie = _auth.CreateSessionToken();
-            await SendEnvelopeAsync(new ConnectEnvelope { Type = "authOk", BodyEncoding = "gzip" }, _lifetime.Token);
+            await SendEnvelopeAsync(new ConnectEnvelope { Type = "authOk", BodyEncoding = "gzip", BulkHttp = _sendBulk is null ? null : true }, _lifetime.Token);
             return;
         }
         if (string.IsNullOrEmpty(message.Id) || message.Id.Length > 100 || message.Id.Any(char.IsControl))
@@ -304,7 +309,10 @@ internal sealed class ConnectTunnel : IAsyncDisposable
     private async Task SendEnvelopeAsync(ConnectEnvelope envelope, CancellationToken ct)
     {
         var bytes = JsonSerializer.SerializeToUtf8Bytes(envelope, ConnectJsonContext.Default.ConnectEnvelope);
-        await _sender.SendAsync(bytes, ct);
+        if (envelope.Type == "http-result" && bytes.Length > ConnectFrameSender.InteractiveMessageSize && _sendBulk is not null && _bulkOpen?.Invoke() == true)
+            await _sender.SendBulkAsync(bytes, _sendBulk, ct);
+        else
+            await _sender.SendAsync(bytes, ct);
     }
 
     private static async Task<string> ReadBoundedBase64Async(Stream source, int limit, long? contentLength, bool gzip, CancellationToken ct)

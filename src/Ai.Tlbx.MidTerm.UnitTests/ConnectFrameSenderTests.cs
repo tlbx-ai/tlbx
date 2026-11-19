@@ -87,6 +87,43 @@ public sealed class ConnectFrameSenderTests
     }
 
     [Fact]
+    public async Task BlockedBulkChannelLeavesPrimaryRepliesSendable()
+    {
+        var firstBulkFragment = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var resume = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var receiver = new ConnectFrames();
+        byte[]? echoed = null;
+        byte[]? downloaded = null;
+        using var sender = new ConnectFrameSender((frame, _) =>
+        {
+            echoed = receiver.Receive(frame.Span);
+            return Task.CompletedTask;
+        }, TestContext.Current.CancellationToken);
+        var payload = new byte[48000];
+        Random.Shared.NextBytes(payload);
+        var bulk = sender.SendBulkAsync(payload, async (frame, ct) =>
+        {
+            downloaded = receiver.Receive(frame.Span) ?? downloaded;
+            firstBulkFragment.TrySetResult();
+            await resume.Task.WaitAsync(ct);
+        }, TestContext.Current.CancellationToken);
+        try
+        {
+            await firstBulkFragment.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+            await sender.SendAsync([42], TestContext.Current.CancellationToken)
+                .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+            Assert.Equal(new byte[] { 42 }, echoed);
+            Assert.False(bulk.IsCompleted);
+        }
+        finally
+        {
+            resume.TrySetResult();
+            await bulk.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        }
+        Assert.Equal(payload, downloaded);
+    }
+
+    [Fact]
     public void ReceiverAcceptsLegacyAndSmallFragmentsInterleaved()
     {
         var encoder = new ConnectFrames();

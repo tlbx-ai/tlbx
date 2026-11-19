@@ -2,7 +2,7 @@ using System.Buffers.Binary;
 
 namespace Ai.Tlbx.MidTerm.Services.Connect;
 
-internal enum ConnectWorkerMessage : byte { Initialize = 1, Signal, Frame, Ready, Open }
+internal enum ConnectWorkerMessage : byte { Initialize = 1, Signal, Frame, Ready, Open, BulkOpen, BulkFrame, BulkFrameSent }
 internal sealed record ConnectWorkerInitialization(string SettingsDirectory, ConnectSignal Configuration);
 
 /// <summary>Private inherited pipes only; lengths are checked before allocation.</summary>
@@ -37,9 +37,9 @@ internal static class ConnectWorkerProtocol
 
     private static void Validate(ConnectWorkerMessage kind, int length)
     {
-        if (length < 0 || length > MaximumPayload || kind is < ConnectWorkerMessage.Initialize or > ConnectWorkerMessage.Open
-            || (kind == ConnectWorkerMessage.Frame && length is <= 0 or > ConnectNativePeer.MaximumFrameSize)
-            || (kind is ConnectWorkerMessage.Ready or ConnectWorkerMessage.Open && length != 0))
+        if (length < 0 || length > MaximumPayload || kind is < ConnectWorkerMessage.Initialize or > ConnectWorkerMessage.BulkFrameSent
+            || (kind is ConnectWorkerMessage.Frame or ConnectWorkerMessage.BulkFrame && length is <= 0 or > ConnectNativePeer.MaximumFrameSize)
+            || (kind is ConnectWorkerMessage.Ready or ConnectWorkerMessage.Open or ConnectWorkerMessage.BulkOpen or ConnectWorkerMessage.BulkFrameSent && length != 0))
             throw new InvalidDataException("Invalid Link worker frame.");
     }
 }

@@ -470,7 +470,8 @@ public sealed class ConnectService : BackgroundService
         {
             Peer = peer;
             _lifetime = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            Tunnel = new ConnectTunnel(binding, previewOrigin, previewRegistry, auth, http, SendFrameAsync, peer, _lifetime.Token);
+            Tunnel = new ConnectTunnel(binding, previewOrigin, previewRegistry, auth, http, SendFrameAsync, peer, _lifetime.Token,
+                SendBulkFrameAsync, () => _transport?.BulkOpen == true);
         }
 
         public async Task StartAsync(string settingsDirectory, ConnectSignal connect,
@@ -482,6 +483,9 @@ public sealed class ConnectService : BackgroundService
             (_transport ?? throw new InvalidOperationException("Connect transport is not ready.")).ApplySignalAsync(message, ct);
         private Task SendFrameAsync(ReadOnlyMemory<byte> frame, CancellationToken ct) =>
             (_transport ?? throw new InvalidOperationException("Connect transport is not ready.")).SendAsync(frame, ct);
+
+        private Task SendBulkFrameAsync(ReadOnlyMemory<byte> frame, CancellationToken ct) =>
+            (_transport ?? throw new InvalidOperationException("Connect transport is not ready.")).SendBulkAsync(frame, ct);
 
         public void EnforceAuthenticationDeadline(Func<Task> close) => _authenticationDeadline = EnforceAsync(close);
 

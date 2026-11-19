@@ -6,7 +6,7 @@ internal sealed class ConnectFrameSender(
     CancellationToken lifetime) : IDisposable
 {
     internal const int FragmentPayloadSize = 1024;
-    private const int InteractiveMessageSize = 16 * 1024;
+    internal const int InteractiveMessageSize = 16 * 1024;
     private const int InteractiveBurst = 8;
     private readonly ConnectFrames _frames = new();
     private readonly SemaphoreSlim _frameGate = new(1, 1);
@@ -56,6 +56,21 @@ internal sealed class ConnectFrameSender(
             if (entered) lane.Release();
             if (interactive) FinishInteractive();
         }
+    }
+
+    public async Task SendBulkAsync(byte[] message, Func<ReadOnlyMemory<byte>, CancellationToken, Task> sendBulk, CancellationToken ct)
+    {
+        await _bulkGate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            var token = ct;
+            foreach (var frame in _frames.Encode(message, FragmentPayloadSize))
+            {
+                await sendBulk(frame, token).ConfigureAwait(false);
+                token = lifetime;
+            }
+        }
+        finally { _bulkGate.Release(); }
     }
 
     private Task YieldToInteractiveAsync()
