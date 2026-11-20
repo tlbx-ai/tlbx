@@ -40,7 +40,7 @@ public sealed class HistoryReplayTests : IDisposable
         var window = _history.GetSnapshotWindow(Session)!;
         var request = Assert.Single(window.Requests);
         Assert.Equal(purpose, request.ApprovalPurpose);
-        Assert.Equal("Run PowerShell command", request.ApprovalTool);
+        Assert.Equal("Shell", request.ApprovalTool);
         Assert.Equal(script, request.Detail);
         Assert.Equal(purpose, Assert.Single(window.History, item => item.Kind == "request").Body);
     }

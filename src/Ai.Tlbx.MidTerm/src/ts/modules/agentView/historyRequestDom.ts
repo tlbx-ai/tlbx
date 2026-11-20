@@ -74,24 +74,28 @@ function parseStoredApprovalInput(
       'url',
       'pattern',
     );
+    const command = readApprovalString(
+      input,
+      'CommandLine',
+      'commandLine',
+      'command',
+      'cmd',
+      'script',
+    );
     const technicalDetail =
-      readApprovalString(
-        input,
-        'CommandLine',
-        'commandLine',
-        'command',
-        'cmd',
-        'script',
-        'path',
-        'file_path',
-        'url',
-      ) ?? JSON.stringify(input, null, 2);
-    return { summary, technicalDetail: technicalDetail === summary ? null : technicalDetail, tool };
+      command ??
+      readApprovalString(input, 'path', 'file_path', 'url') ??
+      JSON.stringify(input, null, 2);
+    return {
+      summary,
+      technicalDetail: technicalDetail === summary ? null : technicalDetail,
+      tool: command ? null : tool,
+    };
   } catch {
     return {
       summary: legacyAcp ? readRetainedApprovalPurpose(rawInput) : null,
       technicalDetail: rawInput,
-      tool,
+      tool: legacyAcp ? null : tool,
     };
   }
 }

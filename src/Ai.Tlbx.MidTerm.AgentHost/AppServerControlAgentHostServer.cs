@@ -787,7 +787,9 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
             {
                 RequestType = appServerControlEvent.RequestOpened.RequestType,
                 RequestTypeLabel = appServerControlEvent.RequestOpened.RequestTypeLabel,
-                Detail = appServerControlEvent.RequestOpened.Detail
+                Detail = appServerControlEvent.RequestOpened.Detail,
+                ApprovalPurpose = appServerControlEvent.RequestOpened.ApprovalPurpose,
+                ApprovalTool = appServerControlEvent.RequestOpened.ApprovalTool
             },
             RequestResolved = appServerControlEvent.RequestResolved is null ? null : new AppServerControlProviderRequestResolvedPayload
             {

@@ -994,7 +994,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
             RequestType = "command_execution_approval",
             RequestTypeLabel = "Approval",
             ApprovalPurpose = purpose?.Trim(),
-            ApprovalTool = title,
+            ApprovalTool = command is null ? title : "Shell",
             Detail = detail
         };
     }
