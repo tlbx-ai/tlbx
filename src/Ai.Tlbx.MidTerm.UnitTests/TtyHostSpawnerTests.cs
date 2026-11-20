@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.Versioning;
 using System.Text;
 using Ai.Tlbx.MidTerm.Common.Shells;
@@ -28,6 +29,33 @@ public sealed class TtyHostSpawnerTests : IDisposable
         catch
         {
         }
+    }
+
+    [Fact]
+    public async Task DetachForIpcKeepsStderrReadableAfterLaunchHandleDisposal()
+    {
+        var windows = OperatingSystem.IsWindows();
+        var start = new ProcessStartInfo(windows ? "cmd.exe" : "/bin/sh")
+        {
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardInput = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true
+        };
+        if (windows) start.ArgumentList.Add("/d");
+        start.ArgumentList.Add(windows ? "/c" : "-c");
+        start.ArgumentList.Add("echo agent-host-stderr 1>&2");
+
+        Assert.True(TtyHostSpawner.RedirectedProcessHandle.TryStartOwnedDirect(start, out var launched, out var failure), failure);
+        var resources = launched!.DetachForIpc();
+        launched.Dispose();
+
+        using var process = resources.Process;
+        using var stderr = resources.Error;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        Assert.Equal("agent-host-stderr", (await stderr.ReadLineAsync(timeout.Token))?.Trim());
+        await process.WaitForExitAsync(timeout.Token);
     }
 
     [Fact]
