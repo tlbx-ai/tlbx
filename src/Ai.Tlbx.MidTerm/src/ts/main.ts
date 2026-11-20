@@ -177,7 +177,11 @@ import {
   showSharedSessionError,
 } from './modules/share';
 import { initDockState } from './modules/dockState';
-import { initSmartInput, setAppServerControlResumeConversationHandler } from './modules/smartInput';
+import {
+  initSmartInput,
+  setAppServerControlHandoffHandler,
+  setAppServerControlResumeConversationHandler,
+} from './modules/smartInput';
 import {
   createContextHandoffSession,
   openContextHandoff,
@@ -836,11 +840,12 @@ const {
   isAppServerControlOnlySession,
 });
 setAppServerControlResumeConversationHandler(resumeAppServerControlConversationFromCommandBay);
+setAppServerControlHandoffHandler(handoffSessionContext);
 
 function handoffSessionContext(sessionId: string): void {
   const source = getSession(sessionId);
-  if (!source?.appServerControlOnly) return;
-  openContextHandoff(sessionId, source.profileHint, async (target) => {
+  if (!source) return;
+  openContextHandoff(source, async (target) => {
     const session = await createContextHandoffSession(source, target, resolveLauncherShell());
     closeSidebar();
     if (target.terminal) {

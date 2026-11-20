@@ -1224,7 +1224,6 @@ function getSidebarSessionActionsSignature(entry: SidebarSessionRef): string {
     t(isSessionNotesExpanded(entry.id) ? 'session.collapseNotes' : 'session.expandNotes'),
     isSessionInLayout(entry.id),
     t('session.removeFromLayout'),
-    entry.session.appServerControlOnly,
     t('contextHandoff.title'),
     t('session.rename'),
     t('session.close'),
@@ -1351,7 +1350,7 @@ function patchSidebarSessionActions(actions: HTMLDivElement, entry: SidebarSessi
 }
 
 function appendContextHandoffAction(actions: HTMLElement, entry: SidebarSessionRef): void {
-  if (entry.machineId !== null || !entry.session.appServerControlOnly) return;
+  if (entry.machineId !== null) return;
   const handoffButton = document.createElement('button');
   handoffButton.className = 'session-context-handoff';
   handoffButton.setAttribute('role', 'menuitem');

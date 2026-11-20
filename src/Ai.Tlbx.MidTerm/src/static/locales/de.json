@@ -1793,5 +1793,6 @@
   "agentSession.command.resume": "Ein vorhandenes Gespräch fortsetzen",
   "agentSession.command.compact": "Kontext dieses Gesprächs komprimieren",
   "agentSession.command.goal": "Goal-Steuerung öffnen",
+  "agentSession.command.handoff": "Kontext an eine andere Session übergeben",
   "agentSession.command.help": "Verfügbare Befehle anzeigen"
 }

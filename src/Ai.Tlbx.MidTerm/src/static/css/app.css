@@ -22551,6 +22551,10 @@ button.tree-expand { height: 22px; padding: 0; border: 0; background: transparen
   gap: 4px;
 }
 
+.context-handoff-fields label[hidden] {
+  display: none;
+}
+
 .context-handoff-fields select,
 .context-handoff-fields textarea {
   color: inherit;

@@ -15,6 +15,7 @@ export {
   isSmartInputMode,
   isBothMode,
   removeSmartInputSessionState,
+  setAppServerControlHandoffHandler,
   setAppServerControlResumeConversationHandler,
 } from './smartInput';
 export { startHistoryion, stopHistoryion } from './transcription';

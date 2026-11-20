@@ -846,8 +846,15 @@ public static partial class SessionApiEndpoints
         {
             var session = TryGetSessionDto(sessionManager, sessionSupervisor, appServerControlRuntime, id);
             if (session is null) return Results.NotFound();
+            context.Response.Headers.CacheControl = "no-store";
             if (!session.AppServerControlOnly)
-                return Results.BadRequest("Context handoff requires an Agent Controller session.");
+            {
+                var snapshot = await sessionManager.GetBufferAsync(
+                    id, maxBytes: AppServerControlContextHandoff.TerminalByteLimit, ct: ct).ConfigureAwait(false);
+                if (snapshot is null) return Results.Conflict("Terminal history is unavailable.");
+                var terminalDraft = AppServerControlContextHandoff.CreateTerminalDraft(snapshot.Data, snapshot.SequenceStart > 0);
+                return Results.Text(terminalDraft, "text/plain", Encoding.UTF8);
+            }
 
             try
             {
@@ -873,7 +880,6 @@ public static partial class SessionApiEndpoints
                 if (draft is null)
                     return Results.Conflict("There is no conversation to hand off.");
 
-                context.Response.Headers.CacheControl = "no-store";
                 return Results.Text(draft, "text/plain", Encoding.UTF8);
             }
             catch (InvalidOperationException ex)
