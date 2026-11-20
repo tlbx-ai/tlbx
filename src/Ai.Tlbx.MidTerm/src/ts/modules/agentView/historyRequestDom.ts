@@ -28,35 +28,86 @@ export type ApprovalDetailPresentation = {
   tool: string | null;
 };
 
-export function parseApprovalDetail(detail: string | null | undefined): ApprovalDetailPresentation {
-  const value = detail?.trim();
-  if (!value) {
-    return { summary: null, technicalDetail: null, tool: null };
+export function parseApprovalDetail(
+  detail: string | null | undefined,
+  purpose?: string | null,
+  approvalTool?: string | null,
+): ApprovalDetailPresentation {
+  const value = detail?.trim() || null;
+  const summary = purpose?.trim() || null;
+  const tool = approvalTool?.trim() || null;
+  if (!value || summary || tool) {
+    return { summary, technicalDetail: value === summary ? null : value, tool };
   }
 
-  const match = /^([^:\r\n]{1,80}):\s*(\{[\s\S]*\})$/.exec(value);
-  if (!match) {
-    return { summary: value, technicalDetail: null, tool: null };
-  }
-  const [, rawTool = '', rawInput = ''] = match;
-  const tool = rawTool.trim();
-  if (!tool || !rawInput) {
-    return { summary: value, technicalDetail: null, tool: null };
+  return parseStoredApprovalDetail(value);
+}
+
+function parseStoredApprovalDetail(value: string): ApprovalDetailPresentation {
+  const legacyAcp = /^([^\r\n]{1,160})\r?\n(\{[\s\S]*\})$/.exec(value);
+  const structured = legacyAcp ?? /^([^:\r\n]{1,80}):\s*(\{[\s\S]*\})$/.exec(value);
+  if (structured) {
+    const [, rawTool = '', rawInput = ''] = structured;
+    return parseStoredApprovalInput(rawTool.trim(), rawInput, Boolean(legacyAcp));
   }
 
+  const legacyReason = /^Reason:[ \t]*(.+)$/m.exec(value)?.[1]?.trim() ?? null;
+  return { summary: legacyReason, technicalDetail: value, tool: null };
+}
+
+function parseStoredApprovalInput(
+  tool: string,
+  rawInput: string,
+  legacyAcp: boolean,
+): ApprovalDetailPresentation {
   try {
-    const input = JSON.parse(rawInput) as Record<string, unknown>;
-    const summary = readApprovalString(input, 'description', 'file_path', 'url', 'pattern');
+    const parsed = JSON.parse(rawInput) as Record<string, unknown>;
+    const input = (parsed.rawInput ?? parsed) as Record<string, unknown>;
+    const summary = readApprovalString(
+      input,
+      'toolSummary',
+      'ToolSummary',
+      'purpose',
+      'description',
+      'reason',
+      'file_path',
+      'url',
+      'pattern',
+    );
+    const command = readApprovalString(
+      input,
+      'CommandLine',
+      'commandLine',
+      'command',
+      'cmd',
+      'script',
+    );
     const technicalDetail =
-      readApprovalString(input, 'command', 'cmd', 'path', 'file_path', 'url') ??
+      command ??
+      readApprovalString(input, 'path', 'file_path', 'url') ??
       JSON.stringify(input, null, 2);
     return {
       summary,
       technicalDetail: technicalDetail === summary ? null : technicalDetail,
-      tool,
+      tool: command ? null : tool,
     };
   } catch {
-    return { summary: value, technicalDetail: null, tool: null };
+    return {
+      summary: legacyAcp ? readRetainedApprovalPurpose(rawInput) : null,
+      technicalDetail: rawInput,
+      tool: legacyAcp ? null : tool,
+    };
+  }
+}
+
+function readRetainedApprovalPurpose(rawInput: string): string | null {
+  // Older hosts can compact the serialized request inside the script value.
+  const capture = /"(?:toolSummary|ToolSummary|purpose)"\s*:\s*("(?:[^"\\]|\\.)*")/.exec(rawInput);
+  if (!capture?.[1]) return null;
+  try {
+    return (JSON.parse(capture[1]) as string).trim() || null;
+  } catch {
+    return null;
   }
 }
 
@@ -292,8 +343,11 @@ function createRequestPanelHeader(
   eyebrow.textContent = summarizeRequestEyebrow(request, appServerControlText);
   topRow.appendChild(eyebrow);
 
-  const approvalDetail = request.kind === 'interview' ? null : parseApprovalDetail(request.detail);
-  if (approvalDetail?.tool) {
+  const approvalDetail =
+    request.kind === 'interview'
+      ? { summary: null, technicalDetail: null, tool: null }
+      : parseApprovalDetail(request.detail, request.approvalPurpose, request.approvalTool);
+  if (approvalDetail.tool) {
     const tool = document.createElement('span');
     tool.className = 'agent-request-tool';
     tool.textContent = approvalDetail.tool;
@@ -305,9 +359,9 @@ function createRequestPanelHeader(
   const summary = document.createElement('p');
   summary.className = 'agent-request-summary';
   summary.textContent =
-    request.state === 'open' && approvalDetail
-      ? (approvalDetail.summary ??
-        appServerControlFormat(
+    approvalDetail.summary ??
+    (request.state === 'open' && request.kind !== 'interview'
+      ? appServerControlFormat(
           'appServerControl.request.toolAction',
           '{tool} wants to perform an action.',
           {
@@ -315,13 +369,13 @@ function createRequestPanelHeader(
               approvalDetail.tool ??
               appServerControlText('appServerControl.request.toolFallback', 'The agent'),
           },
-        ))
-      : summarizeRequestInterruption(request, appServerControlText, appServerControlFormat);
+        )
+      : summarizeRequestInterruption(request, appServerControlText, appServerControlFormat));
   if (!isCancelledRequest(request)) {
     header.appendChild(summary);
   }
 
-  if (approvalDetail?.technicalDetail) {
+  if (approvalDetail.technicalDetail) {
     const disclosure = document.createElement('details');
     disclosure.className = 'agent-request-technical';
     const label = document.createElement('summary');
@@ -330,7 +384,10 @@ function createRequestPanelHeader(
       'Technical details',
     );
     const detail = document.createElement('pre');
-    detail.textContent = approvalDetail.technicalDetail;
+    detail.tabIndex = 0;
+    const code = document.createElement('code');
+    code.textContent = approvalDetail.technicalDetail;
+    detail.appendChild(code);
     disclosure.append(label, detail);
     header.appendChild(disclosure);
   } else if (

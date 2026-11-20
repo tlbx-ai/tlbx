@@ -409,6 +409,8 @@ export interface AppServerControlRequestSummary {
   kindLabel: string;
   state: string;
   detail?: string | null;
+  approvalPurpose?: string | null;
+  approvalTool?: string | null;
   decision?: string | null;
   questions: AppServerControlQuestion[];
   answers: AppServerControlAnsweredQuestion[];

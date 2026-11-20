@@ -1760,6 +1760,8 @@ public sealed partial class SessionAppServerControlHistoryService
                 HumanizeRequestType(appServerControlEvent.RequestOpened.RequestType));
             request.State = "open";
             request.Detail = PreferMeaningfulText(request.Detail, appServerControlEvent.RequestOpened.Detail);
+            request.ApprovalPurpose = appServerControlEvent.RequestOpened.ApprovalPurpose;
+            request.ApprovalTool = appServerControlEvent.RequestOpened.ApprovalTool;
         }
 
         if (appServerControlEvent.RequestResolved is not null)
@@ -1768,7 +1770,7 @@ public sealed partial class SessionAppServerControlHistoryService
             request.KindLabel = PreferNonEmpty(request.KindLabel, HumanizeRequestType(request.Kind));
             request.State = "resolved";
             request.Decision = appServerControlEvent.RequestResolved.Decision;
-            if (request.Kind == "mcp_tool_approval")
+            if (request.Kind == "mcp_tool_approval" || request.ApprovalTool is not null)
                 request.Detail = AppServerControlProviderEventCompaction.CompactRequestDetail(request.Detail, request.Kind, pending: false);
         }
 
@@ -1949,7 +1951,9 @@ public sealed partial class SessionAppServerControlHistoryService
             {
                 RequestType = source.RequestOpened.RequestType,
                 RequestTypeLabel = source.RequestOpened.RequestTypeLabel,
-                Detail = source.RequestOpened.Detail
+                Detail = source.RequestOpened.Detail,
+                ApprovalPurpose = source.RequestOpened.ApprovalPurpose,
+                ApprovalTool = source.RequestOpened.ApprovalTool
             },
             RequestResolved = source.RequestResolved is null ? null : new AppServerControlProviderRequestResolvedPayload
             {
@@ -2291,6 +2295,8 @@ public sealed partial class SessionAppServerControlHistoryService
             KindLabel = source.KindLabel,
             State = source.State,
             Detail = source.Detail,
+            ApprovalPurpose = source.ApprovalPurpose,
+            ApprovalTool = source.ApprovalTool,
             Decision = source.Decision,
             Questions = source.Questions.Select(CloneQuestion).ToList(),
             Answers = source.Answers.Select(CloneAnsweredQuestion).ToList(),
@@ -2831,9 +2837,12 @@ public sealed partial class SessionAppServerControlHistoryService
     private static string BuildRequestBody(AppServerControlRequestSummary request)
     {
         var sections = new List<string>();
-        if (!string.IsNullOrWhiteSpace(request.Detail))
+        var description = request.ApprovalTool is null
+            ? request.ApprovalPurpose ?? request.Detail
+            : PreferNonEmpty(request.ApprovalPurpose, request.ApprovalTool);
+        if (!string.IsNullOrWhiteSpace(description))
         {
-            sections.Add(request.Detail.Trim());
+            sections.Add(description.Trim());
         }
 
         if (request.Questions.Count > 0)

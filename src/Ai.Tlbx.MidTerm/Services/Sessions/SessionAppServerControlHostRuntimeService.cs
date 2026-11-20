@@ -1812,6 +1812,8 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
             KindLabel = source.KindLabel,
             State = source.State,
             Detail = source.Detail,
+            ApprovalPurpose = source.ApprovalPurpose,
+            ApprovalTool = source.ApprovalTool,
             Decision = source.Decision,
             Questions = source.Questions.Select(CloneQuestion).ToList(),
             Answers = source.Answers.Select(CloneAnsweredQuestion).ToList(),

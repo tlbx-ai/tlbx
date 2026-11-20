@@ -16,6 +16,36 @@ public sealed class HistoryReplayTests : IDisposable
     public HistoryReplayTests() => _history = new(storeDirectory: _directory, enableScreenLogging: false);
 
     [Fact]
+    public void AcpApprovalKeepsPurposeAndScriptSeparateInTheHistoryWindow()
+    {
+        const string purpose = "Write the approval test marker";
+        var script = string.Concat(Enumerable.Repeat("# test-only PowerShell comment\n", 300)) + "Write-Output 'marker'";
+        var toolCall = JsonSerializer.SerializeToElement(new
+        {
+            title = "Run PowerShell command",
+            rawInput = new { CommandLine = script, toolSummary = purpose }
+        });
+        var providerEvent = new AppServerControlProviderEvent
+        {
+            EventId = "approval",
+            SessionId = Session,
+            Provider = "antigravity",
+            TurnId = "live",
+            RequestId = "approval",
+            Type = "request.opened",
+            RequestOpened = AcpAppServerControlAgentRuntime.BuildAcpApproval(toolCall, "Antigravity")
+        };
+        _history.Append(AppServerControlProviderEventCompaction.CloneForRetention(providerEvent));
+
+        var window = _history.GetSnapshotWindow(Session)!;
+        var request = Assert.Single(window.Requests);
+        Assert.Equal(purpose, request.ApprovalPurpose);
+        Assert.Equal("Shell", request.ApprovalTool);
+        Assert.Equal(script, request.Detail);
+        Assert.Equal(purpose, Assert.Single(window.History, item => item.Kind == "request").Body);
+    }
+
+    [Fact]
     public async Task DefaultHostKeepsReplayAndLiveHistoryInMemoryWithoutStoreOrWriter()
     {
         // Match the production host call, including its in-memory file-reference session manager.

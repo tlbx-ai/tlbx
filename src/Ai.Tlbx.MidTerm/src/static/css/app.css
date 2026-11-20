@@ -16016,6 +16016,7 @@ button.agent-history-attachment-image {
   font-size: 0.92rem;
   font-weight: 600;
   line-height: 1.4;
+  overflow-wrap: anywhere;
 }
 
 .agent-request-progress,
