@@ -135,6 +135,8 @@ public sealed class AppServerControlProviderRequestOpenedPayload
     public string RequestType { get; set; } = string.Empty;
     public string RequestTypeLabel { get; set; } = string.Empty;
     public string? Detail { get; set; }
+    public string? ApprovalPurpose { get; set; }
+    public string? ApprovalTool { get; set; }
 }
 
 public sealed class AppServerControlProviderRequestResolvedPayload

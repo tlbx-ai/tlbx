@@ -850,7 +850,8 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
                 {
                     RequestType = requestType,
                     RequestTypeLabel = requestTypeLabel,
-                    Detail = detail
+                    Detail = detail,
+                    ApprovalPurpose = GetString(payload, "reason")?.Trim()
                 };
             }));
             return;

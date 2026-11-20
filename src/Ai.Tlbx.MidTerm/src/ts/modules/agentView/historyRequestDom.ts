@@ -28,36 +28,55 @@ export type ApprovalDetailPresentation = {
   tool: string | null;
 };
 
-export function parseApprovalDetail(detail: string | null | undefined): ApprovalDetailPresentation {
-  const value = detail?.trim();
-  if (!value) {
-    return { summary: null, technicalDetail: null, tool: null };
+export function parseApprovalDetail(
+  detail: string | null | undefined,
+  purpose?: string | null,
+  approvalTool?: string | null,
+): ApprovalDetailPresentation {
+  const value = detail?.trim() || null;
+  const summary = purpose?.trim() || null;
+  const tool = approvalTool?.trim() || null;
+  if (!value || summary || tool) {
+    return { summary, technicalDetail: value === summary ? null : value, tool };
   }
 
-  const match = /^([^:\r\n]{1,80}):\s*(\{[\s\S]*\})$/.exec(value);
-  if (!match) {
-    return { summary: value, technicalDetail: null, tool: null };
-  }
-  const [, rawTool = '', rawInput = ''] = match;
-  const tool = rawTool.trim();
-  if (!tool || !rawInput) {
-    return { summary: value, technicalDetail: null, tool: null };
+  const legacyAcp = /^([^\r\n]{1,160})\r?\n(\{[\s\S]*\})$/.exec(value);
+  const structured = legacyAcp ?? /^([^:\r\n]{1,80}):\s*(\{[\s\S]*\})$/.exec(value);
+  if (structured) {
+    const [, rawTool = '', rawInput = ''] = structured;
+    try {
+      const parsed = JSON.parse(rawInput) as Record<string, unknown>;
+      const input = (parsed.rawInput ?? parsed) as Record<string, unknown>;
+      const description = readApprovalString(
+        input, 'toolSummary', 'ToolSummary', 'purpose', 'description', 'reason', 'file_path', 'url', 'pattern',
+      );
+      const technicalDetail =
+        readApprovalString(input, 'CommandLine', 'commandLine', 'command', 'cmd', 'script', 'path', 'file_path', 'url') ??
+        JSON.stringify(input, null, 2);
+      return {
+        summary: description,
+        technicalDetail: technicalDetail === description ? null : technicalDetail,
+        tool: rawTool.trim(),
+      };
+    } catch {
+      if (legacyAcp) {
+        // Older hosts can compact the serialized request inside the script value.
+        const capture = /"(?:toolSummary|ToolSummary|purpose)"\s*:\s*("(?:[^"\\]|\\.)*")/.exec(rawInput);
+        let description: string | null = null;
+        if (capture?.[1]) {
+          try {
+            description = (JSON.parse(capture[1]) as string).trim() || null;
+          } catch {
+            // The retained JSON string can itself be truncated.
+          }
+        }
+        return { summary: description, technicalDetail: rawInput, tool: rawTool.trim() };
+      }
+    }
   }
 
-  try {
-    const input = JSON.parse(rawInput) as Record<string, unknown>;
-    const summary = readApprovalString(input, 'description', 'file_path', 'url', 'pattern');
-    const technicalDetail =
-      readApprovalString(input, 'command', 'cmd', 'path', 'file_path', 'url') ??
-      JSON.stringify(input, null, 2);
-    return {
-      summary,
-      technicalDetail: technicalDetail === summary ? null : technicalDetail,
-      tool,
-    };
-  } catch {
-    return { summary: value, technicalDetail: null, tool: null };
-  }
+  const legacyReason = /^Reason:[ \t]*(.+)$/m.exec(value)?.[1]?.trim() ?? null;
+  return { summary: legacyReason, technicalDetail: value, tool: null };
 }
 
 function readApprovalString(input: Record<string, unknown>, ...keys: string[]): string | null {
@@ -292,7 +311,10 @@ function createRequestPanelHeader(
   eyebrow.textContent = summarizeRequestEyebrow(request, appServerControlText);
   topRow.appendChild(eyebrow);
 
-  const approvalDetail = request.kind === 'interview' ? null : parseApprovalDetail(request.detail);
+  const approvalDetail =
+    request.kind === 'interview'
+      ? null
+      : parseApprovalDetail(request.detail, request.approvalPurpose, request.approvalTool);
   if (approvalDetail?.tool) {
     const tool = document.createElement('span');
     tool.className = 'agent-request-tool';
@@ -305,9 +327,9 @@ function createRequestPanelHeader(
   const summary = document.createElement('p');
   summary.className = 'agent-request-summary';
   summary.textContent =
-    request.state === 'open' && approvalDetail
-      ? (approvalDetail.summary ??
-        appServerControlFormat(
+    approvalDetail?.summary ??
+    (request.state === 'open' && approvalDetail
+      ? appServerControlFormat(
           'appServerControl.request.toolAction',
           '{tool} wants to perform an action.',
           {
@@ -315,8 +337,8 @@ function createRequestPanelHeader(
               approvalDetail.tool ??
               appServerControlText('appServerControl.request.toolFallback', 'The agent'),
           },
-        ))
-      : summarizeRequestInterruption(request, appServerControlText, appServerControlFormat);
+        )
+      : summarizeRequestInterruption(request, appServerControlText, appServerControlFormat));
   if (!isCancelledRequest(request)) {
     header.appendChild(summary);
   }
@@ -330,7 +352,10 @@ function createRequestPanelHeader(
       'Technical details',
     );
     const detail = document.createElement('pre');
-    detail.textContent = approvalDetail.technicalDetail;
+    detail.tabIndex = 0;
+    const code = document.createElement('code');
+    code.textContent = approvalDetail.technicalDetail;
+    detail.appendChild(code);
     disclosure.append(label, detail);
     header.appendChild(disclosure);
   } else if (

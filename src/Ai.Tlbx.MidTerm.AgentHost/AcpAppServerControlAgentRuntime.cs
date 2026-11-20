@@ -969,22 +969,34 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
             return;
         }
 
-        var title = toolCall is { ValueKind: JsonValueKind.Object } toolElement
-            ? GetString(toolElement, "title") ?? GetString(toolElement, "toolCallId") ?? $"{_agentName} tool call"
-            : $"{_agentName} tool call";
-        var detail = toolCall is { ValueKind: JsonValueKind.Object } detailElement
-            ? detailElement.GetRawText()
-            : rawLine;
         _pendingPermissions[requestId] = new PendingPermissionRequest(idElement.Clone(), turnId, options);
         _emit(CreateEvent("request.opened", turnId, null, requestId, "acp", "session/request_permission", root, appServerControlEvent =>
         {
-            appServerControlEvent.RequestOpened = new AppServerControlProviderRequestOpenedPayload
-            {
-                RequestType = "command_execution_approval",
-                RequestTypeLabel = "Approval",
-                Detail = title + Environment.NewLine + detail
-            };
+            appServerControlEvent.RequestOpened = BuildAcpApproval(toolCall, _agentName);
         }, rawLine));
+    }
+
+    internal static AppServerControlProviderRequestOpenedPayload BuildAcpApproval(JsonElement? toolCall, string agentName)
+    {
+        var input = Traverse(toolCall, "rawInput");
+        var purpose = GetString(input, "toolSummary") ?? GetString(input, "ToolSummary") ?? GetString(input, "purpose") ??
+                      GetString(input, "description") ?? GetString(input, "reason") ??
+                      GetString(toolCall, "purpose") ?? GetString(toolCall, "description");
+        var title = GetString(toolCall, "title") ?? GetString(toolCall, "toolCallId") ?? agentName;
+        var command = GetString(input, "CommandLine") ?? GetString(input, "commandLine") ??
+                      GetString(input, "command") ?? GetString(input, "cmd") ?? GetString(input, "script");
+        var detail = command ?? (toolCall is { ValueKind: JsonValueKind.Object } call ? call.GetRawText() : null);
+        var workingDirectory = GetString(input, "Cwd") ?? GetString(input, "cwd") ?? GetString(input, "workingDirectory");
+        if (command is not null && !string.IsNullOrWhiteSpace(workingDirectory))
+            detail = $"cwd: {workingDirectory}\n\n{command}";
+        return new AppServerControlProviderRequestOpenedPayload
+        {
+            RequestType = "command_execution_approval",
+            RequestTypeLabel = "Approval",
+            ApprovalPurpose = purpose?.Trim(),
+            ApprovalTool = title,
+            Detail = detail
+        };
     }
 
     private void HandleToolCall(string turnId, JsonElement update, JsonElement root, string rawLine)

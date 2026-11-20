@@ -486,6 +486,8 @@ public sealed class AppServerControlRequestSummary
     public string KindLabel { get; set; } = string.Empty;
     public string State { get; set; } = string.Empty;
     public string? Detail { get; set; }
+    public string? ApprovalPurpose { get; set; }
+    public string? ApprovalTool { get; set; }
     public string? Decision { get; set; }
     public List<AppServerControlQuestion> Questions { get; set; } = [];
     public List<AppServerControlAnsweredQuestion> Answers { get; set; } = [];
