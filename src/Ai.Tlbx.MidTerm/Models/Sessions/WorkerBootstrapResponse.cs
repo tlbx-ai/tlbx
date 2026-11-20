@@ -8,4 +8,5 @@ public sealed class WorkerBootstrapResponse
     public List<string> SlashCommands { get; set; } = [];
     public bool GuidanceInjected { get; set; }
     public string? TlbxDir { get; set; }
+    public string? HandoffFilePath { get; set; }
 }

@@ -3,7 +3,7 @@ import type { ShellType } from '../../api/types';
 import { $currentSettings } from '../../stores';
 import type { Session } from '../../types';
 import { resolveLaunchDimensions } from '../terminal';
-import { setSmartInputDraftText } from '../smartInput/smartInput';
+import { setSmartInputHandoffDraft } from '../smartInput/smartInput';
 import { escapeHtml } from '../../utils/dom';
 import { t } from '../i18n';
 import { registerBackButtonLayer } from '../navigation/backButtonGuard';
@@ -15,7 +15,7 @@ const providers = [
 ] as const;
 
 type HandoffProvider = (typeof providers)[number]['id'];
-type HandoffTarget = { provider: HandoffProvider; terminal: boolean; draft: string };
+type HandoffTarget = { provider: HandoffProvider; terminal: boolean };
 
 let activeDialog: HTMLDialogElement | null = null;
 
@@ -32,70 +32,48 @@ export function openContextHandoff(
   dialog.className = 'agent-session-details context-handoff-dialog';
   dialog.setAttribute('aria-labelledby', 'context-handoff-title');
   const sourceIsTerminal = !source.appServerControlOnly;
-  const copy = t('contextHandoff.copy');
+  const fileName = sourceIsTerminal ? 'terminal-output.txt' : 'chat-history.jsonl';
   dialog.innerHTML = `
     <header>
       <h2 id="context-handoff-title">${escapeHtml(t('contextHandoff.title'))}</h2>
       <button type="button" data-cancel class="agent-session-close" aria-label="${escapeHtml(t('dialog.cancel'))}">×</button>
     </header>
-    <div class="agent-session-content context-handoff-fields">
-      <div class="context-handoff-target">
-        <label>${escapeHtml(t('contextHandoff.harness'))}
-          <select data-provider autofocus>
-            ${providers.map(({ id, label }) => `<option value="${id}">${label}</option>`).join('')}
-          </select>
-        </label>
-        <label ${sourceIsTerminal ? 'hidden' : ''}>${escapeHtml(t('contextHandoff.surface'))}
-          <select data-surface><option value="acp">ACP</option><option value="terminal">Terminal</option></select>
-        </label>
+    <form>
+      <div class="agent-session-content context-handoff-fields">
+        <div class="context-handoff-target">
+          <label>${escapeHtml(t('contextHandoff.harness'))}
+            <select name="provider" autofocus>
+              ${providers.map(({ id, label }) => `<option value="${id}">${label}</option>`).join('')}
+            </select>
+          </label>
+          <label ${sourceIsTerminal ? 'hidden' : ''}>${escapeHtml(t('contextHandoff.surface'))}
+            <select name="surface"><option value="acp">ACP</option><option value="terminal">Terminal</option></select>
+          </label>
+        </div>
+        <p><code>${fileName}</code></p>
+        <p>${escapeHtml(t(sourceIsTerminal ? 'contextHandoff.terminalFile' : 'contextHandoff.chatFile'))}</p>
+        <p role="status" data-status></p>
       </div>
-      <label>${escapeHtml(t('contextHandoff.preview'))}
-        <textarea data-draft rows="10" spellcheck="false" disabled></textarea>
-      </label>
-      <p data-hint></p>
-      <p role="status" data-status></p>
-    </div>
-    <footer>
-      <button type="button" data-copy hidden>${escapeHtml(copy)}</button>
-      <button type="button" data-launch disabled>${escapeHtml(t('contextHandoff.openAcp'))}</button>
-    </footer>
+      <footer>
+        <button type="submit" data-launch>${escapeHtml(t('contextHandoff.openAcp'))}</button>
+      </footer>
+    </form>
   `;
 
-  const providerSelect = getHandoffControl(dialog, '[data-provider]', HTMLSelectElement);
-  const surface = getHandoffControl(dialog, '[data-surface]', HTMLSelectElement);
-  const draft = getHandoffControl(dialog, '[data-draft]', HTMLTextAreaElement);
-  const status = getHandoffControl(dialog, '[data-status]', HTMLParagraphElement);
-  const hint = getHandoffControl(dialog, '[data-hint]', HTMLParagraphElement);
-  const launchButton = getHandoffControl(dialog, '[data-launch]', HTMLButtonElement);
-  const copyButton = getHandoffControl(dialog, '[data-copy]', HTMLButtonElement);
-  const cancelButton = getHandoffControl(dialog, '[data-cancel]', HTMLButtonElement);
-  const abort = new AbortController();
-  let launching = false;
-  let copiedDraft: string | null = null;
+  const form = dialog.querySelector('form');
+  const select = dialog.querySelector<HTMLSelectElement>('select[name="provider"]');
+  const surface = dialog.querySelector<HTMLSelectElement>('select[name="surface"]');
+  const launchButton = dialog.querySelector<HTMLButtonElement>('[data-launch]');
+  const cancel = dialog.querySelector<HTMLButtonElement>('[data-cancel]');
+  const status = dialog.querySelector<HTMLElement>('[data-status]');
+  if (!form || !select || !surface || !launchButton || !cancel || !status)
+    throw new Error('Handoff dialog is missing a control.');
+
   const sourceProvider = source.profileHint ?? source.foregroundProcessIdentity;
-  providerSelect.value = providers.find(({ id }) => id !== sourceProvider)?.id ?? 'codex';
-
-  function sync(): void {
-    const terminal = surface.value === 'terminal';
-    const text = draft.value.trim();
-    const copied = terminal && text !== '' && draft.value === copiedDraft;
-    copyButton.hidden = !terminal;
-    copyButton.disabled = launching || !text;
-    launchButton.disabled = launching || draft.disabled || (!sourceIsTerminal && !text);
-    providerSelect.disabled = launching;
-    surface.disabled = launching;
-    draft.readOnly = launching;
-    cancelButton.disabled = launching;
-    launchButton.textContent = t(
-      terminal ? 'contextHandoff.openTerminal' : 'contextHandoff.openAcp',
-    );
-    hint.textContent = t(terminal ? 'contextHandoff.terminalHint' : 'contextHandoff.acpHint');
-    copyButton.textContent = copied ? t('contextHandoff.copied') : copy;
-  }
-
+  select.value = providers.find(({ id }) => id !== sourceProvider)?.id ?? 'codex';
   const release = registerBackButtonLayer(requestClose);
+
   function close(): void {
-    abort.abort();
     release();
     dialog.close();
     dialog.remove();
@@ -103,93 +81,38 @@ export function openContextHandoff(
   }
 
   function requestClose(): void {
-    if (!launching) close();
+    if (!launchButton?.disabled) close();
   }
 
   dialog.addEventListener('cancel', (event) => {
     event.preventDefault();
     requestClose();
   });
-  cancelButton.addEventListener('click', requestClose);
-  for (const element of [draft, surface, providerSelect]) element.addEventListener('input', sync);
-
-  copyButton.addEventListener('click', () => {
-    void copyContextDraft(draft).then((copied) => {
-      copiedDraft = copied;
-      status.textContent = copied === null ? t('contextHandoff.copyFallback') : '';
-      sync();
-    });
+  cancel.addEventListener('click', requestClose);
+  surface.addEventListener('change', () => {
+    launchButton.textContent = t(
+      surface.value === 'terminal' ? 'contextHandoff.openTerminal' : 'contextHandoff.openAcp',
+    );
   });
-
-  launchButton.addEventListener('click', () => {
-    const provider = providers.find((item) => item.id === providerSelect.value);
-    if (!provider || launchButton.disabled) return;
-    launching = true;
+  form.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const target = providers.find(({ id }) => id === select.value);
+    if (!target || launchButton.disabled) return;
+    for (const control of [select, surface, launchButton, cancel]) control.disabled = true;
     status.textContent = t('contextHandoff.opening');
-    sync();
     void launch({
-      provider: provider.id,
+      provider: target.id,
       terminal: !sourceIsTerminal && surface.value === 'terminal',
-      draft: draft.value,
     })
       .then(close)
       .catch((error: unknown) => {
         status.textContent = t('contextHandoff.openFailed').replace('{error}', () => String(error));
-      })
-      .finally(() => {
-        launching = false;
-        sync();
+        for (const control of [select, surface, launchButton, cancel]) control.disabled = false;
       });
   });
-
   activeDialog = dialog;
   document.body.append(dialog);
   dialog.showModal();
-  sync();
-  status.textContent = t('contextHandoff.loading');
-  void fetch(`/api/sessions/${encodeURIComponent(source.id)}/agent-control/handoff`, {
-    signal: abort.signal,
-  })
-    .then(async (response) => {
-      if (!response.ok) throw new Error(await readHandoffError(response));
-      draft.value = await response.text();
-      draft.disabled = false;
-      status.textContent = '';
-      sync();
-    })
-    .catch((error: unknown) => {
-      if (!abort.signal.aborted)
-        status.textContent = t('contextHandoff.loadFailed').replace('{error}', () => String(error));
-    });
-}
-
-async function readHandoffError(response: Response): Promise<string> {
-  const body = await response.text();
-  if (!response.headers.get('content-type')?.includes('json')) return body || response.statusText;
-  const payload: unknown = JSON.parse(body);
-  return typeof payload === 'string' ? payload : response.statusText;
-}
-
-async function copyContextDraft(draft: HTMLTextAreaElement): Promise<string | null> {
-  const text = draft.value;
-  try {
-    await navigator.clipboard.writeText(text);
-    return text;
-  } catch {
-    draft.focus();
-    draft.select();
-    return null;
-  }
-}
-
-function getHandoffControl<T extends HTMLElement>(
-  dialog: HTMLDialogElement,
-  selector: string,
-  tag: new () => T,
-): T {
-  const element = dialog.querySelector(selector);
-  if (!(element instanceof tag)) throw new Error('Missing handoff control: ' + selector);
-  return element;
 }
 
 export async function createContextHandoffSession(
@@ -197,14 +120,11 @@ export async function createContextHandoffSession(
   target: HandoffTarget,
   shell: ShellType | null,
 ): Promise<Session> {
-  const directory = source.currentDirectory;
-  if (!directory) throw new Error(t('contextHandoff.missingDirectory'));
-
   const dimensions = await resolveLaunchDimensions($currentSettings.get(), 'launcher');
   const { data } = await bootstrapWorker({
     ...dimensions,
     shell,
-    workingDirectory: directory,
+    handoffSourceSessionId: source.id,
     agentControlled: false,
     injectGuidance: false,
     profile: target.provider,
@@ -213,14 +133,11 @@ export async function createContextHandoffSession(
     launchDelayMs: 0,
     slashCommands: [],
     slashCommandDelayMs: 0,
-    spaceId: source.spaceId ?? null,
-    workspacePath: source.workspacePath ?? null,
   });
 
-  const session = data?.session;
-  if (!session) throw new Error(t('sessionLauncher.createFailed'));
-  if (!target.terminal) setSmartInputDraftText(session.id, target.draft);
-  return session;
+  if (!data?.session || !data.handoffFilePath) throw new Error(t('sessionLauncher.createFailed'));
+  setSmartInputHandoffDraft(data.session.id, data.handoffFilePath);
+  return data.session;
 }
 
 function getHandoffTerminalCommand(provider: HandoffProvider, shell: ShellType | null): string {

@@ -22555,21 +22555,12 @@ button.tree-expand { height: 22px; padding: 0; border: 0; background: transparen
   display: none;
 }
 
-.context-handoff-fields select,
-.context-handoff-fields textarea {
+.context-handoff-fields select {
   color: inherit;
   background: var(--bg-dialog-muted);
   border: 1px solid var(--border-color);
   border-radius: 6px;
   padding: 6px 8px;
-}
-
-.context-handoff-fields textarea {
-  width: 100%;
-  min-height: 5em;
-  max-height: 40dvh;
-  resize: vertical;
-  font: inherit;
 }
 
 .context-handoff-fields p {
@@ -22579,4 +22570,10 @@ button.tree-expand { height: 22px; padding: 0; border: 0; background: transparen
 .context-handoff-dialog button:disabled {
   opacity: 0.5;
   cursor: default;
+}
+
+.context-handoff-dialog form {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }

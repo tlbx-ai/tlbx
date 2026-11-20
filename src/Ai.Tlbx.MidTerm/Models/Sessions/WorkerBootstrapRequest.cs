@@ -6,6 +6,7 @@ public sealed class WorkerBootstrapRequest
     public string? Shell { get; set; }
     public string? WorkingDirectory { get; set; }
     public string? ResumeThreadId { get; set; }
+    public string? HandoffSourceSessionId { get; set; }
     public int Cols { get; set; } = 120;
     public int Rows { get; set; } = 30;
     public bool AgentControlled { get; set; } = true;
