@@ -90,9 +90,10 @@ internal sealed partial class AcpAppServerControlAgentRuntime
         {
             await ApplyAntigravityModeAsync(plan, permission, ct).ConfigureAwait(false);
             response.ThreadStatus = "applied";
-            response.TurnStatus = request.ExpectedTurnId is null || request.ExpectedTurnId != _activeTurnId
-                ? "notRequested" : "applied";
-            response.Status = response.UnconfirmedFields.Count == 0 ? "applied" : "partial";
+            response.TurnStatus = request.ExpectedTurnId is null ? "notRequested" :
+                request.ExpectedTurnId == _activeTurnId ? "applied" : "targetUnavailable";
+            response.Status = response.UnconfirmedFields.Count == 0 && response.TurnStatus != "targetUnavailable"
+                ? "applied" : "partial";
             response.EffectiveSettings["planMode"] =
                 JsonSerializer.SerializeToElement(_quickSettings.PlanMode, AppServerControlHostJsonContext.Default.String);
             response.EffectiveSettings["permissionMode"] =

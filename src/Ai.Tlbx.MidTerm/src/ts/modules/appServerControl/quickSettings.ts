@@ -1182,8 +1182,8 @@ function dropConflictingAntigravityModeDraft(
   const mode = state.effective.configOptions?.find(
     (option) => (option.configId ?? option.id) === 'mode',
   );
-  if (mode) {
-    state.draft.configOptions = state.draft.configOptions?.map((option) =>
+  if (mode && state.draft.configOptions) {
+    state.draft.configOptions = state.draft.configOptions.map((option) =>
       (option.configId ?? option.id) === 'mode' ? structuredClone(mode) : option,
     );
   }
