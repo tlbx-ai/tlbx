@@ -77,6 +77,23 @@ public sealed class TlbxMcpApiProtocolTests
     }
 
     [Fact]
+    public void NotificationPriorityIsOptionalAndOffersOnlyNamedValues()
+    {
+        var operation = Operation("notification_send");
+        var schema = operation.BuildSchema();
+        var priority = schema["properties"]!["priority"]!;
+        Assert.Equal("string", priority["type"]!.GetValue<string>());
+        Assert.Equal(new[] { "normal", "important" },
+            priority["enum"]!.AsArray().Select(value => value!.GetValue<string>()));
+        Assert.DoesNotContain(schema["required"]!.AsArray(), value => value!.GetValue<string>() == "priority");
+
+        var explicitNull = operation.Bind(Args("""{"body":"hello","priority":null}"""), "self");
+        var body = JsonNode.Parse(explicitNull.Body!)!.AsObject();
+        Assert.True(body.ContainsKey("priority"));
+        Assert.Null(body["priority"]);
+    }
+
+    [Fact]
     public void OmittedBodyFieldsRemainOmittedAndFixedPromptModeCannotBeOverridden()
     {
         var operation = Operation("board_update");
