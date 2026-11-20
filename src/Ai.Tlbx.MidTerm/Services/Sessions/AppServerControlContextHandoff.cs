@@ -22,16 +22,25 @@ internal static class AppServerControlContextHandoff
 
         var newestFirst = new List<string>();
         var remaining = HistoryCharacterLimit;
-        foreach (var item in Enumerable.Reverse(window.History))
+        var oldestIncluded = window.History.Count;
+        for (var index = window.History.Count - 1; index >= 0; index--)
         {
-            var entry = FormatEntry(item);
+            var entry = FormatEntry(window.History[index]);
             if (entry is null)
                 continue;
 
             if (entry.Length > remaining)
                 break;
             newestFirst.Add(entry);
+            oldestIncluded = index;
             remaining -= entry.Length;
+        }
+
+        if (!window.HasOlderHistory && originalRequest is null)
+        {
+            var openingIndex = window.History.FindIndex(IsOpeningRequest);
+            if (openingIndex >= 0 && openingIndex < oldestIncluded)
+                originalRequest = window.History[openingIndex];
         }
 
         var draft = new StringBuilder();
@@ -52,6 +61,9 @@ internal static class AppServerControlContextHandoff
 
         return draft.AppendLine().AppendLine("## Next request").ToString();
     }
+
+    public static bool IsOpeningRequest(AppServerControlHistoryItem item) =>
+        item.Kind == "user" && !string.IsNullOrWhiteSpace(item.Body);
 
     private static bool IncludeEntry(AppServerControlHistoryItem item) =>
         HasContext(item) || item.Kind == "tool" && !string.IsNullOrWhiteSpace(item.Title);

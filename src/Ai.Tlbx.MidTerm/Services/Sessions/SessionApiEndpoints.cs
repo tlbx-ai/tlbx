@@ -856,7 +856,7 @@ public static partial class SessionApiEndpoints
                     return Results.Conflict("Agent Controller history is unavailable.");
 
                 var recent = await appServerControlRuntime.GetHistoryWindowAsync(
-                    id, count: AppServerControlContextHandoff.RecentHistoryCount, ct: ct).ConfigureAwait(false);
+                    id, count: AppServerControlContextHandoff.RecentHistoryCount, ct: ct, updateCache: false).ConfigureAwait(false);
                 if (recent is null)
                     return Results.Conflict("There is no conversation to hand off.");
 
@@ -864,11 +864,10 @@ public static partial class SessionApiEndpoints
                 if (recent.HistoryWindowStart > 0)
                 {
                     var opening = await appServerControlRuntime.GetHistoryWindowAsync(
-                        id, startIndex: 0, count: Math.Min(16, recent.HistoryWindowStart), ct: ct).ConfigureAwait(false);
-                    if (opening?.Thread.ThreadId != recent.Thread.ThreadId)
+                        id, startIndex: 0, count: Math.Min(16, recent.HistoryWindowStart), ct: ct, updateCache: false).ConfigureAwait(false);
+                    if (opening is null || opening.Thread.ThreadId != recent.Thread.ThreadId)
                         return Results.Conflict("The source conversation changed. Open the handoff again.");
-                    originalRequest = opening.History.FirstOrDefault(
-                        item => item.Kind == "user" && !string.IsNullOrWhiteSpace(item.Body));
+                    originalRequest = opening.History.FirstOrDefault(AppServerControlContextHandoff.IsOpeningRequest);
                 }
                 var draft = AppServerControlContextHandoff.CreateDraft(recent, originalRequest);
                 if (draft is null)

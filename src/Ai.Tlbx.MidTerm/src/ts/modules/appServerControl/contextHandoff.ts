@@ -1,3 +1,9 @@
+import { bootstrapWorker, waitForApiReachability } from '../../api/client';
+import type { ShellType } from '../../api/types';
+import { $currentSettings } from '../../stores';
+import type { Session } from '../../types';
+import { resolveLaunchDimensions } from '../terminal';
+import { setSmartInputDraftText } from '../smartInput/smartInput';
 import { escapeHtml } from '../../utils/dom';
 import { t } from '../i18n';
 import { registerBackButtonLayer } from '../navigation/backButtonGuard';
@@ -9,7 +15,7 @@ const providers = [
 ] as const;
 
 type HandoffProvider = (typeof providers)[number]['id'];
-export type HandoffTarget = { provider: HandoffProvider; terminal: boolean; draft: string };
+type HandoffTarget = { provider: HandoffProvider; terminal: boolean; draft: string };
 
 let activeDialog: HTMLDialogElement | null = null;
 
@@ -55,14 +61,14 @@ export function openContextHandoff(
     </footer>
   `;
 
-  const providerSelect = dialog.querySelector<HTMLSelectElement>('[data-provider]')!;
-  const surface = dialog.querySelector<HTMLSelectElement>('[data-surface]')!;
-  const draft = dialog.querySelector<HTMLTextAreaElement>('[data-draft]')!;
-  const status = dialog.querySelector<HTMLParagraphElement>('[data-status]')!;
-  const hint = dialog.querySelector<HTMLParagraphElement>('[data-hint]')!;
-  const launchButton = dialog.querySelector<HTMLButtonElement>('[data-launch]')!;
-  const copyButton = dialog.querySelector<HTMLButtonElement>('[data-copy]')!;
-  const cancelButton = dialog.querySelector<HTMLButtonElement>('[data-cancel]')!;
+  const providerSelect = getHandoffControl(dialog, '[data-provider]', HTMLSelectElement);
+  const surface = getHandoffControl(dialog, '[data-surface]', HTMLSelectElement);
+  const draft = getHandoffControl(dialog, '[data-draft]', HTMLTextAreaElement);
+  const status = getHandoffControl(dialog, '[data-status]', HTMLParagraphElement);
+  const hint = getHandoffControl(dialog, '[data-hint]', HTMLParagraphElement);
+  const launchButton = getHandoffControl(dialog, '[data-launch]', HTMLButtonElement);
+  const copyButton = getHandoffControl(dialog, '[data-copy]', HTMLButtonElement);
+  const cancelButton = getHandoffControl(dialog, '[data-cancel]', HTMLButtonElement);
   const abort = new AbortController();
   let launching = false;
   let copiedDraft: string | null = null;
@@ -79,7 +85,9 @@ export function openContextHandoff(
     surface.disabled = launching;
     draft.readOnly = launching;
     cancelButton.disabled = launching;
-    launchButton.textContent = t(terminal ? 'contextHandoff.openTerminal' : 'contextHandoff.openAcp');
+    launchButton.textContent = t(
+      terminal ? 'contextHandoff.openTerminal' : 'contextHandoff.openAcp',
+    );
     hint.textContent = t(terminal ? 'contextHandoff.terminalHint' : 'contextHandoff.acpHint');
     copyButton.textContent = copied ? t('contextHandoff.copied') : copy;
   }
@@ -87,18 +95,23 @@ export function openContextHandoff(
   const release = registerBackButtonLayer(() => {
     if (!launching) dialog.close();
   });
-  dialog.addEventListener('close', () => {
-    abort.abort();
-    release();
-    dialog.remove();
-    activeDialog = null;
-  }, { once: true });
+  dialog.addEventListener(
+    'close',
+    () => {
+      abort.abort();
+      release();
+      dialog.remove();
+      activeDialog = null;
+    },
+    { once: true },
+  );
   dialog.addEventListener('cancel', (event) => {
     if (launching) event.preventDefault();
   });
-  cancelButton.addEventListener('click', () => dialog.close());
-  for (const element of [draft, surface, providerSelect])
-    element.addEventListener('input', sync);
+  cancelButton.addEventListener('click', () => {
+    dialog.close();
+  });
+  for (const element of [draft, surface, providerSelect]) element.addEventListener('input', sync);
 
   copyButton.addEventListener('click', () => {
     void copyContextDraft(draft).then((copied) => {
@@ -114,8 +127,14 @@ export function openContextHandoff(
     launching = true;
     status.textContent = t('contextHandoff.opening');
     sync();
-    void launch({ provider: provider.id, terminal: surface.value === 'terminal', draft: draft.value })
-      .then(() => dialog.close())
+    void launch({
+      provider: provider.id,
+      terminal: surface.value === 'terminal',
+      draft: draft.value,
+    })
+      .then(() => {
+        dialog.close();
+      })
       .catch((error: unknown) => {
         status.textContent = t('contextHandoff.openFailed').replace('{error}', () => String(error));
       })
@@ -132,16 +151,18 @@ export function openContextHandoff(
   status.textContent = t('contextHandoff.loading');
   void fetch(`/api/sessions/${encodeURIComponent(sessionId)}/agent-control/handoff`, {
     signal: abort.signal,
-  }).then(async (response) => {
-    if (!response.ok) throw new Error(await readHandoffError(response));
-    draft.value = await response.text();
-    draft.disabled = false;
-    status.textContent = '';
-    sync();
-  }).catch((error: unknown) => {
-    if (!abort.signal.aborted)
-      status.textContent = t('contextHandoff.loadFailed').replace('{error}', () => String(error));
-  });
+  })
+    .then(async (response) => {
+      if (!response.ok) throw new Error(await readHandoffError(response));
+      draft.value = await response.text();
+      draft.disabled = false;
+      status.textContent = '';
+      sync();
+    })
+    .catch((error: unknown) => {
+      if (!abort.signal.aborted)
+        status.textContent = t('contextHandoff.loadFailed').replace('{error}', () => String(error));
+    });
 }
 
 async function readHandoffError(response: Response): Promise<string> {
@@ -161,4 +182,55 @@ async function copyContextDraft(draft: HTMLTextAreaElement): Promise<string | nu
     draft.select();
     return null;
   }
+}
+
+function getHandoffControl<T extends HTMLElement>(
+  dialog: HTMLDialogElement,
+  selector: string,
+  tag: new () => T,
+): T {
+  const element = dialog.querySelector(selector);
+  if (!(element instanceof tag)) throw new Error('Missing handoff control: ' + selector);
+  return element;
+}
+
+export async function createContextHandoffSession(
+  source: Session,
+  target: HandoffTarget,
+  shell: ShellType | null,
+): Promise<Session> {
+  const directory = source.currentDirectory;
+  if (!directory) throw new Error(t('contextHandoff.missingDirectory'));
+
+  const [dimensions] = await Promise.all([
+    resolveLaunchDimensions($currentSettings.get(), 'launcher'),
+    waitForApiReachability(),
+  ]);
+  const { data } = await bootstrapWorker({
+    ...dimensions,
+    shell,
+    workingDirectory: directory,
+    agentControlled: false,
+    injectGuidance: false,
+    profile: target.provider,
+    appServerControlOnly: !target.terminal,
+    launchCommand: target.terminal ? getHandoffTerminalCommand(target.provider, shell) : null,
+    launchDelayMs: 0,
+    slashCommands: [],
+    slashCommandDelayMs: 0,
+    spaceId: source.spaceId ?? null,
+    workspacePath: source.workspacePath ?? null,
+  });
+
+  const session = data?.session;
+  if (!session) throw new Error(t('sessionLauncher.createFailed'));
+  if (!target.terminal) setSmartInputDraftText(session.id, target.draft);
+  return session;
+}
+
+function getHandoffTerminalCommand(provider: HandoffProvider, shell: ShellType | null): string {
+  if (provider !== 'antigravity') return provider;
+  if (shell === 'Pwsh' || shell === 'PowerShell')
+    return "if (Get-Command agy -ErrorAction SilentlyContinue) { agy } else { & (Join-Path $env:LOCALAPPDATA 'agy/bin/agy.exe') }";
+  return 'agy';
 }

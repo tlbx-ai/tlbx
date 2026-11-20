@@ -983,7 +983,8 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         int? startIndex = null,
         int? count = null,
         int? viewportWidth = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        bool updateCache = true)
     {
         var state = GetRequiredState(sessionId);
         long generation;
@@ -992,7 +993,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         {
             StartIndex = startIndex, Count = count, ViewportWidth = viewportWidth
         }, ct).ConfigureAwait(false);
-        if (result.HistoryWindow is { } window)
+        if (updateCache && result.HistoryWindow is { } window)
         {
             RegisterHistoryPaths(_pathAllowlist, sessionId, window.History);
             UpdateCachedHistoryWindow(state, window, generation);

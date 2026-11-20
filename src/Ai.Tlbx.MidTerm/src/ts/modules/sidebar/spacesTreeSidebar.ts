@@ -1224,7 +1224,7 @@ function getSidebarSessionActionsSignature(entry: SidebarSessionRef): string {
     t(isSessionNotesExpanded(entry.id) ? 'session.collapseNotes' : 'session.expandNotes'),
     isSessionInLayout(entry.id),
     t('session.removeFromLayout'),
-    entry.session.appServerControlOnly === true,
+    entry.session.appServerControlOnly,
     t('contextHandoff.title'),
     t('session.rename'),
     t('session.close'),
@@ -1314,23 +1314,7 @@ function patchSidebarSessionActions(actions: HTMLDivElement, entry: SidebarSessi
     actions.appendChild(undockButton);
   }
 
-  if (entry.machineId === null && entry.session.appServerControlOnly) {
-    const handoffButton = document.createElement('button');
-    handoffButton.className = 'session-context-handoff';
-    handoffButton.setAttribute('role', 'menuitem');
-    handoffButton.title = t('contextHandoff.title');
-    handoffButton.setAttribute('aria-label', handoffButton.title);
-    handoffButton.innerHTML = `
-      <span class="session-action-icon text-icon" aria-hidden="true">⇢</span>
-      <span class="session-action-label">${escapeHtml(handoffButton.title)}</span>
-    `;
-    handoffButton.addEventListener('click', (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      callbacks?.onContextHandoff(entry.id);
-    });
-    actions.appendChild(handoffButton);
-  }
+  appendContextHandoffAction(actions, entry);
 
   const renameButton = document.createElement('button');
   renameButton.className = 'session-rename';
@@ -1364,6 +1348,25 @@ function patchSidebarSessionActions(actions: HTMLDivElement, entry: SidebarSessi
   });
 
   actions.appendChild(closeButton);
+}
+
+function appendContextHandoffAction(actions: HTMLElement, entry: SidebarSessionRef): void {
+  if (entry.machineId !== null || !entry.session.appServerControlOnly) return;
+  const handoffButton = document.createElement('button');
+  handoffButton.className = 'session-context-handoff';
+  handoffButton.setAttribute('role', 'menuitem');
+  handoffButton.title = t('contextHandoff.title');
+  handoffButton.setAttribute('aria-label', handoffButton.title);
+  handoffButton.innerHTML = `
+    <span class="session-action-icon text-icon" aria-hidden="true">⇢</span>
+    <span class="session-action-label">${escapeHtml(handoffButton.title)}</span>
+  `;
+  handoffButton.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    callbacks?.onContextHandoff(entry.id);
+  });
+  actions.appendChild(handoffButton);
 }
 
 // =============================================================================
