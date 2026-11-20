@@ -92,25 +92,24 @@ export function openContextHandoff(
     copyButton.textContent = copied ? t('contextHandoff.copied') : copy;
   }
 
-  const release = registerBackButtonLayer(() => {
-    if (!launching) dialog.close();
-  });
-  dialog.addEventListener(
-    'close',
-    () => {
-      abort.abort();
-      release();
-      dialog.remove();
-      activeDialog = null;
-    },
-    { once: true },
-  );
-  dialog.addEventListener('cancel', (event) => {
-    if (launching) event.preventDefault();
-  });
-  cancelButton.addEventListener('click', () => {
+  const release = registerBackButtonLayer(requestClose);
+  function close(): void {
+    abort.abort();
+    release();
     dialog.close();
+    dialog.remove();
+    activeDialog = null;
+  }
+
+  function requestClose(): void {
+    if (!launching) close();
+  }
+
+  dialog.addEventListener('cancel', (event) => {
+    event.preventDefault();
+    requestClose();
   });
+  cancelButton.addEventListener('click', requestClose);
   for (const element of [draft, surface, providerSelect]) element.addEventListener('input', sync);
 
   copyButton.addEventListener('click', () => {
@@ -132,9 +131,7 @@ export function openContextHandoff(
       terminal: surface.value === 'terminal',
       draft: draft.value,
     })
-      .then(() => {
-        dialog.close();
-      })
+      .then(close)
       .catch((error: unknown) => {
         status.textContent = t('contextHandoff.openFailed').replace('{error}', () => String(error));
       })

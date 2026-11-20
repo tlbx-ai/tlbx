@@ -835,7 +835,7 @@ public static partial class SessionApiEndpoints
                 startIndex,
                 count,
                 viewportWidth,
-                ct).ConfigureAwait(false);
+                ct: ct).ConfigureAwait(false);
             return history is null
                 ? Results.NotFound()
                 : Results.Json(history, AppJsonContext.Default.AppServerControlHistoryWindowResponse);

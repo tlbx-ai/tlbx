@@ -983,8 +983,8 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         int? startIndex = null,
         int? count = null,
         int? viewportWidth = null,
-        CancellationToken ct = default,
-        bool updateCache = true)
+        bool updateCache = true,
+        CancellationToken ct = default)
     {
         var state = GetRequiredState(sessionId);
         long generation;

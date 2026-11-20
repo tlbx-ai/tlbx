@@ -174,14 +174,10 @@ public sealed class SessionAppServerControlRuntimeService : IAsyncDisposable, IS
         int? startIndex = null,
         int? count = null,
         int? viewportWidth = null,
+        bool updateCache = true,
         CancellationToken ct = default)
     {
-        return _hostRuntime.GetHistoryWindowAsync(
-            sessionId,
-            startIndex,
-            count,
-            viewportWidth,
-            ct);
+        return _hostRuntime.GetHistoryWindowAsync(sessionId, startIndex, count, viewportWidth, updateCache, ct);
     }
 
     public AppServerControlHistoryPatchSubscription SubscribeHistoryPatches(
