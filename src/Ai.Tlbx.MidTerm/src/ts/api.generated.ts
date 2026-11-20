@@ -5706,6 +5706,7 @@ export interface components {
       shell?: null | string;
       workingDirectory?: null | string;
       resumeThreadId?: null | string;
+      handoffSourceSessionId?: null | string;
       /** Format: int32 */
       cols: number;
       /** Format: int32 */
@@ -5731,6 +5732,7 @@ export interface components {
       slashCommands: string[];
       guidanceInjected: boolean;
       tlbxDir: null | string;
+      handoffFilePath: null | string;
     };
   };
   responses: never;

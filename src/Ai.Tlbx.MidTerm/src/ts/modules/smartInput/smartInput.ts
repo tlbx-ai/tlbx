@@ -874,8 +874,23 @@ function setSessionDraft(sessionId: string, draft: SmartInputComposerDraft): voi
   persistSmartInputCurrentDraft(sessionId, normalizedDraft);
 }
 
-export function setSmartInputDraftText(sessionId: string, text: string): void {
-  setSessionDraft(sessionId, createSmartInputComposerDraft(text));
+export function setSmartInputHandoffDraft(sessionId: string, path: string): void {
+  const name = path.split(/[\\/]/).pop() ?? 'history';
+  const isChat = name.endsWith('.jsonl');
+  const attachment = createAppServerControlComposerDraftAttachment(
+    sessionId,
+    { name, size: 0, type: isChat ? 'application/jsonl' : 'text/plain' },
+    path,
+  );
+  attachment.referenceKind = 'file';
+  attachment.referenceLabel = name;
+  const instruction = isChat
+    ? 'Read the attached conversation history from the first line (newest entry) and go farther back as needed. Use it as background for the next request. '
+    : 'Read the attached terminal output from the end and use it as background for the next request. ';
+  const draft = createSmartInputComposerDraft(instruction);
+  draft.parts.push({ kind: 'reference', referenceId: attachment.id });
+  setAppServerControlDraftAttachments(sessionId, [attachment]);
+  setSessionDraft(sessionId, draft);
 }
 
 function enqueueComposerPendingOperation(

@@ -403,6 +403,20 @@ public static partial class SessionApiEndpoints
 
         async Task<IResult> BootstrapWorker(WorkerBootstrapRequest request, CancellationToken ct, Action<string>? created = null)
         {
+            SessionInfoDto? handoffSource = null;
+            if (!string.IsNullOrWhiteSpace(request.HandoffSourceSessionId))
+            {
+                handoffSource = TryGetSessionDto(sessionManager, sessionSupervisor, appServerControlRuntime, request.HandoffSourceSessionId);
+                if (handoffSource is null) return Results.NotFound();
+                if (string.IsNullOrWhiteSpace(handoffSource.CurrentDirectory) || !Directory.Exists(handoffSource.CurrentDirectory))
+                    return Results.Conflict("The source working directory is unavailable.");
+
+                request.WorkingDirectory = handoffSource.CurrentDirectory;
+                request.SpaceId = handoffSource.SpaceId;
+                request.WorkspacePath = handoffSource.WorkspacePath;
+                request.ResumeThreadId = null;
+            }
+
             var creation = await sessionManager.CreateSessionDetailedAsync(
                 request.Shell,
                 request.Cols,
@@ -420,6 +434,23 @@ public static partial class SessionApiEndpoints
             var sessionInfo = creation.Session!;
             var sessionId = sessionInfo.Id;
             created?.Invoke(sessionId);
+            string? handoffFilePath = null;
+            if (handoffSource is not null)
+            {
+                try
+                {
+                    handoffFilePath = await AppServerControlContextHandoff.SaveAsync(
+                        sessionManager, appServerControlRuntime, handoffSource, sessionId, ct).ConfigureAwait(false);
+                    app.Services.GetRequiredService<SessionPathAllowlistService>().RegisterPath(sessionId, handoffFilePath);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or OperationCanceledException or TimeoutException)
+                {
+                    await sessionManager.CloseSessionAsync(sessionId, CancellationToken.None).ConfigureAwait(false);
+                    ct.ThrowIfCancellationRequested();
+                    return Results.Problem(ex.Message, statusCode: StatusCodes.Status409Conflict);
+                }
+            }
+
             ApplySessionSpaceMetadata(
                 sessionManager,
                 sessionId,
@@ -529,7 +560,8 @@ public static partial class SessionApiEndpoints
                 LaunchCommand = launchCommand,
                 SlashCommands = slashCommands,
                 GuidanceInjected = guidanceInjected,
-                TlbxDir = tlbxDir
+                TlbxDir = tlbxDir,
+                HandoffFilePath = handoffFilePath
             }, AppJsonContext.Default.WorkerBootstrapResponse);
         }
         app.MapPost("/api/workers/bootstrap", (WorkerBootstrapRequest request, CancellationToken ct) => BootstrapWorker(request, ct));
@@ -839,53 +871,6 @@ public static partial class SessionApiEndpoints
             return history is null
                 ? Results.NotFound()
                 : Results.Json(history, AppJsonContext.Default.AppServerControlHistoryWindowResponse);
-        });
-
-        app.MapGet("/api/sessions/{id}/agent-control/handoff", async Task<IResult> (
-            string id, HttpContext context, CancellationToken ct) =>
-        {
-            var session = TryGetSessionDto(sessionManager, sessionSupervisor, appServerControlRuntime, id);
-            if (session is null) return Results.NotFound();
-            context.Response.Headers.CacheControl = "no-store";
-            if (!session.AppServerControlOnly)
-            {
-                var snapshot = await sessionManager.GetBufferAsync(
-                    id, maxBytes: AppServerControlContextHandoff.TerminalByteLimit, ct: ct).ConfigureAwait(false);
-                if (snapshot is null) return Results.Conflict("Terminal history is unavailable.");
-                var terminalDraft = AppServerControlContextHandoff.CreateTerminalDraft(snapshot.Data, snapshot.SequenceStart > 0);
-                return Results.Text(terminalDraft, "text/plain", Encoding.UTF8);
-            }
-
-            try
-            {
-                if (!appServerControlRuntime.IsAttached(id) &&
-                    !await appServerControlRuntime.EnsureAttachedAsync(id, session, ct: ct).ConfigureAwait(false))
-                    return Results.Conflict("Agent Controller history is unavailable.");
-
-                var recent = await appServerControlRuntime.GetHistoryWindowAsync(
-                    id, count: AppServerControlContextHandoff.RecentHistoryCount, ct: ct, updateCache: false).ConfigureAwait(false);
-                if (recent is null)
-                    return Results.Conflict("There is no conversation to hand off.");
-
-                AppServerControlHistoryItem? originalRequest = null;
-                if (recent.HistoryWindowStart > 0)
-                {
-                    var opening = await appServerControlRuntime.GetHistoryWindowAsync(
-                        id, startIndex: 0, count: Math.Min(16, recent.HistoryWindowStart), ct: ct, updateCache: false).ConfigureAwait(false);
-                    if (opening is null || opening.Thread.ThreadId != recent.Thread.ThreadId)
-                        return Results.Conflict("The source conversation changed. Open the handoff again.");
-                    originalRequest = opening.History.FirstOrDefault(AppServerControlContextHandoff.IsOpeningRequest);
-                }
-                var draft = AppServerControlContextHandoff.CreateDraft(recent, originalRequest);
-                if (draft is null)
-                    return Results.Conflict("There is no conversation to hand off.");
-
-                return Results.Text(draft, "text/plain", Encoding.UTF8);
-            }
-            catch (InvalidOperationException ex)
-            {
-                return Results.Conflict(ex.Message);
-            }
         });
 
         app.MapPost("/api/sessions/{id}/agent-control/turn", async (
