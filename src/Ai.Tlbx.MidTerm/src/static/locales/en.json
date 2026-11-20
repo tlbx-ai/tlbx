@@ -913,7 +913,7 @@
   "contextHandoff.harness": "Harness",
   "contextHandoff.surface": "Open in",
   "contextHandoff.chatFile": "The new session gets the conversation as an attachment, with the newest entry first.",
-  "contextHandoff.terminalFile": "The new session gets the recent terminal output as an attachment.",
+  "contextHandoff.terminalFile": "The new session gets all retained terminal scrollback as an attachment.",
   "contextHandoff.fileReference": "Reference to the chat file",
   "contextHandoff.copyReference": "Copy file reference",
   "contextHandoff.pasteReference": "Paste the file reference once the CLI is ready.",
