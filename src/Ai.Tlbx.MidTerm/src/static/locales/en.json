@@ -1880,5 +1880,6 @@
   "agentSession.command.resume": "Continue an existing conversation",
   "agentSession.command.compact": "Compact this conversation’s context",
   "agentSession.command.goal": "Open goal controls",
+  "agentSession.command.handoff": "Hand off context to another session",
   "agentSession.command.help": "Show available commands"
 }

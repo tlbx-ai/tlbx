@@ -9,7 +9,7 @@ import { reconcileKeyedChildren } from '../../utils/domReconcile';
 import { registerBackButtonLayer } from '../navigation/backButtonGuard';
 import { t } from '../i18n';
 
-export type SessionTool = 'status' | 'usage' | 'resume' | 'compact' | 'goal' | 'help';
+export type SessionTool = 'status' | 'usage' | 'resume' | 'compact' | 'goal' | 'help' | 'handoff';
 export interface AgentCommand {
   name: string;
   description: string;
@@ -66,7 +66,7 @@ export function selectOpenAgentSession(
 
 export function getAgentSessionCommands(sessionId: string): AgentCommand[] {
   const snapshot = views.get(sessionId)?.snapshot;
-  const commands: AgentCommand[] = ['status', 'usage', 'help'].map((name) => ({
+  const commands: AgentCommand[] = ['status', 'usage', 'help', 'handoff'].map((name) => ({
     name,
     description: sessionToolText(`command.${name}`),
     local: true,

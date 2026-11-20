@@ -330,6 +330,12 @@ interface AdaptiveFooterLayoutState {
   touchControlsExpanded: boolean;
 }
 
+let appServerControlHandoffHandler: ((sessionId: string) => void) | undefined;
+
+export function setAppServerControlHandoffHandler(handler: (sessionId: string) => void): void {
+  appServerControlHandoffHandler = handler;
+}
+
 export function setAppServerControlResumeConversationHandler(
   handler:
     | ((args: {
@@ -744,6 +750,10 @@ async function executeAgentSessionTool(sessionId: string, action: SessionTool): 
   }
   if (action === 'compact') {
     await compactAppServerControlSession(sessionId);
+    return;
+  }
+  if (action === 'handoff') {
+    appServerControlHandoffHandler?.(sessionId);
     return;
   }
   const args = getAppServerControlResumeArgs(sessionId);

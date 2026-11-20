@@ -1,4 +1,4 @@
-import { bootstrapWorker, waitForApiReachability } from '../../api/client';
+import { bootstrapWorker } from '../../api/client';
 import type { ShellType } from '../../api/types';
 import { $currentSettings } from '../../stores';
 import type { Session } from '../../types';
@@ -20,8 +20,7 @@ type HandoffTarget = { provider: HandoffProvider; terminal: boolean; draft: stri
 let activeDialog: HTMLDialogElement | null = null;
 
 export function openContextHandoff(
-  sessionId: string,
-  sourceProvider: string | null | undefined,
+  source: Session,
   launch: (target: HandoffTarget) => Promise<void>,
 ): void {
   if (activeDialog) {
@@ -32,6 +31,7 @@ export function openContextHandoff(
   const dialog = document.createElement('dialog');
   dialog.className = 'agent-session-details context-handoff-dialog';
   dialog.setAttribute('aria-labelledby', 'context-handoff-title');
+  const sourceIsTerminal = !source.appServerControlOnly;
   const copy = t('contextHandoff.copy');
   dialog.innerHTML = `
     <header>
@@ -45,7 +45,7 @@ export function openContextHandoff(
             ${providers.map(({ id, label }) => `<option value="${id}">${label}</option>`).join('')}
           </select>
         </label>
-        <label>${escapeHtml(t('contextHandoff.surface'))}
+        <label ${sourceIsTerminal ? 'hidden' : ''}>${escapeHtml(t('contextHandoff.surface'))}
           <select data-surface><option value="acp">ACP</option><option value="terminal">Terminal</option></select>
         </label>
       </div>
@@ -72,6 +72,7 @@ export function openContextHandoff(
   const abort = new AbortController();
   let launching = false;
   let copiedDraft: string | null = null;
+  const sourceProvider = source.profileHint ?? source.foregroundProcessIdentity;
   providerSelect.value = providers.find(({ id }) => id !== sourceProvider)?.id ?? 'codex';
 
   function sync(): void {
@@ -80,7 +81,7 @@ export function openContextHandoff(
     const copied = terminal && text !== '' && draft.value === copiedDraft;
     copyButton.hidden = !terminal;
     copyButton.disabled = launching || !text;
-    launchButton.disabled = launching || !text;
+    launchButton.disabled = launching || draft.disabled || (!sourceIsTerminal && !text);
     providerSelect.disabled = launching;
     surface.disabled = launching;
     draft.readOnly = launching;
@@ -122,13 +123,13 @@ export function openContextHandoff(
 
   launchButton.addEventListener('click', () => {
     const provider = providers.find((item) => item.id === providerSelect.value);
-    if (!provider || launching || !draft.value.trim()) return;
+    if (!provider || launchButton.disabled) return;
     launching = true;
     status.textContent = t('contextHandoff.opening');
     sync();
     void launch({
       provider: provider.id,
-      terminal: surface.value === 'terminal',
+      terminal: !sourceIsTerminal && surface.value === 'terminal',
       draft: draft.value,
     })
       .then(close)
@@ -146,7 +147,7 @@ export function openContextHandoff(
   dialog.showModal();
   sync();
   status.textContent = t('contextHandoff.loading');
-  void fetch(`/api/sessions/${encodeURIComponent(sessionId)}/agent-control/handoff`, {
+  void fetch(`/api/sessions/${encodeURIComponent(source.id)}/agent-control/handoff`, {
     signal: abort.signal,
   })
     .then(async (response) => {
@@ -199,10 +200,7 @@ export async function createContextHandoffSession(
   const directory = source.currentDirectory;
   if (!directory) throw new Error(t('contextHandoff.missingDirectory'));
 
-  const [dimensions] = await Promise.all([
-    resolveLaunchDimensions($currentSettings.get(), 'launcher'),
-    waitForApiReachability(),
-  ]);
+  const dimensions = await resolveLaunchDimensions($currentSettings.get(), 'launcher');
   const { data } = await bootstrapWorker({
     ...dimensions,
     shell,
