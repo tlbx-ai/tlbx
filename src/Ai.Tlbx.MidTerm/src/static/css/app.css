@@ -2506,6 +2506,7 @@ body::before {
 .session-pin,
 .session-resize,
 .session-rename,
+.session-context-handoff,
 .session-notes-toggle,
 .session-inject,
 .session-undock,
@@ -2621,6 +2622,7 @@ body::before {
 .session-pin:hover,
 .session-resize:hover,
 .session-rename:hover,
+.session-context-handoff:hover,
 .session-notes-toggle:hover,
 .session-inject:hover,
 .session-undock:hover {
@@ -2635,6 +2637,7 @@ body::before {
 .session-pin:hover .session-action-icon,
 .session-resize:hover .session-action-icon,
 .session-rename:hover .session-action-icon,
+.session-context-handoff:hover .session-action-icon,
 .session-notes-toggle:hover .session-action-icon,
 .session-inject:hover .session-action-icon,
 .session-undock:hover .session-action-icon,
@@ -4162,6 +4165,7 @@ body::before {
   .session-actions .session-pin,
   .session-actions .session-resize,
   .session-actions .session-rename,
+  .session-actions .session-context-handoff,
   .session-actions .session-notes-toggle,
   .session-actions .session-inject,
   .session-actions .session-undock,
@@ -22528,4 +22532,47 @@ button.tree-expand { height: 22px; padding: 0; border: 0; background: transparen
 .smart-input-question-answer > button {
   flex: 0 0 auto;
   width: auto;
+}
+
+.context-handoff-fields {
+  display: grid;
+  gap: 10px;
+}
+
+.context-handoff-target {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.context-handoff-fields label {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.context-handoff-fields select,
+.context-handoff-fields textarea {
+  color: inherit;
+  background: var(--bg-dialog-muted);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+
+.context-handoff-fields textarea {
+  width: 100%;
+  min-height: 5em;
+  max-height: 40dvh;
+  resize: vertical;
+  font: inherit;
+}
+
+.context-handoff-fields p {
+  margin: 0;
+}
+
+.context-handoff-dialog button:disabled {
+  opacity: 0.5;
+  cursor: default;
 }

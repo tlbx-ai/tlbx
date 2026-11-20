@@ -144,7 +144,7 @@ public sealed class AppServerControlWebSocketHandler
                     requestedWindow?.StartIndex,
                     requestedWindow?.Count,
                     requestedWindow?.ViewportWidth,
-                    shutdownToken).ConfigureAwait(false);
+                    ct: shutdownToken).ConfigureAwait(false);
             }
             catch (InvalidOperationException ex)
             {
@@ -389,7 +389,7 @@ public sealed class AppServerControlWebSocketHandler
                         request.HistoryWindow?.StartIndex,
                         request.HistoryWindow?.Count,
                         request.HistoryWindow?.ViewportWidth,
-                        CancellationToken.None).ConfigureAwait(false);
+                        ct: CancellationToken.None).ConfigureAwait(false);
                     if (historyWindow is null)
                     {
                         await sendError(request.Id, request.Action, request.SessionId, "App Server Controller history window is not available.").ConfigureAwait(false);

@@ -864,6 +864,10 @@ function setSessionDraft(sessionId: string, draft: SmartInputComposerDraft): voi
   persistSmartInputCurrentDraft(sessionId, normalizedDraft);
 }
 
+export function setSmartInputDraftText(sessionId: string, text: string): void {
+  setSessionDraft(sessionId, createSmartInputComposerDraft(text));
+}
+
 function enqueueComposerPendingOperation(
   sessionId: string,
   operation: () => Promise<void>,

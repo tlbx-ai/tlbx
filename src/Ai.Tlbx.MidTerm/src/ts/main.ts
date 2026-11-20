@@ -178,6 +178,10 @@ import {
 } from './modules/share';
 import { initDockState } from './modules/dockState';
 import { initSmartInput, setAppServerControlResumeConversationHandler } from './modules/smartInput';
+import {
+  createContextHandoffSession,
+  openContextHandoff,
+} from './modules/appServerControl/contextHandoff';
 import { openProviderResumePicker, type ResumeProvider } from './modules/providerResume';
 import { initSpacesDropdown, toggleSpacesDropdown } from './modules/spaces';
 import { initSpacesRuntime, type SpaceSurface } from './modules/spaces/runtime';
@@ -701,6 +705,7 @@ function registerCallbacks(): void {
     onSelect: selectSession,
     onDelete: deleteSession,
     onRename: startInlineRename,
+    onContextHandoff: handoffSessionContext,
     onToggleAgentControl: toggleAgentControl,
     onPinToHistory: (sessionId: string) => {
       void pinSessionToHistory(sessionId);
@@ -831,6 +836,22 @@ const {
   isAppServerControlOnlySession,
 });
 setAppServerControlResumeConversationHandler(resumeAppServerControlConversationFromCommandBay);
+
+function handoffSessionContext(sessionId: string): void {
+  const source = getSession(sessionId);
+  if (!source?.appServerControlOnly) return;
+  openContextHandoff(sessionId, source.profileHint, async (target) => {
+    const session = await createContextHandoffSession(source, target, resolveLauncherShell());
+    closeSidebar();
+    if (target.terminal) {
+      setSession(session);
+      newlyCreatedSessions.add(session.id);
+      selectSession(session.id);
+    } else {
+      activateNewAppServerControlSession(session);
+    }
+  });
+}
 
 async function createSession(): Promise<void> {
   let selection: SessionLauncherSelection | null;
