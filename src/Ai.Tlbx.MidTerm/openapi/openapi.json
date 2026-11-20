@@ -9463,6 +9463,12 @@
               "string"
             ]
           },
+          "handoffSourceSessionId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
           "cols": {
             "type": "integer",
             "format": "int32"
@@ -9533,7 +9539,8 @@
           "launchCommand",
           "slashCommands",
           "guidanceInjected",
-          "tlbxDir"
+          "tlbxDir",
+          "handoffFilePath"
         ],
         "type": "object",
         "properties": {
@@ -9559,6 +9566,12 @@
             "type": "boolean"
           },
           "tlbxDir": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "handoffFilePath": {
             "type": [
               "null",
               "string"

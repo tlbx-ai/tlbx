@@ -22555,7 +22555,8 @@ button.tree-expand { height: 22px; padding: 0; border: 0; background: transparen
   display: none;
 }
 
-.context-handoff-fields select {
+.context-handoff-fields select,
+.context-handoff-fields textarea {
   color: inherit;
   background: var(--bg-dialog-muted);
   border: 1px solid var(--border-color);

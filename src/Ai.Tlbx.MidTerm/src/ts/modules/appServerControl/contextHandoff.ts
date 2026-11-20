@@ -1,6 +1,7 @@
 import { bootstrapWorker } from '../../api/client';
 import type { ShellType } from '../../api/types';
-import { $currentSettings } from '../../stores';
+import { newlyCreatedSessions } from '../../state';
+import { $currentSettings, setSession } from '../../stores';
 import type { Session } from '../../types';
 import { resolveLaunchDimensions } from '../terminal';
 import { setSmartInputHandoffDraft } from '../smartInput/smartInput';
@@ -21,7 +22,7 @@ let activeDialog: HTMLDialogElement | null = null;
 
 export function openContextHandoff(
   source: Session,
-  launch: (target: HandoffTarget) => Promise<void>,
+  launch: (target: HandoffTarget) => Promise<string>,
 ): void {
   if (activeDialog) {
     activeDialog.focus();
@@ -52,22 +53,28 @@ export function openContextHandoff(
         </div>
         <p><code>${fileName}</code></p>
         <p>${escapeHtml(t(sourceIsTerminal ? 'contextHandoff.terminalFile' : 'contextHandoff.chatFile'))}</p>
+        <label data-reference hidden>${escapeHtml(t('contextHandoff.fileReference'))}
+          <textarea readonly rows="3"></textarea>
+        </label>
         <p role="status" data-status></p>
       </div>
       <footer>
+        <button type="button" data-copy hidden>${escapeHtml(t('contextHandoff.copyReference'))}</button>
         <button type="submit" data-launch>${escapeHtml(t('contextHandoff.openAcp'))}</button>
       </footer>
     </form>
   `;
 
-  const form = dialog.querySelector('form');
-  const select = dialog.querySelector<HTMLSelectElement>('select[name="provider"]');
-  const surface = dialog.querySelector<HTMLSelectElement>('select[name="surface"]');
-  const launchButton = dialog.querySelector<HTMLButtonElement>('[data-launch]');
-  const cancel = dialog.querySelector<HTMLButtonElement>('[data-cancel]');
-  const status = dialog.querySelector<HTMLElement>('[data-status]');
-  if (!form || !select || !surface || !launchButton || !cancel || !status)
-    throw new Error('Handoff dialog is missing a control.');
+  const form = getControl(dialog, 'form', HTMLFormElement);
+  const select = getControl(dialog, 'select[name="provider"]', HTMLSelectElement);
+  const surface = getControl(dialog, 'select[name="surface"]', HTMLSelectElement);
+  const launchButton = getControl(dialog, '[data-launch]', HTMLButtonElement);
+  const cancel = getControl(dialog, '[data-cancel]', HTMLButtonElement);
+  const status = getControl(dialog, '[data-status]', HTMLElement);
+  const copyButton = getControl(dialog, '[data-copy]', HTMLButtonElement);
+  const reference = getControl(dialog, '[data-reference]', HTMLLabelElement);
+  const referenceText = getControl(dialog, 'textarea', HTMLTextAreaElement);
+  let launching = false;
 
   const sourceProvider = source.profileHint ?? source.foregroundProcessIdentity;
   select.value = providers.find(({ id }) => id !== sourceProvider)?.id ?? 'codex';
@@ -81,7 +88,7 @@ export function openContextHandoff(
   }
 
   function requestClose(): void {
-    if (!launchButton?.disabled) close();
+    if (!launching) close();
   }
 
   dialog.addEventListener('cancel', (event) => {
@@ -94,20 +101,38 @@ export function openContextHandoff(
       surface.value === 'terminal' ? 'contextHandoff.openTerminal' : 'contextHandoff.openAcp',
     );
   });
+  copyButton.addEventListener('click', () => {
+    void copyFileReference(referenceText, status);
+  });
   form.addEventListener('submit', (event) => {
     event.preventDefault();
     const target = providers.find(({ id }) => id === select.value);
     if (!target || launchButton.disabled) return;
+    const terminal = !sourceIsTerminal && surface.value === 'terminal';
+    launching = true;
     for (const control of [select, surface, launchButton, cancel]) control.disabled = true;
     status.textContent = t('contextHandoff.opening');
-    void launch({
-      provider: target.id,
-      terminal: !sourceIsTerminal && surface.value === 'terminal',
-    })
-      .then(close)
+    void launch({ provider: target.id, terminal })
+      .then((filePath) => {
+        if (!terminal) {
+          close();
+          return;
+        }
+        referenceText.value =
+          'Read the chat history file, starting at its first (newest) entry. Use it as background for the next request. ' +
+          filePath;
+        reference.hidden = copyButton.hidden = false;
+        launchButton.hidden = true;
+        cancel.disabled = false;
+        status.textContent = t('contextHandoff.pasteReference');
+        copyButton.focus();
+      })
       .catch((error: unknown) => {
         status.textContent = t('contextHandoff.openFailed').replace('{error}', () => String(error));
         for (const control of [select, surface, launchButton, cancel]) control.disabled = false;
+      })
+      .finally(() => {
+        launching = false;
       });
   });
   activeDialog = dialog;
@@ -115,11 +140,41 @@ export function openContextHandoff(
   dialog.showModal();
 }
 
+async function copyFileReference(input: HTMLTextAreaElement, status: HTMLElement): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(input.value);
+    status.textContent = t('contextHandoff.referenceCopied');
+  } catch {
+    input.focus();
+    input.select();
+    status.textContent = t('contextHandoff.copyFallback');
+  }
+}
+
+function getControl<T extends HTMLElement>(
+  dialog: HTMLDialogElement,
+  selector: string,
+  type: new () => T,
+): T {
+  const element = dialog.querySelector(selector);
+  if (!(element instanceof type)) throw new Error('Handoff dialog is missing control ' + selector);
+  return element;
+}
+
+export function activateTerminalHandoffSession(
+  session: Session,
+  select: (id: string) => void,
+): void {
+  setSession(session);
+  newlyCreatedSessions.add(session.id);
+  select(session.id);
+}
+
 export async function createContextHandoffSession(
   source: Session,
   target: HandoffTarget,
   shell: ShellType | null,
-): Promise<Session> {
+): Promise<{ session: Session; filePath: string }> {
   const dimensions = await resolveLaunchDimensions($currentSettings.get(), 'launcher');
   const { data } = await bootstrapWorker({
     ...dimensions,
@@ -137,7 +192,7 @@ export async function createContextHandoffSession(
 
   if (!data?.session || !data.handoffFilePath) throw new Error(t('sessionLauncher.createFailed'));
   setSmartInputHandoffDraft(data.session.id, data.handoffFilePath);
-  return data.session;
+  return { session: data.session, filePath: data.handoffFilePath };
 }
 
 function getHandoffTerminalCommand(provider: HandoffProvider, shell: ShellType | null): string {

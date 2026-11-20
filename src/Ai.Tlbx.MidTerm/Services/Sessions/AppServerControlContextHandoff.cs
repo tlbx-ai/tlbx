@@ -27,7 +27,9 @@ internal static class AppServerControlContextHandoff
         var file = Path.Combine(directory, "terminal-output.txt");
         if (snapshot.SequenceStart > 0)
             text = "[Earlier output omitted]\n" + text;
-        await File.WriteAllTextAsync(file, text, ct).ConfigureAwait(false);
+        await using var stream = OpenHandoffFile(file);
+        await using var writer = new StreamWriter(stream);
+        await writer.WriteAsync(text.AsMemory(), ct).ConfigureAwait(false);
         return file;
     }
 
@@ -44,7 +46,7 @@ internal static class AppServerControlContextHandoff
         var window = await ReadWindowAsync(runtime, source.Id, null, PageSize, ct).ConfigureAwait(false);
         var threadId = window.Thread.ThreadId;
         var file = Path.Combine(directory, "chat-history.jsonl");
-        await using (var stream = new FileStream(file, FileMode.CreateNew, FileAccess.Write, FileShare.None, 16_384, useAsync: true))
+        await using (var stream = OpenHandoffFile(file))
         await using (var writer = new StreamWriter(stream, new UTF8Encoding(false), 16_384))
         {
             while (true)
@@ -68,6 +70,20 @@ internal static class AppServerControlContextHandoff
             }
         }
         return file;
+    }
+
+    private static FileStream OpenHandoffFile(string path)
+    {
+        var options = new FileStreamOptions
+        {
+            Mode = FileMode.CreateNew,
+            Access = FileAccess.Write,
+            Share = FileShare.None,
+            Options = FileOptions.Asynchronous
+        };
+        if (!OperatingSystem.IsWindows())
+            options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+        return new FileStream(path, options);
     }
 
     private static async Task<AppServerControlHistoryWindowResponse> ReadWindowAsync(

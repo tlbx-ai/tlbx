@@ -183,6 +183,7 @@ import {
   setAppServerControlResumeConversationHandler,
 } from './modules/smartInput';
 import {
+  activateTerminalHandoffSession,
   createContextHandoffSession,
   openContextHandoff,
 } from './modules/appServerControl/contextHandoff';
@@ -846,15 +847,15 @@ function handoffSessionContext(sessionId: string): void {
   const source = getSession(sessionId);
   if (!source) return;
   openContextHandoff(source, async (target) => {
-    const session = await createContextHandoffSession(source, target, resolveLauncherShell());
+    const { session, filePath } = await createContextHandoffSession(
+      source,
+      target,
+      resolveLauncherShell(),
+    );
     closeSidebar();
-    if (target.terminal) {
-      setSession(session);
-      newlyCreatedSessions.add(session.id);
-      selectSession(session.id);
-    } else {
-      activateNewAppServerControlSession(session);
-    }
+    if (target.terminal) activateTerminalHandoffSession(session, selectSession);
+    else activateNewAppServerControlSession(session);
+    return filePath;
   });
 }
 
