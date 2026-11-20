@@ -71,6 +71,12 @@ internal static partial class TlbxMcpApiTools
         yield return D("queue_cancel", "DELETE", "/api/command-bay/queue/{queueId}", "Cancel an explicit queued item; running work is not silently retried.").Path("queueId", "queueId");
         var notification = ScopedBody("notification_send", "POST", "/api/notifications", "Send a notification associated with verified self or an explicit target session.", AppJsonContext.Default.TerminalNotificationRequest);
         notification.Defaults["title"] = "tlbx";
+        notification.Parameters.Add(P("priority", null, new JsonObject
+        {
+            ["type"] = "string",
+            ["enum"] = new JsonArray("normal", "important"),
+            ["description"] = "Optional override for the configured notification priority."
+        }));
         yield return notification;
 
         yield return Remote("control_plane_get", "/api/control-plane", "/api/hub/machines/{id}/control-plane", "Read explicitly published work, status and checkpoints locally or on a registered Hub machine.")
