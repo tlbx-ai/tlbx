@@ -8,7 +8,6 @@ namespace Ai.Tlbx.MidTerm.Services.Sessions;
 internal static class AppServerControlContextHandoff
 {
     private const int PageSize = 128;
-    private const int TerminalByteLimit = 24 * 1024;
 
     public static async Task<string> SaveAsync(
         TtyHostSessionManager sessions,
@@ -21,12 +20,12 @@ internal static class AppServerControlContextHandoff
         if (source.AppServerControlOnly)
             return await SaveChatAsync(runtime, source, directory, ct).ConfigureAwait(false);
 
-        var snapshot = await sessions.GetBufferAsync(source.Id, maxBytes: TerminalByteLimit, ct: ct).ConfigureAwait(false)
+        var snapshot = await sessions.GetBufferAsync(source.Id, ct: ct).ConfigureAwait(false)
             ?? throw new InvalidOperationException("Terminal history is unavailable.");
         var text = TerminalOutputSanitizer.StripEscapeSequences(TerminalOutputSanitizer.Decode(snapshot.Data));
         var file = Path.Combine(directory, "terminal-output.txt");
         if (snapshot.SequenceStart > 0)
-            text = "[Earlier output omitted]\n" + text;
+            text = "[Earlier output is no longer in the terminal scrollback]\n" + text;
         await using var stream = OpenHandoffFile(file);
         await using var writer = new StreamWriter(stream);
         await writer.WriteAsync(text.AsMemory(), ct).ConfigureAwait(false);

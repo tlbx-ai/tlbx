@@ -673,7 +673,7 @@
   "contextHandoff.harness": "Harness",
   "contextHandoff.surface": "Öffnen in",
   "contextHandoff.chatFile": "Die neue Session bekommt den Chatverlauf als Anhang, mit dem neuesten Eintrag zuerst.",
-  "contextHandoff.terminalFile": "Die neue Session bekommt die jüngste Terminal-Ausgabe als Anhang.",
+  "contextHandoff.terminalFile": "Die neue Session bekommt die gesamte noch gespeicherte Terminal-Ausgabe als Anhang.",
   "contextHandoff.fileReference": "Verweis auf die Chatdatei",
   "contextHandoff.copyReference": "Dateiverweis kopieren",
   "contextHandoff.pasteReference": "Füge den Dateiverweis ein, sobald die CLI zur Eingabe bereit ist.",
