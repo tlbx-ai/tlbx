@@ -636,6 +636,7 @@ public static class TtyHostSpawner
             }
 
             _processDetached = true;
+            _errorDetached = true;
             return (_process, _error);
         }
 
