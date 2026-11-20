@@ -178,6 +178,8 @@ import {
 } from './modules/share';
 import { initDockState } from './modules/dockState';
 import { initSmartInput, setAppServerControlResumeConversationHandler } from './modules/smartInput';
+import { setSmartInputDraftText } from './modules/smartInput/smartInput';
+import { openContextHandoff, type HandoffTarget } from './modules/appServerControl/contextHandoff';
 import { openProviderResumePicker, type ResumeProvider } from './modules/providerResume';
 import { initSpacesDropdown, toggleSpacesDropdown } from './modules/spaces';
 import { initSpacesRuntime, type SpaceSurface } from './modules/spaces/runtime';
@@ -701,6 +703,7 @@ function registerCallbacks(): void {
     onSelect: selectSession,
     onDelete: deleteSession,
     onRename: startInlineRename,
+    onContextHandoff: handoffSessionContext,
     onToggleAgentControl: toggleAgentControl,
     onPinToHistory: (sessionId: string) => {
       void pinSessionToHistory(sessionId);
@@ -831,6 +834,56 @@ const {
   isAppServerControlOnlySession,
 });
 setAppServerControlResumeConversationHandler(resumeAppServerControlConversationFromCommandBay);
+
+function handoffSessionContext(sessionId: string): void {
+  const source = getSession(sessionId);
+  if (!source?.appServerControlOnly) return;
+  openContextHandoff(sessionId, source.profileHint, async (target) => {
+    await launchContextHandoff(source, target);
+  });
+}
+
+async function launchContextHandoff(source: Session, target: HandoffTarget): Promise<void> {
+  const directory = source.currentDirectory;
+  if (!directory) throw new Error(t('contextHandoff.missingDirectory'));
+
+  const [dimensions] = await Promise.all([resolveNewSessionDimensions(), waitForApiReachability()]);
+  const shell = resolveLauncherShell();
+  const { data } = await bootstrapWorker({
+    ...dimensions,
+    shell,
+    workingDirectory: directory,
+    agentControlled: false,
+    injectGuidance: false,
+    profile: target.provider,
+    appServerControlOnly: !target.terminal,
+    launchCommand: target.terminal ? getHandoffTerminalCommand(target.provider, shell) : null,
+    launchDelayMs: 0,
+    slashCommands: [],
+    slashCommandDelayMs: 350,
+    spaceId: source.spaceId ?? null,
+    workspacePath: source.workspacePath ?? null,
+  });
+
+  const session = data?.session;
+  if (!session) throw new Error(t('sessionLauncher.createFailed'));
+  closeSidebar();
+  if (target.terminal) {
+    setSession(session);
+    newlyCreatedSessions.add(session.id);
+    selectSession(session.id);
+  } else {
+    setSmartInputDraftText(session.id, target.draft);
+    activateNewAppServerControlSession(session);
+  }
+}
+
+function getHandoffTerminalCommand(provider: HandoffTarget['provider'], shell: ShellType): string {
+  if (provider !== 'antigravity') return provider;
+  if (shell === 'Pwsh')
+    return "if (Get-Command agy -ErrorAction SilentlyContinue) { agy } else { & (Join-Path $env:LOCALAPPDATA 'agy/bin/agy.exe') }";
+  return 'agy';
+}
 
 async function createSession(): Promise<void> {
   let selection: SessionLauncherSelection | null;

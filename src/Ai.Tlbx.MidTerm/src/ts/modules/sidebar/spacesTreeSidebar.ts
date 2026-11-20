@@ -74,6 +74,7 @@ export interface SessionListCallbacks {
   onSelect: (sessionId: string, options?: SessionSelectionOptions) => void;
   onDelete: (sessionId: string) => void;
   onRename: (sessionId: string) => void;
+  onContextHandoff: (sessionId: string) => void;
   onToggleAgentControl: (sessionId: string) => void;
   onPinToHistory: (sessionId: string) => void;
   onEnableMidtermFeatures?: (sessionId: string) => void;
@@ -1223,6 +1224,8 @@ function getSidebarSessionActionsSignature(entry: SidebarSessionRef): string {
     t(isSessionNotesExpanded(entry.id) ? 'session.collapseNotes' : 'session.expandNotes'),
     isSessionInLayout(entry.id),
     t('session.removeFromLayout'),
+    entry.session.appServerControlOnly === true,
+    t('contextHandoff.title'),
     t('session.rename'),
     t('session.close'),
   ].join('\u001f');
@@ -1309,6 +1312,24 @@ function patchSidebarSessionActions(actions: HTMLDivElement, entry: SidebarSessi
       undockSession(entry.id);
     });
     actions.appendChild(undockButton);
+  }
+
+  if (entry.machineId === null && entry.session.appServerControlOnly) {
+    const handoffButton = document.createElement('button');
+    handoffButton.className = 'session-context-handoff';
+    handoffButton.setAttribute('role', 'menuitem');
+    handoffButton.title = t('contextHandoff.title');
+    handoffButton.setAttribute('aria-label', handoffButton.title);
+    handoffButton.innerHTML = `
+      <span class="session-action-icon text-icon" aria-hidden="true">⇢</span>
+      <span class="session-action-label">${escapeHtml(handoffButton.title)}</span>
+    `;
+    handoffButton.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      callbacks?.onContextHandoff(entry.id);
+    });
+    actions.appendChild(handoffButton);
   }
 
   const renameButton = document.createElement('button');

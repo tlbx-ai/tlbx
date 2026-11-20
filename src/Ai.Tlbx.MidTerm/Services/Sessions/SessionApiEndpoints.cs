@@ -841,6 +841,48 @@ public static partial class SessionApiEndpoints
                 : Results.Json(history, AppJsonContext.Default.AppServerControlHistoryWindowResponse);
         });
 
+        app.MapGet("/api/sessions/{id}/agent-control/handoff", async Task<IResult> (
+            string id, HttpContext context, CancellationToken ct) =>
+        {
+            var session = TryGetSessionDto(sessionManager, sessionSupervisor, appServerControlRuntime, id);
+            if (session is null) return Results.NotFound();
+            if (!session.AppServerControlOnly)
+                return Results.BadRequest("Context handoff requires an Agent Controller session.");
+
+            try
+            {
+                if (!appServerControlRuntime.IsAttached(id) &&
+                    !await appServerControlRuntime.EnsureAttachedAsync(id, session, ct: ct).ConfigureAwait(false))
+                    return Results.Conflict("Agent Controller history is unavailable.");
+
+                var recent = await appServerControlRuntime.GetHistoryWindowAsync(
+                    id, count: AppServerControlContextHandoff.RecentHistoryCount, ct: ct).ConfigureAwait(false);
+                if (recent is null)
+                    return Results.Conflict("There is no conversation to hand off.");
+
+                AppServerControlHistoryItem? originalRequest = null;
+                if (recent.HistoryWindowStart > 0)
+                {
+                    var opening = await appServerControlRuntime.GetHistoryWindowAsync(
+                        id, startIndex: 0, count: Math.Min(16, recent.HistoryWindowStart), ct: ct).ConfigureAwait(false);
+                    if (opening?.Thread.ThreadId != recent.Thread.ThreadId)
+                        return Results.Conflict("The source conversation changed. Open the handoff again.");
+                    originalRequest = opening.History.FirstOrDefault(
+                        item => item.Kind == "user" && !string.IsNullOrWhiteSpace(item.Body));
+                }
+                var draft = AppServerControlContextHandoff.CreateDraft(recent, originalRequest);
+                if (draft is null)
+                    return Results.Conflict("There is no conversation to hand off.");
+
+                context.Response.Headers.CacheControl = "no-store";
+                return Results.Text(draft, "text/plain", Encoding.UTF8);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.Conflict(ex.Message);
+            }
+        });
+
         app.MapPost("/api/sessions/{id}/agent-control/turn", async (
             string id,
             AppServerControlTurnRequest request,
