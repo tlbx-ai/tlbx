@@ -875,7 +875,7 @@ function setSessionDraft(sessionId: string, draft: SmartInputComposerDraft): voi
 }
 
 export function setSmartInputHandoffDraft(sessionId: string, path: string): void {
-  const name = path.split(/[\\/]/).at(-1) ?? 'history';
+  const name = path.split(/[\\/]/).pop() ?? 'history';
   const isChat = name.endsWith('.jsonl');
   const attachment = createAppServerControlComposerDraftAttachment(
     sessionId,
