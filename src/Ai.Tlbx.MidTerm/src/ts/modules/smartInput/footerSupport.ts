@@ -12,6 +12,7 @@ import {
   getAppServerControlQuickSettingsEffective,
   getAppServerControlQuickSettingsProvider,
   getAppServerControlResolvedProviderModel,
+  supportsAntigravityAutoMode,
 } from '../appServerControl/quickSettings';
 import { hasInterruptibleAppServerControlTurnWork } from '../appServerControl/input';
 import { syncNativeConfigControls } from './nativeConfigControls';
@@ -177,7 +178,7 @@ export function syncAppServerControlQuickSettingsControls(args: {
   syncAppServerControlQuickSettingSelect(appServerControlModelSelect, draft.model ?? '');
   syncAppServerControlQuickSettingSelect(appServerControlEffortSelect, draft.effort ?? '');
   syncAppServerControlQuickSettingSelect(appServerControlPlanSelect, draft.planMode);
-  syncAppServerControlQuickSettingSelect(appServerControlPermissionSelect, draft.permissionMode);
+  syncPermissionOptions(appServerControlPermissionSelect, provider, draft, effective);
   setAppServerControlQuickSettingsDropdownDisabled(appServerControlModelSelect, false);
   syncEffortControlAvailability(appServerControlEffortSelect, false);
   setAppServerControlQuickSettingsDropdownDisabled(appServerControlPlanSelect, false);
@@ -206,6 +207,25 @@ export function syncAppServerControlQuickSettingsControls(args: {
     });
     appServerControlSettingsSummaryBtn.dataset.planMode = draft.planMode;
   }
+}
+
+function syncPermissionOptions(
+  select: HTMLSelectElement,
+  provider: string | null,
+  draft: AppServerControlQuickSettingsSummary,
+  effective: AppServerControlQuickSettingsSummary,
+): void {
+  const options = [{ value: 'manual', label: 'Manual' }];
+  if (provider !== 'antigravity' || supportsAntigravityAutoMode(effective)) {
+    options.push({ value: 'auto', label: 'Auto' });
+  }
+  setAppServerControlQuickSettingsDropdownOptions(select, options);
+  syncAppServerControlQuickSettingSelect(
+    select,
+    options.some((option) => option.value === draft.permissionMode)
+      ? draft.permissionMode
+      : 'manual',
+  );
 }
 
 export function formatRuntimeSettingStatus(
