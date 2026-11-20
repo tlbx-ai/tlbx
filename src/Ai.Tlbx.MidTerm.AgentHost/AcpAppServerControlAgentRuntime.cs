@@ -113,6 +113,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
             {
                 "runtime.attach" => await AttachAsync(command, ct).ConfigureAwait(false),
                 "turn.start" => await StartTurnAsync(command, ct).ConfigureAwait(false),
+                "runtime.configure" when UsesAntigravityModes => await ConfigureAntigravityModeAsync(command, ct).ConfigureAwait(false),
                 "turn.steer" => await SteerTurnAsync(command, ct).ConfigureAwait(false),
                 "turn.interrupt" => await InterruptTurnAsync(command, ct).ConfigureAwait(false),
                 "thread.compact" => await CompactViaNativeCommandAsync(command, ct).ConfigureAwait(false),
@@ -328,6 +329,8 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
         var quickSettings = ResolveRequestedQuickSettings(request);
         ValidateRequestedConfigValues(request.ConfigValues);
         await ApplyRequestedQuickSettingsAsync(quickSettings, ct).ConfigureAwait(false);
+        if (UsesAntigravityModes)
+            await ApplyAntigravityModeAsync(request.PlanMode, request.PermissionMode, ct).ConfigureAwait(false);
         await ApplyRequestedConfigValuesAsync(request.ConfigValues, ct).ConfigureAwait(false);
         var promptBlocks = BuildPromptBlocks(
             request,
@@ -846,6 +849,11 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
                 return;
             case "current_mode_update":
                 _currentModeId = GetString(updateElement, "currentModeId");
+                if (UsesAntigravityModes && _currentModeId is { } currentMode)
+                {
+                    ApplyAntigravityModeReadback(_quickSettings, currentMode);
+                    _emit(CreateQuickSettingsUpdatedEvent(_quickSettings, "acp", updateType, root, rawLine));
+                }
                 return;
             case "usage_update":
                 HandleUsageUpdate(updateElement, root, rawLine);
@@ -960,7 +968,9 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
             await HandleAcpChoiceQuestionAsync(root, idElement, turnId, options, rawLine, ct).ConfigureAwait(false);
             return;
         }
-        var selectedOption = string.Equals(_quickSettings.PermissionMode, AppServerControlQuickSettings.PermissionModeAuto, StringComparison.Ordinal)
+        // Antigravity Auto still requests review for some actions. Only the user can resolve those requests.
+        var selectedOption = !UsesAntigravityModes &&
+            string.Equals(_quickSettings.PermissionMode, AppServerControlQuickSettings.PermissionModeAuto, StringComparison.Ordinal)
             ? SelectPermissionOption(options, "accept")
             : null;
         if (!string.IsNullOrWhiteSpace(selectedOption))
@@ -1464,8 +1474,8 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
         {
             Model = _quickSettings.Model,
             Effort = _quickSettings.Effort,
-            PlanMode = requested.PlanMode,
-            PermissionMode = requested.PermissionMode,
+            PlanMode = UsesAntigravityModes ? _quickSettings.PlanMode : requested.PlanMode,
+            PermissionMode = UsesAntigravityModes ? _quickSettings.PermissionMode : requested.PermissionMode,
             ModelOptions = AppServerControlQuickSettings.CloneOptions(_quickSettings.ModelOptions),
             EffortOptions = AppServerControlQuickSettings.CloneOptions(_quickSettings.EffortOptions),
             ConfigOptions = AppServerControlQuickSettings.CloneConfigOptions(_quickSettings.ConfigOptions)
@@ -1514,6 +1524,8 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
             ValidateNativeOption("reasoning effort", requested.Effort!, _quickSettings.EffortOptions);
             await SetConfigOptionAsync(effortConfigId, requested.Effort!, ct).ConfigureAwait(false);
         }
+
+        if (UsesAntigravityModes) return;
 
         var requestedModeId = string.Equals(
             requested.PlanMode,
@@ -1615,6 +1627,8 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
             _quickSettings.PermissionMode,
             _quickSettings.PermissionMode);
         summary.ModelOptions = ReadModelOptions(modelState, model);
+        if (UsesAntigravityModes && _currentModeId is { } currentMode)
+            ApplyAntigravityModeReadback(summary, currentMode);
         return ApplyConfigOptions(summary, Traverse(sessionResult, "configOptions")) ?? summary;
     }
 
@@ -1716,6 +1730,8 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
             var id = GetString(option, "id") ?? GetString(option, "configId");
             if (GetString(option, "type") != "select") continue;
             var currentValue = GetString(option, "currentValue");
+            if (UsesAntigravityModes && id == "mode" && currentValue is not null)
+                ApplyAntigravityModeReadback(next, currentValue);
             if (!appliedModel && (string.Equals(category, "model", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(id, "model", StringComparison.OrdinalIgnoreCase)))
             {
