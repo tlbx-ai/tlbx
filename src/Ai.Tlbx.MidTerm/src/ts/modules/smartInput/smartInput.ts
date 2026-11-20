@@ -2960,9 +2960,12 @@ async function sendQuestionComposerAnswer(args: {
   ta: HTMLTextAreaElement;
   draft: SmartInputComposerDraft;
   attachments: AppServerControlComposerDraftAttachment[];
+  text: string;
   isCurrentDocument: () => boolean;
 }): Promise<boolean> {
-  const { sessionId, ta, draft, attachments, isCurrentDocument } = args;
+  const { sessionId, ta, draft, attachments, text, isCurrentDocument } = args;
+  // A local handoff can open in parallel while the source waits for an answer.
+  if (attachments.length === 0 && text.trim().toLowerCase() === '/handoff') return false;
   const answerTarget = getQuestionAnswer(sessionId);
   if (answerTarget) {
     if (!answerTarget.isCurrent()) throw new Error(t('appServerControl.request.noLongerOpen'));
@@ -3011,7 +3014,16 @@ async function sendRichComposerTurn(sessionId: string, ta: HTMLTextAreaElement):
     );
     const text = getSessionDraftText(sessionId);
     if (!text && attachments.length === 0) return;
-    if (await sendQuestionComposerAnswer({ sessionId, ta, draft, attachments, isCurrentDocument }))
+    if (
+      await sendQuestionComposerAnswer({
+        sessionId,
+        ta,
+        draft,
+        attachments,
+        text,
+        isCurrentDocument,
+      })
+    )
       return;
     if (attachments.length === 0) {
       handledCommand = await handleAgentComposerCommand(sessionId, text, ta);
