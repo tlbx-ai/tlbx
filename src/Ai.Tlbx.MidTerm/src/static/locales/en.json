@@ -884,6 +884,8 @@
   "git.cleanShort": "Clean",
   "git.noRepoShort": "No repo",
   "commands.title": "Commands",
+  "smartInput.stopping": "Stopping…",
+  "smartInput.stopFailed": "Could not stop the turn",
   "commands.stop": "Stop",
   "commands.run": "Run",
   "commands.edit": "Edit",

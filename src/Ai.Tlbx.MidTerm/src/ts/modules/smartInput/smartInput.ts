@@ -53,6 +53,8 @@ import { sendCommandBayPrompt } from '../commandBay/queue';
 import { submitSessionText } from '../input/submit';
 import { isBracketedPasteEnabled, sendInput } from '../comms';
 import {
+  APP_SERVER_CONTROL_STOP_CHANGED_EVENT,
+  isAppServerControlStopPending,
   submitAppServerControlComposerPrompt,
   createAppServerControlTurnRequest,
   handleAppServerControlEscape,
@@ -1300,6 +1302,10 @@ export function initSmartInput(): void {
       syncAppServerControlQuickSettingsControls();
       syncSmartInputVisibility();
     });
+    window.addEventListener(APP_SERVER_CONTROL_STOP_CHANGED_EVENT, (event) => {
+      if ((event as CustomEvent<string>).detail === $activeSessionId.get())
+        syncSmartInputStopButton();
+    });
     window.addEventListener('resize', () => {
       syncSmartInputVisibility();
     });
@@ -1393,6 +1399,25 @@ export function showSmartInput(): void {
 export function hideSmartInput(): void {
   syncSmartInputVisibility();
 }
+function syncSmartInputStopButton(): void {
+  const button = dockedBar?.querySelector<HTMLButtonElement>('.smart-input-escape-btn');
+  if (!button) return;
+  const sessionId = $activeSessionId.get();
+  const agent = isAppServerControlActiveSession(sessionId);
+  const pending = agent && !!sessionId && isAppServerControlStopPending(sessionId);
+  const label = agent ? t(pending ? 'smartInput.stopping' : 'commands.stop') : 'Escape';
+  if (agent && !button.querySelector('svg')) {
+    button.innerHTML =
+      '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true" focusable="false"><rect x="5" y="5" width="14" height="14" rx="1"/></svg>';
+  } else if (!agent && button.textContent !== 'Esc') {
+    button.textContent = 'Esc';
+  }
+  button.disabled = pending;
+  button.title = label;
+  button.setAttribute('aria-label', label);
+  button.setAttribute('aria-busy', String(pending));
+}
+
 function syncSmartInputVisibility(focusTextarea: boolean = false): void {
   ensureFooterHosts();
   const preserveTextareaFocus =
@@ -2059,18 +2084,7 @@ function syncInputRow(layoutState: AdaptiveFooterLayoutState): void {
   dockedBar.dataset.surface = layoutState.appServerControlActive ? 'appServerControl' : 'terminal';
   dockedBar.dataset.device = layoutState.isMobile ? 'mobile' : 'desktop';
 
-  const interruptButton = dockedBar.querySelector<HTMLButtonElement>('.smart-input-escape-btn');
-  if (interruptButton) {
-    const label = layoutState.appServerControlActive ? t('commands.stop') : 'Esc';
-    if (layoutState.appServerControlActive) {
-      interruptButton.innerHTML =
-        '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true" focusable="false"><rect x="5" y="5" width="14" height="14" rx="1"/></svg>';
-    } else {
-      interruptButton.textContent = label;
-    }
-    interruptButton.title = layoutState.appServerControlActive ? label : 'Escape';
-    interruptButton.setAttribute('aria-label', interruptButton.title);
-  }
+  syncSmartInputStopButton();
 
   activeTextarea = dockedBar.querySelector('.smart-input-textarea');
   if (activeTextarea) {

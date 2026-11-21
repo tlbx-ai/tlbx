@@ -56,7 +56,6 @@ import {
   selectAppServerControlPermissionOptionWs,
   detachAppServerControlSession,
   getAppServerControlHistoryWindowWs,
-  interruptAppServerControlTurnWs,
   openAppServerControlHistorySocket,
   recoverAppServerControlWebSocket,
   suspendAppServerControlWebSocketForBrowserBackground,
@@ -724,7 +723,17 @@ export async function interruptAppServerControlTurn(
   id: string,
   request: AppServerControlInterruptRequest,
 ): Promise<AppServerControlCommandAcceptedResponse> {
-  return interruptAppServerControlTurnWs(id, request);
+  // Stop must still work when the history WebSocket is reconnecting or suspended.
+  return fetchAppServerControlJson(
+    `/api/sessions/${encodeURIComponent(id)}/agent-control/interrupt`,
+    'Could not stop the turn.',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(request),
+      signal: AbortSignal.timeout(30000),
+    },
+  );
 }
 
 export async function getAppServerControlUsage(id: string): Promise<AppServerControlUsageSummary> {

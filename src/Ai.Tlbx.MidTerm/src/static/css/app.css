@@ -21249,6 +21249,11 @@ body.keyboard-visible .adaptive-footer-dock:not([data-device='mobile']) .manager
   display: none;
 }
 
+.smart-input-escape-btn[aria-busy='true'] {
+  opacity: 0.6;
+  cursor: wait;
+}
+
 .smart-input-mobile-touch-host {
   display: none;
 }

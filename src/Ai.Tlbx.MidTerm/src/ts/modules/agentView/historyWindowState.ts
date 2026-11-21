@@ -1,3 +1,4 @@
+import { syncAppServerControlTurnExecutionState } from '../appServerControl/input';
 import { syncAppServerControlGoal } from '../appServerControl/goals';
 import {
   updateAppServerControlHistoryStreamWindow,
@@ -18,6 +19,7 @@ export function applyLiveAppServerControlHistoryDelta(
 ): boolean {
   const requiresRefresh = applyCanonicalAppServerControlDelta(state, delta);
   if (state.snapshot) {
+    syncAppServerControlTurnExecutionState(state.snapshot.sessionId, state.snapshot.currentTurn);
     syncAppServerControlQuickSettingsFromHistory(state.snapshot, state.streamConnected);
     syncAppServerControlGoal(state.snapshot, state.streamConnected);
   }
@@ -68,6 +70,7 @@ export function applyFetchedAppServerControlHistoryWindow(
 
   applyAppServerControlHistoryWindowState(state, snapshot);
   state.snapshot = snapshot;
+  syncAppServerControlTurnExecutionState(sessionId, snapshot.currentTurn);
   syncAppServerControlQuickSettingsFromHistory(snapshot, state.streamConnected);
   syncAppServerControlGoal(snapshot, state.streamConnected);
   state.historyWindowRevision = windowRevision ?? state.historyWindowRevision;
