@@ -8,7 +8,6 @@ import {
   type AppServerControlGoalSetRequest,
   type AppServerControlGoalResponse,
   type AppServerControlHistoryWindowResponse,
-  type AppServerControlInterruptRequest,
   type AppServerControlRequestDecisionRequest,
   type AppServerControlTurnRequest,
   type AppServerControlTurnStartResponse,
@@ -24,7 +23,6 @@ type AppServerControlWsRequestAction =
   | 'detach'
   | 'history.window.get'
   | 'turn.submit'
-  | 'turn.interrupt'
   | 'runtime.configure'
   | 'runtime.recover'
   | 'thread.goal.set'
@@ -662,13 +660,6 @@ export async function submitAppServerControlTurnWs(
   request: AppServerControlTurnRequest,
 ): Promise<AppServerControlTurnStartResponse> {
   return requestTurnStarted('turn.submit', sessionId, request);
-}
-
-export async function interruptAppServerControlTurnWs(
-  sessionId: string,
-  request: AppServerControlInterruptRequest,
-): Promise<AppServerControlCommandAcceptedResponse> {
-  return requestCommandAccepted('turn.interrupt', sessionId, { interrupt: request });
 }
 
 export async function configureAppServerControlRuntimeWs(

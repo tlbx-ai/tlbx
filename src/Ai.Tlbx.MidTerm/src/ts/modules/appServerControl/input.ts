@@ -318,13 +318,16 @@ async function requestAppServerControlTurnInterrupt(
       state.currentTurnId === turnId &&
       state.currentTurnRunning
     ) {
-      state.interruptInFlight = false;
-      notifyStopChanged(sessionId);
       void showAlert(error instanceof Error ? error.message : String(error), {
         title: t('smartInput.stopFailed'),
       });
     }
     return false;
+  } finally {
+    if (state.currentTurnId === turnId && state.interruptInFlight) {
+      state.interruptInFlight = false;
+      notifyStopChanged(sessionId);
+    }
   }
 }
 
