@@ -53,6 +53,7 @@ import {
   configureAppServerControlRuntimeWs,
   attachAppServerControlSession,
   declineAppServerControlRequestWs,
+  selectAppServerControlPermissionOptionWs,
   detachAppServerControlSession,
   getAppServerControlHistoryWindowWs,
   interruptAppServerControlTurnWs,
@@ -772,6 +773,8 @@ export async function declineAppServerControlRequest(
 ): Promise<AppServerControlCommandAcceptedResponse> {
   return declineAppServerControlRequestWs(id, requestId, request);
 }
+
+export const selectAppServerControlPermissionOption = selectAppServerControlPermissionOptionWs;
 
 export async function resolveAppServerControlUserInput(
   id: string,

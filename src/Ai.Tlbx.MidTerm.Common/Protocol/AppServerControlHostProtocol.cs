@@ -478,6 +478,8 @@ public sealed class AppServerControlItemSummary
     public DateTimeOffset UpdatedAt { get; set; }
 }
 
+public sealed record AppServerControlPermissionOption(string OptionId, string Name, string? Kind);
+
 public sealed class AppServerControlRequestSummary
 {
     public string RequestId { get; set; } = string.Empty;
@@ -488,6 +490,7 @@ public sealed class AppServerControlRequestSummary
     public string? Detail { get; set; }
     public string? ApprovalPurpose { get; set; }
     public string? ApprovalTool { get; set; }
+    public IReadOnlyList<AppServerControlPermissionOption>? PermissionOptions { get; set; }
     public string? Decision { get; set; }
     public List<AppServerControlQuestion> Questions { get; set; } = [];
     public List<AppServerControlAnsweredQuestion> Answers { get; set; } = [];
@@ -600,6 +603,7 @@ public sealed class AppServerControlSteerRequest
 public sealed class AppServerControlRequestDecisionRequest
 {
     public string Decision { get; set; } = "accept";
+    public string? OptionId { get; set; }
 }
 
 public sealed class AppServerControlUserInputAnswerRequest
@@ -777,6 +781,7 @@ public sealed class AppServerControlRequestResolutionCommand
 {
     public string RequestId { get; set; } = string.Empty;
     public string Decision { get; set; } = "accept";
+    public string? OptionId { get; set; }
 }
 
 public sealed class AppServerControlUserInputResolutionCommand

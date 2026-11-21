@@ -127,7 +127,8 @@ public static class AppServerControlProviderEventCompaction
                     ? CompactRequestDetail(source.RequestOpened.Detail, source.RequestOpened.RequestType, pending: true)
                     : CompactTextMiddle(source.RequestOpened.Detail, MaxPendingApprovalDetailChars),
                 ApprovalPurpose = source.RequestOpened.ApprovalPurpose is { } purpose ? CompactTextMiddle(purpose, 512) : null,
-                ApprovalTool = source.RequestOpened.ApprovalTool is null ? null : CompactTextMiddle(source.RequestOpened.ApprovalTool, 160)
+                ApprovalTool = source.RequestOpened.ApprovalTool is null ? null : CompactTextMiddle(source.RequestOpened.ApprovalTool, 160),
+                PermissionOptions = source.RequestOpened.PermissionOptions
             },
             RequestResolved = source.RequestResolved is null ? null : new AppServerControlProviderRequestResolvedPayload
             {

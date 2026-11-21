@@ -356,6 +356,8 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
 
         var recoveryWindow = command.Type == "runtime.recover" ? _history.GetSnapshotWindow(command.SessionId, 0, 1) : null;
         var runtime = await GetRuntimeAsync(command).ConfigureAwait(false);
+        if (command.ResolveRequest?.OptionId is not null && runtime is not AcpAppServerControlAgentRuntime)
+            throw new InvalidOperationException("ACP permission options require an ACP runtime.");
         HostCommandOutcome outcome;
         try { outcome = await runtime.ExecuteAsync(command, _shutdown.Token).ConfigureAwait(false); }
         catch
@@ -789,7 +791,8 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
                 RequestTypeLabel = appServerControlEvent.RequestOpened.RequestTypeLabel,
                 Detail = appServerControlEvent.RequestOpened.Detail,
                 ApprovalPurpose = appServerControlEvent.RequestOpened.ApprovalPurpose,
-                ApprovalTool = appServerControlEvent.RequestOpened.ApprovalTool
+                ApprovalTool = appServerControlEvent.RequestOpened.ApprovalTool,
+                PermissionOptions = appServerControlEvent.RequestOpened.PermissionOptions
             },
             RequestResolved = appServerControlEvent.RequestResolved is null ? null : new AppServerControlProviderRequestResolvedPayload
             {

@@ -3,6 +3,7 @@ import { showDevErrorDialog } from '../../utils/devErrorDialog';
 import {
   approveAppServerControlRequest,
   declineAppServerControlRequest,
+  selectAppServerControlPermissionOption,
   resolveAppServerControlUserInput,
   type AppServerControlHistoryRequestSummary,
 } from '../../api/client';
@@ -300,6 +301,24 @@ function createApprovalButtonRow(
   const buttonRow = document.createElement('div');
   buttonRow.className = 'agent-request-button-row';
 
+  if (request.permissionOptions?.length) {
+    for (const option of request.permissionOptions) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className =
+        option.kind === 'allow_once' ? 'agent-view-btn agent-view-btn-primary' : 'agent-view-btn';
+      button.disabled = busy;
+      button.textContent = option.name;
+      button.addEventListener('click', () => {
+        void runRequestAction(deps, appServerControlText, sessionId, request.requestId, () =>
+          selectAppServerControlPermissionOption(sessionId, request.requestId, option.optionId),
+        );
+      });
+      buttonRow.appendChild(button);
+    }
+    return buttonRow;
+  }
+
   const approve = document.createElement('button');
   approve.type = 'button';
   approve.className = 'agent-view-btn agent-view-btn-primary';
@@ -324,7 +343,8 @@ function createApprovalButtonRow(
     );
   });
 
-  buttonRow.append(decline, approve);
+  buttonRow.appendChild(decline);
+  if (request.permissionOptions == null) buttonRow.appendChild(approve);
   return buttonRow;
 }
 

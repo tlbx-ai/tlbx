@@ -732,6 +732,17 @@ export async function declineAppServerControlRequestWs(
   });
 }
 
+export function selectAppServerControlPermissionOptionWs(
+  sessionId: string,
+  requestId: string,
+  optionId: string,
+): Promise<AppServerControlCommandAcceptedResponse> {
+  return requestCommandAccepted('request.resolve', sessionId, {
+    requestId,
+    requestDecision: { decision: 'select_option', optionId },
+  });
+}
+
 export async function resolveAppServerControlUserInputWs(
   sessionId: string,
   requestId: string,

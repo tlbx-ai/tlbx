@@ -801,7 +801,8 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
                     ResolveRequest = new AppServerControlRequestResolutionCommand
                     {
                         RequestId = requestId,
-                        Decision = request.Decision
+                        Decision = request.Decision,
+                        OptionId = request.OptionId
                     }
                 },
                 ct).ConfigureAwait(false);
@@ -1815,6 +1816,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
             Detail = source.Detail,
             ApprovalPurpose = source.ApprovalPurpose,
             ApprovalTool = source.ApprovalTool,
+            PermissionOptions = source.PermissionOptions,
             Decision = source.Decision,
             Questions = source.Questions.Select(CloneQuestion).ToList(),
             Answers = source.Answers.Select(CloneAnsweredQuestion).ToList(),

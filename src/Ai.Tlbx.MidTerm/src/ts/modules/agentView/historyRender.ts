@@ -1820,6 +1820,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
       request.detail ?? '',
       request.approvalPurpose ?? '',
       request.approvalTool ?? '',
+      JSON.stringify(request.permissionOptions ?? null),
       request.updatedAt,
       request.answers.map((answer) => `${answer.questionId}:${answer.answers.join(',')}`).join('|'),
       interactionToken,

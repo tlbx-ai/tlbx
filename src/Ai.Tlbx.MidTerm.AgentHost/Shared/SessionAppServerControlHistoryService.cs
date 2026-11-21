@@ -1762,6 +1762,7 @@ public sealed partial class SessionAppServerControlHistoryService
             request.Detail = PreferMeaningfulText(request.Detail, appServerControlEvent.RequestOpened.Detail);
             request.ApprovalPurpose = appServerControlEvent.RequestOpened.ApprovalPurpose;
             request.ApprovalTool = appServerControlEvent.RequestOpened.ApprovalTool;
+            request.PermissionOptions = appServerControlEvent.RequestOpened.PermissionOptions;
         }
 
         if (appServerControlEvent.RequestResolved is not null)
@@ -1953,7 +1954,8 @@ public sealed partial class SessionAppServerControlHistoryService
                 RequestTypeLabel = source.RequestOpened.RequestTypeLabel,
                 Detail = source.RequestOpened.Detail,
                 ApprovalPurpose = source.RequestOpened.ApprovalPurpose,
-                ApprovalTool = source.RequestOpened.ApprovalTool
+                ApprovalTool = source.RequestOpened.ApprovalTool,
+                PermissionOptions = source.RequestOpened.PermissionOptions
             },
             RequestResolved = source.RequestResolved is null ? null : new AppServerControlProviderRequestResolvedPayload
             {
@@ -2297,6 +2299,7 @@ public sealed partial class SessionAppServerControlHistoryService
             Detail = source.Detail,
             ApprovalPurpose = source.ApprovalPurpose,
             ApprovalTool = source.ApprovalTool,
+            PermissionOptions = source.PermissionOptions,
             Decision = source.Decision,
             Questions = source.Questions.Select(CloneQuestion).ToList(),
             Answers = source.Answers.Select(CloneAnsweredQuestion).ToList(),

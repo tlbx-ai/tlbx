@@ -64,6 +64,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime
 
         string? plan = null;
         string? permission = null;
+        string? effort = null;
         foreach (var (field, value) in request.Settings)
         {
             var setting = value.ValueKind == JsonValueKind.String ? value.GetString() : null;
@@ -75,12 +76,15 @@ internal sealed partial class AcpAppServerControlAgentRuntime
                 case "permissionMode" when setting is "manual" or "auto":
                     permission = setting;
                     break;
+                case "effort" when !string.IsNullOrWhiteSpace(setting):
+                    effort = setting;
+                    break;
                 default:
                     response.UnconfirmedFields.Add(field);
                     break;
             }
         }
-        if (plan is null && permission is null)
+        if (plan is null && permission is null && effort is null)
         {
             response.Status = response.ThreadStatus = "unconfirmed";
             return ConfigurationOutcome(command, response);
@@ -88,6 +92,18 @@ internal sealed partial class AcpAppServerControlAgentRuntime
 
         try
         {
+            if (effort is not null)
+            {
+                if (!_configOptionIds.TryGetValue("effort", out var configId))
+                    throw new InvalidOperationException($"{_agentName} does not expose an ACP reasoning effort setting.");
+                ValidateNativeOption("reasoning effort", effort, _quickSettings.EffortOptions);
+                if (_quickSettings.Effort != effort)
+                    await SetConfigOptionAsync(configId, effort, ct).ConfigureAwait(false);
+                if (_quickSettings.Effort != effort)
+                    throw new InvalidOperationException($"{_agentName} did not report the requested reasoning effort.");
+                response.EffectiveSettings["effort"] =
+                    JsonSerializer.SerializeToElement(_quickSettings.Effort, AppServerControlHostJsonContext.Default.String);
+            }
             await ApplyAntigravityModeAsync(plan, permission, ct).ConfigureAwait(false);
             response.ThreadStatus = "applied";
             response.TurnStatus = request.ExpectedTurnId is null ? "notRequested" :

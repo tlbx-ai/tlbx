@@ -1085,6 +1085,30 @@ function isConfigurationForCurrentThread(
     receipt.status !== 'targetUnavailable'
   );
 }
+export async function waitForAntigravityQuickSettings(sessionId: string): Promise<void> {
+  const state = sessionStates.get(sessionId);
+  const runtime = state?.runtime;
+  if (state?.provider !== 'antigravity' || !runtime) return;
+
+  const fields = (['permissionMode', 'planMode', 'effort'] as const).filter(
+    (field) => runtime.statuses[field]?.state === 'pending',
+  );
+  if (!fields.length) return;
+
+  let queue: Promise<void>;
+  do {
+    queue = runtime.queue;
+    await queue;
+  } while (queue !== runtime.queue);
+
+  for (const field of fields) {
+    const status = runtime.statuses[field];
+    if (status?.state !== 'applied' && status?.state !== 'acknowledged') {
+      throw new Error(status?.detail ?? `Antigravity did not confirm ${field}.`);
+    }
+  }
+}
+
 export function configureAppServerControlQuickSettings(
   sessionId: string,
   patch: Partial<Pick<AppServerControlQuickSettingsSummary, AppServerControlRuntimeSettingField>>,
