@@ -972,7 +972,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
             return;
         }
         var autoApprove = UsesAntigravityModes
-            ? (_antigravityFullAccess && _currentModeId == "default") || CanApproveAntigravityContextLookup(toolCall)
+            ? (_antigravityFullAccess && _currentModeId == "default") || CanApproveAntigravitySessionLookup(toolCall)
             : _quickSettings.PermissionMode == AppServerControlQuickSettings.PermissionModeAuto;
         var selectedOption = autoApprove ? SelectOneTimePermissionOption(options, "accept") : null;
         if (selectedOption is not null)
@@ -989,14 +989,15 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
         }, rawLine));
     }
 
-    private bool CanApproveAntigravityContextLookup(JsonElement? toolCall)
+    private bool CanApproveAntigravitySessionLookup(JsonElement? toolCall)
     {
-        // This is tlbx's required self-identification call, on the server
-        // injected for this runtime. Match the structured native tool, not its display title alone.
+        // These two read-only calls resolve to the injected runtime's own session.
+        // Explicit target, details, or other arguments always go through normal review.
+        var toolName = GetString(toolCall, "name");
         if (_currentModeId != "auto" || string.IsNullOrEmpty(_mcpServer?.ScopeIdentity) ||
             GetString(toolCall, "kind") != "other" ||
-            GetString(toolCall, "name") != "mcp_tlbx_context_get" ||
-            GetString(toolCall, "title") != "Run mcp_tlbx_context_get")
+            toolName is not ("mcp_tlbx_context_get" or "mcp_tlbx_repos_list") ||
+            GetString(toolCall, "title") != $"Run {toolName}")
             return false;
 
         if (Traverse(toolCall, "rawInput") is not { ValueKind: JsonValueKind.Object } input)

@@ -217,13 +217,7 @@ function syncPermissionOptions(
 ): void {
   const options: AppServerControlQuickSettingsOption[] = [{ value: 'manual', label: 'Manual' }];
   if (provider !== 'antigravity' || supportsAntigravityAutoMode(effective)) {
-    options.push({
-      value: 'auto',
-      label: 'Auto',
-      ...(provider === 'antigravity'
-        ? { description: t('smartInput.permissionAntigravityAutoDescription') }
-        : {}),
-    });
+    options.push({ value: 'auto', label: 'Auto' });
   }
   if (provider === 'antigravity') {
     options.push({
@@ -244,52 +238,22 @@ function syncPermissionOptions(
 export function formatRuntimeSettingStatus(
   status: AppServerControlRuntimeSettingStatus | undefined,
 ): string {
-  if (!status) return '';
-  const key =
-    status.state === 'pending'
-      ? 'settingPending'
-      : status.state === 'targetUnavailable'
-        ? 'settingTargetUnavailable'
-        : status.state === 'unconfirmed'
-          ? 'settingUnconfirmed'
-          : status.state === 'partial'
-            ? 'settingPartial'
-            : status.state === 'acknowledged'
-              ? 'settingAcknowledged'
-              : 'settingApplied';
-  if (
-    status.state === 'pending' ||
-    status.state === 'unconfirmed' ||
-    status.state === 'targetUnavailable'
-  )
-    return [t(`smartInput.${key}`), status.detail].filter(Boolean).join(' — ');
-  const scopeKey =
-    status.scope === 'subsequentResponses'
-      ? 'settingScopeResponses'
-      : status.scope === 'subsequentCaptures'
-        ? 'settingScopeCaptures'
-        : 'settingScopeTurns';
-  return [t(`smartInput.${key}`), t(`smartInput.${scopeKey}`), status.detail]
-    .filter(Boolean)
-    .join(' — ');
+  switch (status?.state) {
+    case 'pending':
+      return t('smartInput.settingPending');
+    case 'targetUnavailable':
+      return status.detail || t('smartInput.settingTargetUnavailable');
+    case 'unconfirmed':
+      return status.detail || t('smartInput.settingUnconfirmed');
+    case 'partial':
+      return status.detail || t('smartInput.settingPartial');
+    case 'acknowledged':
+    case 'applied':
+    case undefined:
+      return '';
+  }
 }
 
-function formatRuntimePermissionHint(
-  sessionId: string,
-  field: AppServerControlRuntimeSettingField,
-  status: AppServerControlRuntimeSettingStatus | undefined,
-): string {
-  if (
-    field !== 'permissionMode' ||
-    getAppServerControlQuickSettingsProvider(sessionId) !== 'claude'
-  )
-    return '';
-  const draft = getAppServerControlQuickSettingsDraft(sessionId);
-  if (draft.planMode === 'on') return t('smartInput.settingPermissionAfterPlan');
-  if (draft.permissionMode === 'auto' && ['acknowledged', 'applied'].includes(status?.state ?? ''))
-    return t('smartInput.settingPermissionAutoPending');
-  return '';
-}
 function syncRuntimeSettingControlStatus(
   control: HTMLElement | null,
   sessionId: string,
@@ -298,12 +262,7 @@ function syncRuntimeSettingControlStatus(
   const container = control?.closest<HTMLElement>('.smart-input-appServerControl-field');
   if (!container) return;
   const status = getAppServerControlRuntimeSettingStatus(sessionId, field);
-  const description = [
-    formatRuntimeSettingStatus(status),
-    formatRuntimePermissionHint(sessionId, field, status),
-  ]
-    .filter(Boolean)
-    .join(' — ');
+  const description = formatRuntimeSettingStatus(status);
   container.title = description;
   container.dataset.configureState = status?.state ?? '';
   container.setAttribute('aria-busy', status?.state === 'pending' ? 'true' : 'false');
