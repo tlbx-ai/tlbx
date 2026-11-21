@@ -1676,7 +1676,7 @@
   "providerResume.count": "{count} Treffer",
   "providerResume.keyboardHint": "↑↓ auswählen · Enter fortsetzen · Esc schließen",
   "smartInput.settingPending": "Wird gesetzt…",
-  "smartInput.settingPartial": "Teilweise bestätigt; Geltungsbereich beachten",
+  "smartInput.settingPartial": "Teilweise bestätigt",
   "smartInput.settingUnconfirmed": "Unbestätigt; letzter bestätigter Wert wird angezeigt",
   "smartInput.settingTargetUnavailable": "Ziel geändert; nicht angewendet",
   "smartInput.permissionFullAccess": "Vollzugriff",

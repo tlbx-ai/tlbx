@@ -1470,7 +1470,7 @@
   "providerResume.count": "Найдено: {count}",
   "providerResume.keyboardHint": "↑↓ выбрать · Enter продолжить · Esc закрыть",
   "smartInput.settingPending": "Применение…",
-  "smartInput.settingPartial": "Подтверждено частично; см. область действия",
+  "smartInput.settingPartial": "Подтверждено частично",
   "smartInput.settingUnconfirmed": "Не подтверждено; показано последнее подтверждённое значение",
   "smartInput.settingTargetUnavailable": "Цель изменилась; не применено",
   "smartInput.permissionFullAccess": "Полный доступ",

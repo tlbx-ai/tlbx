@@ -1470,7 +1470,7 @@
   "providerResume.count": "ফলাফল: {count}",
   "providerResume.keyboardHint": "↑↓ নির্বাচন · Enter আবার শুরু · Esc বন্ধ",
   "smartInput.settingPending": "সেট করা হচ্ছে…",
-  "smartInput.settingPartial": "আংশিকভাবে নিশ্চিত; প্রয়োগের পরিসর দেখুন",
+  "smartInput.settingPartial": "আংশিকভাবে নিশ্চিত",
   "smartInput.settingUnconfirmed": "অনিশ্চিত; সর্বশেষ নিশ্চিত মান দেখানো হচ্ছে",
   "smartInput.settingTargetUnavailable": "লক্ষ্য বদলেছে; প্রয়োগ করা হয়নি",
   "smartInput.permissionFullAccess": "পূর্ণ অ্যাক্সেস",

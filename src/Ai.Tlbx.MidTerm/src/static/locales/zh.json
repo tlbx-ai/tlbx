@@ -1470,7 +1470,7 @@
   "providerResume.count": "结果：{count}",
   "providerResume.keyboardHint": "↑↓ 选择 · Enter 恢复 · Esc 关闭",
   "smartInput.settingPending": "正在设置…",
-  "smartInput.settingPartial": "部分已确认；请查看适用范围",
+  "smartInput.settingPartial": "部分已确认",
   "smartInput.settingUnconfirmed": "尚未确认；显示上次确认的值",
   "smartInput.settingTargetUnavailable": "目标已更改；未应用",
   "smartInput.permissionFullAccess": "完全访问",

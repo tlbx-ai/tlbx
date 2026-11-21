@@ -1470,7 +1470,7 @@
   "providerResume.count": "Résultats : {count}",
   "providerResume.keyboardHint": "↑↓ sélectionner · Entrée reprendre · Échap fermer",
   "smartInput.settingPending": "Application…",
-  "smartInput.settingPartial": "Partiellement confirmé ; voir la portée",
+  "smartInput.settingPartial": "Partiellement confirmé",
   "smartInput.settingUnconfirmed": "Non confirmé ; dernière valeur confirmée affichée",
   "smartInput.settingTargetUnavailable": "La cible a changé ; non appliqué",
   "smartInput.permissionFullAccess": "Accès complet",

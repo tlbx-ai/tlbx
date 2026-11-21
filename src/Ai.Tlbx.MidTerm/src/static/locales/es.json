@@ -1470,7 +1470,7 @@
   "providerResume.count": "Coincidencias: {count}",
   "providerResume.keyboardHint": "↑↓ seleccionar · Intro reanudar · Esc cerrar",
   "smartInput.settingPending": "Aplicando…",
-  "smartInput.settingPartial": "Confirmado parcialmente; consulte el alcance",
+  "smartInput.settingPartial": "Confirmado parcialmente",
   "smartInput.settingUnconfirmed": "Sin confirmar; se muestra el último valor confirmado",
   "smartInput.settingTargetUnavailable": "El destino cambió; no aplicado",
   "smartInput.permissionFullAccess": "Acceso completo",

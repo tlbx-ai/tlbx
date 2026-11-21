@@ -1470,7 +1470,7 @@
   "providerResume.count": "検索結果: {count} 件",
   "providerResume.keyboardHint": "↑↓ 選択 · Enter 再開 · Esc 閉じる",
   "smartInput.settingPending": "設定中…",
-  "smartInput.settingPartial": "一部を確認済み。適用範囲を確認してください",
+  "smartInput.settingPartial": "一部を確認済み",
   "smartInput.settingUnconfirmed": "未確認。最後に確認された値を表示",
   "smartInput.settingTargetUnavailable": "対象が変更されたため未適用",
   "smartInput.permissionFullAccess": "フルアクセス",
