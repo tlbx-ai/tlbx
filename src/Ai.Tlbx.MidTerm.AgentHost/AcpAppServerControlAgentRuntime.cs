@@ -14,10 +14,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
     private static readonly TimeSpan AttachRequestTimeout = TimeSpan.FromSeconds(20);
     private static readonly TimeSpan CancelTimeout = TimeSpan.FromSeconds(15);
 
-    private const string ContextSessionPermissionOptionId = "tlbx:allow-context-for-session";
-
     private readonly Action<AppServerControlProviderEvent> _emit;
-    private volatile bool _contextAllowedForSession;
     private readonly string _provider;
     private readonly string _agentName;
     private readonly IReadOnlyList<string> _executableArguments;
@@ -573,12 +570,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
             throw new InvalidOperationException($"{_agentName} ACP permission request was not found: {request.RequestId}");
         }
 
-        var grantContextForSession = request.OptionId == ContextSessionPermissionOptionId && pending.OffersContextSessionGrant;
-        if (grantContextForSession && !CanUseContextSessionGrant())
-            throw new InvalidOperationException("The tlbx session permission is only available in Antigravity Auto mode.");
-
-        var selectedOption = grantContextForSession ? SelectOneTimePermissionOption(pending.Options, "accept") :
-            request.OptionId is { } optionId
+        var selectedOption = request.OptionId is { } optionId
             ? pending.Options.FirstOrDefault(option => option.OptionId == optionId)
                 ?? throw new InvalidOperationException($"{_agentName} did not offer that ACP permission option.")
             : SelectOneTimePermissionOption(pending.Options, request.Decision);
@@ -588,8 +580,6 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
         if (!_pendingPermissions.TryRemove(request.RequestId, out _))
             throw new InvalidOperationException($"{_agentName} ACP permission request is no longer open.");
 
-        if (grantContextForSession)
-            _contextAllowedForSession = true;
         await WritePermissionResponseAsync(pending.RpcId, selectedOption?.OptionId, cancelled: selectedOption is null, ct).ConfigureAwait(false);
 
         return Accepted(
@@ -608,8 +598,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
                     appServerControlEvent.RequestResolved = new AppServerControlProviderRequestResolvedPayload
                     {
                         RequestType = "command_execution_approval",
-                        Decision = grantContextForSession ? "Allow for this session" :
-                            request.OptionId is not null ? selectedOption!.Name :
+                        Decision = request.OptionId is not null ? selectedOption!.Name :
                             selectedOption is null ? "cancel" : request.Decision
                     };
                 })
@@ -982,12 +971,8 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
             await HandleAcpChoiceQuestionAsync(root, idElement, turnId, options, rawLine, ct).ConfigureAwait(false);
             return;
         }
-        var canOfferContextGrant = CanUseContextSessionGrant() &&
-            GetString(toolCall, "name") == "mcp_tlbx_context_get" && GetString(toolCall, "kind") == "other" &&
-            options.Any(option => option.Kind == "allow_once") &&
-            options.All(option => option.OptionId != ContextSessionPermissionOptionId);
         var autoApprove = UsesAntigravityModes
-            ? canOfferContextGrant && _contextAllowedForSession
+            ? _antigravityFullAccess && _currentModeId == "default"
             : _quickSettings.PermissionMode == AppServerControlQuickSettings.PermissionModeAuto;
         var selectedOption = autoApprove ? SelectOneTimePermissionOption(options, "accept") : null;
         if (selectedOption is not null)
@@ -996,18 +981,13 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
             return;
         }
 
-        _pendingPermissions[requestId] = new PendingPermissionRequest(idElement.Clone(), turnId, options, canOfferContextGrant);
+        _pendingPermissions[requestId] = new PendingPermissionRequest(idElement.Clone(), turnId, options);
         _emit(CreateEvent("request.opened", turnId, null, requestId, "acp", "session/request_permission", root, appServerControlEvent =>
         {
             appServerControlEvent.RequestOpened = BuildAcpApproval(toolCall, _agentName);
-            appServerControlEvent.RequestOpened.PermissionOptions = canOfferContextGrant
-                ? [.. options, new() { OptionId = ContextSessionPermissionOptionId, Name = "Allow for this session", Kind = "tlbx_allow_session" }]
-                : options;
+            appServerControlEvent.RequestOpened.PermissionOptions = options;
         }, rawLine));
     }
-
-    private bool CanUseContextSessionGrant() =>
-        UsesAntigravityModes && _currentModeId == "auto" && !string.IsNullOrEmpty(_mcpServer?.ScopeIdentity);
 
     internal static AppServerControlProviderRequestOpenedPayload BuildAcpApproval(JsonElement? toolCall, string agentName)
     {
@@ -1362,7 +1342,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
         _pendingRequests.Clear();
         _pendingPromptTurns.Clear();
         _pendingPermissions.Clear();
-        _contextAllowedForSession = false;
+        _antigravityFullAccess = false;
         _pendingUserInputs.Clear();
         _pendingChoiceQuestions.Clear();
 
@@ -2585,8 +2565,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
         public static AcpPromptBlock CreateImage(string data, string mimeType, string uri) => new("image", null, data, mimeType, uri);
     }
 
-    private readonly record struct PendingPermissionRequest(
-        JsonElement RpcId, string TurnId, IReadOnlyList<AppServerControlPermissionOption> Options, bool OffersContextSessionGrant);
+    private readonly record struct PendingPermissionRequest(JsonElement RpcId, string TurnId, IReadOnlyList<AppServerControlPermissionOption> Options);
 
     private sealed class AcpToolState
     {
