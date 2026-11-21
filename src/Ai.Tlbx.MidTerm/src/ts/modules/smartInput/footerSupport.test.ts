@@ -93,12 +93,12 @@ describe('runtime quick-settings controls', () => {
     expect(model.field.dataset).toMatchObject({ configureState: 'pending' });
   });
 
-  it('distinguishes accepted defaults from effective readback and retains partial scope', () => {
+  it('keeps confirmed settings quiet and reports incomplete changes', () => {
     expect(
       formatRuntimeSettingStatus({ state: 'acknowledged', scope: 'subsequentResponses' }),
-    ).toContain('smartInput.settingAcknowledged');
+    ).toBe('');
     expect(formatRuntimeSettingStatus({ state: 'partial', scope: 'subsequentTurns' })).toContain(
-      'smartInput.settingScopeTurns',
+      'smartInput.settingPartial',
     );
     expect(formatRuntimeSettingStatus({ state: 'unconfirmed', scope: 'subsequentTurns' })).toBe(
       'smartInput.settingUnconfirmed',
