@@ -190,6 +190,7 @@ public static class AppServerControlQuickSettings
     public const string PlanModeOn = "on";
     public const string PermissionModeManual = "manual";
     public const string PermissionModeAuto = "auto";
+    public const string PermissionModeFullAccess = "full-access";
     public const string FastModeOff = "off";
     public const string FastModeOn = "on";
 
@@ -202,9 +203,12 @@ public static class AppServerControlQuickSettings
 
     public static string NormalizePermissionMode(string? value)
     {
-        return string.Equals(value?.Trim(), PermissionModeAuto, StringComparison.OrdinalIgnoreCase)
-            ? PermissionModeAuto
-            : PermissionModeManual;
+        return value?.Trim().ToLowerInvariant() switch
+        {
+            PermissionModeAuto => PermissionModeAuto,
+            PermissionModeFullAccess => PermissionModeFullAccess,
+            _ => PermissionModeManual
+        };
     }
 
     public static string NormalizeFastMode(string? value)

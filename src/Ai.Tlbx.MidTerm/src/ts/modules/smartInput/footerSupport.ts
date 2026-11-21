@@ -215,9 +215,16 @@ function syncPermissionOptions(
   draft: AppServerControlQuickSettingsSummary,
   effective: AppServerControlQuickSettingsSummary,
 ): void {
-  const options = [{ value: 'manual', label: 'Manual' }];
+  const options: AppServerControlQuickSettingsOption[] = [{ value: 'manual', label: 'Manual' }];
   if (provider !== 'antigravity' || supportsAntigravityAutoMode(effective)) {
     options.push({ value: 'auto', label: 'Auto' });
+  }
+  if (provider === 'antigravity') {
+    options.push({
+      value: 'full-access',
+      label: t('smartInput.permissionFullAccess'),
+      description: t('smartInput.permissionFullAccessDescription'),
+    });
   }
   setAppServerControlQuickSettingsDropdownOptions(select, options);
   syncAppServerControlQuickSettingSelect(

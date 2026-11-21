@@ -308,13 +308,7 @@ function createApprovalButtonRow(
       button.className =
         option.kind === 'allow_once' ? 'agent-view-btn agent-view-btn-primary' : 'agent-view-btn';
       button.disabled = busy;
-      button.textContent =
-        option.kind === 'tlbx_allow_session'
-          ? appServerControlText(
-              'appServerControl.request.approveForSession',
-              'Allow for this session',
-            )
-          : option.name;
+      button.textContent = option.name;
       button.addEventListener('click', () => {
         void runRequestAction(deps, appServerControlText, sessionId, request.requestId, () =>
           selectAppServerControlPermissionOption(sessionId, request.requestId, option.optionId),

@@ -109,7 +109,8 @@ function normalizePlanMode(value: string | null | undefined): AppServerControlPl
 }
 
 function normalizePermissionMode(value: string | null | undefined): AppServerControlPermissionMode {
-  return value?.trim().toLowerCase() === 'auto' ? 'auto' : 'manual';
+  const mode = value?.trim().toLowerCase();
+  return mode === 'auto' || mode === 'full-access' ? mode : 'manual';
 }
 
 function normalizeFastMode(value: string | null | undefined): AppServerControlFastMode {
@@ -871,7 +872,11 @@ function readActualRuntimeSetting(
 }
 
 function readActualPermissionMode(actual: Record<string, unknown>): string | undefined {
-  if (actual.permissionMode === 'auto' || actual.permissionMode === 'manual')
+  if (
+    actual.permissionMode === 'auto' ||
+    actual.permissionMode === 'manual' ||
+    actual.permissionMode === 'full-access'
+  )
     return actual.permissionMode;
   const sandbox = readObjectProperty(actual.sandboxPolicy, 'type');
   if (actual.approvalPolicy === 'never' && sandbox === 'dangerFullAccess') return 'auto';

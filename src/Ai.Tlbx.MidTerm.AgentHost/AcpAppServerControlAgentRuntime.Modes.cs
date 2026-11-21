@@ -6,6 +6,7 @@ namespace Ai.Tlbx.MidTerm.AgentHost;
 internal sealed partial class AcpAppServerControlAgentRuntime
 {
     private string _antigravityModeBeforePlan = "default";
+    private volatile bool _antigravityFullAccess;
 
     private bool UsesAntigravityModes => Provider == "antigravity";
 
@@ -15,9 +16,12 @@ internal sealed partial class AcpAppServerControlAgentRuntime
         if (mode != "plan")
             _antigravityModeBeforePlan = mode;
         settings.PlanMode = mode == "plan" ? AppServerControlQuickSettings.PlanModeOn : AppServerControlQuickSettings.PlanModeOff;
-        settings.PermissionMode = mode == "auto"
-            ? AppServerControlQuickSettings.PermissionModeAuto
-            : AppServerControlQuickSettings.PermissionModeManual;
+        settings.PermissionMode = mode switch
+        {
+            "auto" => AppServerControlQuickSettings.PermissionModeAuto,
+            "default" when _antigravityFullAccess => AppServerControlQuickSettings.PermissionModeFullAccess,
+            _ => AppServerControlQuickSettings.PermissionModeManual
+        };
     }
 
     private async Task ApplyAntigravityModeAsync(string? planMode, string? permissionMode, CancellationToken ct)
@@ -25,7 +29,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime
         var requestedMode = planMode == "on" ? "plan" : permissionMode switch
         {
             "auto" => "auto",
-            "manual" => "default",
+            "manual" or AppServerControlQuickSettings.PermissionModeFullAccess => "default",
             null when planMode == "off" && _currentModeId == "plan" => _antigravityModeBeforePlan,
             _ => null
         };
@@ -39,6 +43,15 @@ internal sealed partial class AcpAppServerControlAgentRuntime
             await SetConfigOptionAsync("mode", requestedMode, ct).ConfigureAwait(false);
         if (GetString(FindNativeConfigOption("mode"), "currentValue") != requestedMode)
             throw new InvalidOperationException($"{_agentName} did not report the requested '{requestedMode}' execution mode.");
+
+        // Like T3, keep agy in its supervised native mode for explicit Full access.
+        // The ACP client answers the resulting one-time tool requests for this runtime.
+        if (planMode != "on" && permissionMode is not null)
+            _antigravityFullAccess = permissionMode == AppServerControlQuickSettings.PermissionModeFullAccess;
+        var reportedPermission = _quickSettings.PermissionMode;
+        ApplyAntigravityModeReadback(_quickSettings, requestedMode);
+        if (_quickSettings.PermissionMode != reportedPermission)
+            _emit(CreateQuickSettingsUpdatedEvent(_quickSettings, "midterm.appServerControl", "runtime.configure", null));
     }
 
     private async Task<HostCommandOutcome> ConfigureAntigravityModeAsync(
@@ -73,7 +86,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime
                 case "planMode" when setting is "on" or "off":
                     plan = setting;
                     break;
-                case "permissionMode" when setting is "manual" or "auto":
+                case "permissionMode" when setting is "manual" or "auto" or AppServerControlQuickSettings.PermissionModeFullAccess:
                     permission = setting;
                     break;
                 case "effort" when !string.IsNullOrWhiteSpace(setting):
