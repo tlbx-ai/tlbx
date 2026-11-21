@@ -324,7 +324,7 @@ async function requestAppServerControlTurnInterrupt(
     }
     return false;
   } finally {
-    if (state.currentTurnId === turnId && state.interruptInFlight) {
+    if (appServerControlTurnStates.get(sessionId) === state && state.currentTurnId === turnId) {
       state.interruptInFlight = false;
       notifyStopChanged(sessionId);
     }
