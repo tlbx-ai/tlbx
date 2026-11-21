@@ -28,13 +28,13 @@
 
 # Your agents. Your machines. One workspace.
 
-tlbx is a free, open-source **Agentic Development Environment (ADE)** for Windows, macOS and Linux. Run Codex, Claude Code, OpenCode and other agents on your own machines, and work with them from any browser.
+tlbx is a free, open-source **[Agentic Development Environment (ADE)](https://tlbx.ai/agentic-development-environment)** and **[self-hosted web terminal](https://tlbx.ai/self-hosted-web-terminal)** for Windows, macOS and Linux. Run Codex, Claude Code, OpenCode and other agents on your own machines, and work with them from any browser.
 
 Your ADE keeps the work together: give an agent a task, follow its progress, review the Git diff and try the running app beside the conversation. Terminals, files, prompts and app previews stay within reach as you move from one task to the next.
 
 Open the same workspace from your desktop, tablet or phone, directly or through **[tlbx Link](https://lnk.tlbx.ai)**. Tools keep running when you close the browser, while the host stays awake and online. Your agent provider's usual charges still apply.
 
-**[Install tlbx](#install)** · **[Explore the features](https://tlbx.ai/features)** · **[How it works](https://tlbx.ai/architecture)**
+**[Install tlbx](https://tlbx.ai/install)** · **[ADE guide](https://tlbx.ai/agentic-development-environment)** · **[Explore the features](https://tlbx.ai/features)** · **[How it works](https://tlbx.ai/architecture)** · **[tlbx vs T3 Code](https://tlbx.ai/t3code-alternative)**
 
 ## Product screenshots
 
@@ -63,11 +63,11 @@ Follow agent conversations, review changes and check the running app in one brow
 | **Terminal Session** | Shells, command-line agents, editors, tests and servers | Your usual terminal, with output retained on the host |
 | **Agent Controller Session** | Supported coding agents | A conversation view with tool calls, code changes, questions and approval buttons |
 
-Choose the session type when you launch a tool. Both share the sidebar, files, Git view and app preview. [See supported agents](https://tlbx.ai/agent-controller).
+Choose the session type when you launch a tool. Both share the sidebar, files, Git view and app preview. [See supported agents and ACP details](https://tlbx.ai/agent-controller).
 
 ## Any shell, any terminal app
 
-Use **PowerShell, bash or zsh**, and terminal apps such as `btop`, `vim`, `lazygit` and database shells. Split sessions into panes to watch a build, edit files and run commands side by side.
+Use **PowerShell, bash or zsh**, and terminal apps such as `btop`, `vim`, `lazygit` and database shells. Split sessions into panes to watch a build, edit files and run commands side by side. See the [self-hosted web terminal comparison](https://tlbx.ai/self-hosted-web-terminal) for how tlbx compares with ttyd, WeTTY, Cockpit and tmux.
 
 <p align="center">
   <img src="docs/marketing/readme/any-terminal.webp" alt="btop system monitor running full-screen in a tlbx terminal session, with CPU, memory, disk, network and process panels" width="100%">
@@ -96,7 +96,7 @@ Install tlbx on each workstation or server you want to use. Open them in separat
 
 ## Install
 
-Run one command on the machine where your tools should run. The installer sets up tlbx with password-protected HTTPS and updates.
+Run one command on the machine where your tools should run (see the [full install guide](https://tlbx.ai/install)). The installer sets up tlbx with password-protected HTTPS and updates.
 
 **macOS / Linux**
 
