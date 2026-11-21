@@ -838,6 +838,7 @@
   "appServerControl.request.sending": "Sending...",
   "appServerControl.request.sendAnswer": "Answer भेजें",
   "appServerControl.request.working": "Working...",
+  "appServerControl.request.approveForSession": "इस सत्र के लिए अनुमति दें",
   "appServerControl.request.approveOnce": "एक बार approve करें",
   "appServerControl.request.decline": "Decline",
   "appServerControl.request.pendingUserInput": "User input pending है",

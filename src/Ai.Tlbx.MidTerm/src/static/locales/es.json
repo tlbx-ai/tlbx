@@ -838,6 +838,7 @@
   "appServerControl.request.sending": "Enviando...",
   "appServerControl.request.sendAnswer": "Enviar respuesta",
   "appServerControl.request.working": "Trabajando...",
+  "appServerControl.request.approveForSession": "Permitir durante esta sesión",
   "appServerControl.request.approveOnce": "Aprobar una vez",
   "appServerControl.request.decline": "Rechazar",
   "appServerControl.request.pendingUserInput": "Entrada pendiente del usuario",
