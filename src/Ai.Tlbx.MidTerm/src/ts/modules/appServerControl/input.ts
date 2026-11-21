@@ -120,7 +120,6 @@ export async function submitAppServerControlComposerPrompt(
   const state = getOrCreateAppServerControlTurnState(sessionId);
   state.submittingTurn = true;
   try {
-    await waitForAntigravityQuickSettings(sessionId);
     const response = await send(sessionId, normalizedRequest);
     if (response) {
       acceptAppServerControlQuickSettings(sessionId, response.provider, response.quickSettings);

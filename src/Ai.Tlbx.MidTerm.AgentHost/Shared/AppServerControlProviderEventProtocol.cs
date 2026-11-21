@@ -137,7 +137,7 @@ public sealed class AppServerControlProviderRequestOpenedPayload
     public string? Detail { get; set; }
     public string? ApprovalPurpose { get; set; }
     public string? ApprovalTool { get; set; }
-    public IReadOnlyList<AppServerControlPermissionOption>? PermissionOptions { get; set; }
+    public List<AppServerControlPermissionOption>? PermissionOptions { get; set; }
 }
 
 public sealed class AppServerControlProviderRequestResolvedPayload

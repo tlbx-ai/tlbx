@@ -20,6 +20,18 @@ public sealed class NativeHistoryCodecTests
                 new() { EntryId = "one", Order = 1, Body = "Äöü 🦊 東京", CreatedAt = date, UpdatedAt = date.ToOffset(TimeSpan.Zero) },
                 new() { EntryId = "two", Order = 2, Body = "Äöü 🦊 東京", CreatedAt = DateTimeOffset.MinValue, UpdatedAt = DateTimeOffset.MaxValue }
             ],
+            Requests =
+            [
+                new()
+                {
+                    RequestId = "acp-approval",
+                    PermissionOptions =
+                    [
+                        new() { OptionId = "session", Name = "Allow for this session", Kind = "allow_always" },
+                        new() { OptionId = "once", Name = "Allow once", Kind = "allow_once" }
+                    ]
+                }
+            ],
             QuickSettings = new() { ConfigOptions = [config.RootElement.Clone()] }
         };
         var info = AppServerControlHostJsonContext.Default.AppServerControlHistoryWindowResponse;

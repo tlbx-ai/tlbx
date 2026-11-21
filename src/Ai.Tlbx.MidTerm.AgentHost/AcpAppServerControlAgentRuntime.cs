@@ -1944,7 +1944,12 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
                 continue;
             }
 
-            result.Add(new AppServerControlPermissionOption(optionId, GetString(option, "name") ?? optionId, GetString(option, "kind")));
+            result.Add(new AppServerControlPermissionOption
+            {
+                OptionId = optionId,
+                Name = GetString(option, "name") ?? optionId,
+                Kind = GetString(option, "kind")
+            });
         }
 
         return result;

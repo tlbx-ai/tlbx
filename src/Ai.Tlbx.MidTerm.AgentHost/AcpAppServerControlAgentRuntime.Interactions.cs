@@ -25,7 +25,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime
             Options = options.Select(option => new AppServerControlQuestionOption
             {
                 Value = option.OptionId,
-                Label = option.Name ?? option.OptionId,
+                Label = option.Name,
                 Description = string.Empty
             }).ToList()
         };
