@@ -247,7 +247,9 @@ export function formatRuntimeSettingStatus(
       return status.detail || t('smartInput.settingUnconfirmed');
     case 'partial':
       return status.detail || t('smartInput.settingPartial');
-    default:
+    case 'acknowledged':
+    case 'applied':
+    case undefined:
       return '';
   }
 }
