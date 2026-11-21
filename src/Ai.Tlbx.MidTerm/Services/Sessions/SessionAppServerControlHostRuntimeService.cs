@@ -362,7 +362,8 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
                 out var environmentOverrides,
                 out var pathPrependEntries);
 
-            if (!await TryConnectExistingHostAsync(state, profile, workingDirectory, ct).ConfigureAwait(false))
+            var reconnected = await TryConnectExistingHostAsync(state, profile, workingDirectory, ct).ConfigureAwait(false);
+            if (!reconnected)
             {
                 if (!allowSpawn)
                 {
@@ -457,6 +458,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
                 CommandId = commandId, SessionId = sessionId, Type = "runtime.attach", AttachRuntime = request
             };
             AppServerControlHostCommandResultEnvelope attachResult;
+            bool newThread;
             for (var attempt = 0; ; attempt++)
             {
                 var request = CreateAttach();
@@ -473,6 +475,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
                     request.McpServer = _mcpServerFactory.Invoke(sessionId, state.HostPid);
                     if (request.McpServer is not null) request.McpServer.ScopeIdentity = prepared.McpScopeIdentity;
                 }
+                newThread = !reconnected && attachPoint is null && string.IsNullOrWhiteSpace(request.ResumeThreadId);
                 try
                 {
                     attachResult = await SendCommandAsync(state, id => AttachCommand(id, request), ct).ConfigureAwait(false);
@@ -487,7 +490,13 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
                     throw new InvalidOperationException("TLBX_MCP_SCOPE_CHANGED: The canonical runtime changed again during MCP registration.");
             }
 
-            if (attachResult.Status == "accepted") state.LastAttachError = null;
+            if (attachResult.Status == "accepted")
+            {
+                state.LastAttachError = null;
+                await RefreshCachedHistoryWindowAsync(state, ct).ConfigureAwait(false);
+                if (newThread)
+                    await RestoreProviderPreferencesAsync(state, profile, ct).ConfigureAwait(false);
+            }
             state.ProviderReady = attachResult.Status == "accepted";
             state.Status = state.ProviderReady ? HostRuntimeStatus.Ready : HostRuntimeStatus.Error;
             state.LastError = attachResult.Status == "accepted" ? null : attachResult.Message;
@@ -495,7 +504,6 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
             {
                 state.TransportKey = attachPoint?.TransportKind ?? "mtagenthost-ipc";
                 state.TransportLabel = DescribeTransportLabel(_mode, profile, attachPoint);
-                await RefreshCachedHistoryWindowAsync(state, ct).ConfigureAwait(false);
                 _ownershipRegistry.Upsert(sessionId, state.HostPid, profile, workingDirectory);
             }
             return state.ProviderReady;
@@ -710,9 +718,77 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
             {
                 CommandId = commandId, SessionId = sessionId, Type = "runtime.configure", Configure = request
             }, ct).ConfigureAwait(false);
-            return result.Configured ?? throw new InvalidOperationException("Runtime did not acknowledge configuration.");
+            var configured = result.Configured ?? throw new InvalidOperationException("Runtime did not acknowledge configuration.");
+            if (state.Profile is { } provider)
+                RememberProviderPreferences(provider, request, configured);
+            return configured;
         }
         finally { state.Gate.Release(); }
+    }
+
+    private async Task RestoreProviderPreferencesAsync(HostRuntimeState state, string provider, CancellationToken ct)
+    {
+        var preferences = _settingsService.ReadAppServerControlProviderPreferences(provider);
+        var history = state.CachedHistoryWindow;
+        if (preferences.Count == 0 || history is null || string.IsNullOrWhiteSpace(history.Thread.ThreadId) || history.Thread.ThreadId == state.SessionId)
+            return;
+        if (provider == CodexMode)
+            preferences.Remove("model"); // Codex already reads its model default from server settings at launch.
+        if (preferences.Count == 0)
+            return;
+
+        var request = new AppServerControlConfigureRequest
+        {
+            ExpectedThreadId = history.Thread.ThreadId,
+            Settings = preferences.ToDictionary(pair => pair.Key,
+                pair => JsonSerializer.SerializeToElement(pair.Value, AppServerControlHostJsonContext.Default.String),
+                StringComparer.Ordinal)
+        };
+        try
+        {
+            await SendCommandAsync(state, id => new AppServerControlHostCommandEnvelope
+            {
+                CommandId = id, SessionId = state.SessionId, Type = "runtime.configure", Configure = request
+            }, ct).ConfigureAwait(false);
+            await RefreshCachedHistoryWindowAsync(state, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or TimeoutException)
+        {
+            Log.Warn(() => $"Could not restore Agent Controller preferences for {provider}: {ex.Message}");
+        }
+    }
+
+    private void RememberProviderPreferences(string provider, AppServerControlConfigureRequest request,
+        AppServerControlConfigureResponse response)
+    {
+        var settings = response.ThreadStatus switch
+        {
+            "applied" => response.EffectiveSettings,
+            "acknowledged" => response.ConfirmedSettings,
+            _ => null
+        };
+        if (settings is null) return;
+
+        var patch = new Dictionary<string, string?>(StringComparer.Ordinal);
+        foreach (var field in new[] { "model", "effort", "permissionMode" })
+        {
+            if (!request.Settings.ContainsKey(field) || response.UnconfirmedFields.Contains(field))
+                continue;
+            if (settings.TryGetValue(field, out var value) && value.ValueKind is JsonValueKind.String or JsonValueKind.Null)
+                patch[field] = value.GetString();
+            else if (field == "permissionMode" && provider == CodexMode &&
+                     settings.TryGetValue("approvalPolicy", out var approval) &&
+                     settings.TryGetValue("sandboxPolicy", out var sandbox) && sandbox.ValueKind == JsonValueKind.Object &&
+                     sandbox.TryGetProperty("type", out var type))
+            {
+                if (approval.GetString() == "never" && type.GetString() == "dangerFullAccess")
+                    patch[field] = "auto";
+                else if (approval.GetString() == "on-request" && type.GetString() == "workspaceWrite")
+                    patch[field] = "manual";
+            }
+        }
+        if (patch.Count > 0)
+            _settingsService.SaveAppServerControlProviderPreferences(provider, patch);
     }
 
     public async Task<AppServerControlCommandAcceptedResponse> SteerTurnAsync(

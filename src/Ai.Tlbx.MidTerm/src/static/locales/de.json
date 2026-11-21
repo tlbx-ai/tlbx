@@ -1684,6 +1684,7 @@
   "smartInput.settingScopeTurns": "Für folgende Turns; laufende Inferenz unverändert",
   "smartInput.settingScopeCaptures": "Für nachfolgende Captures; laufende Inferenz unverändert",
   "smartInput.settingScopeResponses": "Angenommene Defaults ab nächster Antwort; laufende Inferenz unverändert",
+  "smartInput.permissionAntigravityAutoDescription": "Antigravity bewertet Shell-Befehle automatisch. MCP-Werkzeuge können weiterhin eine Freigabe verlangen.",
   "smartInput.permissionFullAccess": "Vollzugriff",
   "smartInput.permissionFullAccessDescription": "Einmalige Werkzeugfreigaben in dieser Sitzung automatisch bestätigen.",
   "smartInput.settingPermissionAfterPlan": "Gilt nach Verlassen von Plan; Plan bleibt aktiv",

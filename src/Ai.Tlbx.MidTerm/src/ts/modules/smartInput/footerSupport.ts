@@ -217,7 +217,13 @@ function syncPermissionOptions(
 ): void {
   const options: AppServerControlQuickSettingsOption[] = [{ value: 'manual', label: 'Manual' }];
   if (provider !== 'antigravity' || supportsAntigravityAutoMode(effective)) {
-    options.push({ value: 'auto', label: 'Auto' });
+    options.push({
+      value: 'auto',
+      label: 'Auto',
+      ...(provider === 'antigravity'
+        ? { description: t('smartInput.permissionAntigravityAutoDescription') }
+        : {}),
+    });
   }
   if (provider === 'antigravity') {
     options.push({
