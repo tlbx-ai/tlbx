@@ -732,10 +732,6 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         var history = state.CachedHistoryWindow;
         if (preferences.Count == 0 || history is null || string.IsNullOrWhiteSpace(history.Thread.ThreadId) || history.Thread.ThreadId == state.SessionId)
             return;
-        if (provider == CodexMode)
-            preferences.Remove("model"); // Codex already reads its model default from server settings at launch.
-        if (preferences.Count == 0)
-            return;
 
         var request = new AppServerControlConfigureRequest
         {

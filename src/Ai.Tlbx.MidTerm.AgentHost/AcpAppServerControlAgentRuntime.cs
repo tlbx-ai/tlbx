@@ -1001,8 +1001,10 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
 
         if (Traverse(toolCall, "rawInput") is not { ValueKind: JsonValueKind.Object } input)
             return false;
-        foreach (var argument in input.EnumerateObject())
+        using var arguments = input.EnumerateObject();
+        while (arguments.MoveNext())
         {
+            var argument = arguments.Current;
             if (!argument.NameEquals("toolSummary") || argument.Value.ValueKind != JsonValueKind.String)
                 return false;
         }
