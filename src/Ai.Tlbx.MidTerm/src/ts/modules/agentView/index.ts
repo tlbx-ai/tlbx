@@ -746,6 +746,7 @@ export function showAppServerControlDebugScenario(sessionId: string, scenario = 
     window.location.origin,
   );
   state.snapshot = debugScenario.snapshot;
+  syncAppServerControlTurnExecutionState(sessionId, state.snapshot.currentTurn);
   state.historyWindowStart = debugScenario.snapshot.historyWindowStart;
   state.historyWindowCount =
     debugScenario.snapshot.historyWindowEnd - debugScenario.snapshot.historyWindowStart;
@@ -950,6 +951,7 @@ async function connectAppServerControlHistory(
     );
     renderCurrentAgentView(sessionId);
     state.snapshot = snapshot;
+    syncAppServerControlTurnExecutionState(sessionId, snapshot.currentTurn);
     state.streamConnected = false;
     disconnectAppServerControlQuickSettingsRuntime(sessionId);
     syncAppServerControlQuickSettingsFromHistory(snapshot, false);
@@ -3074,7 +3076,6 @@ function renderAgentView(
     syncAgentViewPresentation(panel, snapshot.provider);
     syncAgentSessionTools(snapshot, streamConnected);
     panel.dataset.agentTurnId = snapshot.currentTurn.turnId || '';
-    syncAppServerControlTurnExecutionState(snapshot.sessionId, snapshot.currentTurn);
     historyRender.syncRequestInteractionState(state, snapshot.requests);
   }
   const historyEntries = preservePersistentCommandEntries(

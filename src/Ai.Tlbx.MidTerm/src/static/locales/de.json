@@ -644,6 +644,8 @@
   "git.workingTreeClean": "Arbeitsverzeichnis sauber",
   "git.cleanShort": "Sauber",
   "git.noRepoShort": "Kein Repo",
+  "smartInput.stopping": "Wird gestoppt …",
+  "smartInput.stopFailed": "Der Turn konnte nicht gestoppt werden",
   "commands.stop": "Stopp",
   "commands.run": "Ausführen",
   "commands.edit": "Bearbeiten",
