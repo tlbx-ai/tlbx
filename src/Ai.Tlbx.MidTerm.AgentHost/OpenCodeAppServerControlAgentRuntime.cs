@@ -72,6 +72,8 @@ internal sealed partial class OpenCodeAppServerControlAgentRuntime : IAppServerC
             if (!_ready || command.SessionId != _sessionId) throw new InvalidOperationException("OpenCode is not attached to this session.");
             switch (command.Type)
             {
+                case "runtime.configure":
+                    return Configure(command);
                 case "turn.start":
                     return await StartAsync(command, command.StartTurn ?? throw new InvalidOperationException("turn.start payload is required."), ct).ConfigureAwait(false);
                 case "turn.interrupt":

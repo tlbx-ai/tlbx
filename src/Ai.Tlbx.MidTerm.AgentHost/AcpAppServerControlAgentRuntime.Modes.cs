@@ -54,7 +54,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime
             _emit(CreateQuickSettingsUpdatedEvent(_quickSettings, "midterm.appServerControl", "runtime.configure", null));
     }
 
-    private async Task<HostCommandOutcome> ConfigureAntigravityModeAsync(
+    private async Task<HostCommandOutcome> ConfigureQuickSettingsAsync(
         AppServerControlHostCommandEnvelope command, CancellationToken ct)
     {
         EnsureAttached();
@@ -75,63 +75,70 @@ internal sealed partial class AcpAppServerControlAgentRuntime
             return ConfigurationOutcome(command, response);
         }
 
-        string? plan = null;
-        string? permission = null;
-        string? effort = null;
-        foreach (var (field, value) in request.Settings)
+        // Configure model before effort because a model switch can replace the native effort catalogue.
+        foreach (var field in new[] { "model", "effort", "permissionMode", "planMode" })
         {
+            if (!request.Settings.TryGetValue(field, out var value)) continue;
             var setting = value.ValueKind == JsonValueKind.String ? value.GetString() : null;
-            switch (field)
+            try
             {
-                case "planMode" when setting is "on" or "off":
-                    plan = setting;
-                    break;
-                case "permissionMode" when setting is "manual" or "auto" or AppServerControlQuickSettings.PermissionModeFullAccess:
-                    permission = setting;
-                    break;
-                case "effort" when !string.IsNullOrWhiteSpace(setting):
-                    effort = setting;
-                    break;
-                default:
-                    response.UnconfirmedFields.Add(field);
-                    break;
+                switch (field)
+                {
+                    case "model" when !string.IsNullOrWhiteSpace(setting):
+                    case "effort" when !string.IsNullOrWhiteSpace(setting):
+                        await ApplyRequestedQuickSettingsAsync(new AppServerControlQuickSettingsSummary
+                        {
+                            Model = field == "model" ? setting : _quickSettings.Model,
+                            Effort = field == "effort" ? setting : _quickSettings.Effort,
+                            PlanMode = _quickSettings.PlanMode
+                        }, ct).ConfigureAwait(false);
+                        if ((field == "model" ? _quickSettings.Model : _quickSettings.Effort) != setting)
+                            throw new InvalidOperationException($"{_agentName} did not report the requested {field}.");
+                        if (field == "model" && !_configOptionIds.ContainsKey("model"))
+                            _emit(CreateQuickSettingsUpdatedEvent(_quickSettings, "acp", "session/set_model", null));
+                        break;
+                    case "permissionMode" when UsesAntigravityModes &&
+                        setting is "manual" or "auto" or AppServerControlQuickSettings.PermissionModeFullAccess:
+                        await ApplyAntigravityModeAsync(null, setting, ct).ConfigureAwait(false);
+                        break;
+                    case "permissionMode" when setting is "manual" or "auto":
+                        _quickSettings.PermissionMode = setting;
+                        _emit(CreateQuickSettingsUpdatedEvent(_quickSettings, "midterm.appServerControl", "runtime.configure", null));
+                        break;
+                    case "planMode" when UsesAntigravityModes && setting is "on" or "off":
+                        await ApplyAntigravityModeAsync(setting, null, ct).ConfigureAwait(false);
+                        break;
+                    default:
+                        response.UnconfirmedFields.Add(field);
+                        break;
+                }
             }
-        }
-        if (plan is null && permission is null && effort is null)
-        {
-            response.Status = response.ThreadStatus = "unconfirmed";
-            return ConfigurationOutcome(command, response);
+            catch (Exception error) when (error is InvalidOperationException or TimeoutException)
+            {
+                response.UnconfirmedFields.Add(field);
+                response.FieldErrors[field] = error.Message;
+            }
         }
 
-        try
+        foreach (var field in request.Settings.Keys)
         {
-            if (effort is not null)
-            {
-                if (!_configOptionIds.TryGetValue("effort", out var configId))
-                    throw new InvalidOperationException($"{_agentName} does not expose an ACP reasoning effort setting.");
-                ValidateNativeOption("reasoning effort", effort, _quickSettings.EffortOptions);
-                if (_quickSettings.Effort != effort)
-                    await SetConfigOptionAsync(configId, effort, ct).ConfigureAwait(false);
-                if (_quickSettings.Effort != effort)
-                    throw new InvalidOperationException($"{_agentName} did not report the requested reasoning effort.");
-                response.EffectiveSettings["effort"] =
-                    JsonSerializer.SerializeToElement(_quickSettings.Effort, AppServerControlHostJsonContext.Default.String);
-            }
-            await ApplyAntigravityModeAsync(plan, permission, ct).ConfigureAwait(false);
-            response.ThreadStatus = "applied";
-            response.TurnStatus = request.ExpectedTurnId is null ? "notRequested" :
-                request.ExpectedTurnId == _activeTurnId ? "applied" : "targetUnavailable";
-            response.Status = response.UnconfirmedFields.Count == 0 && response.TurnStatus != "targetUnavailable"
-                ? "applied" : "partial";
-            response.EffectiveSettings["planMode"] =
-                JsonSerializer.SerializeToElement(_quickSettings.PlanMode, AppServerControlHostJsonContext.Default.String);
-            response.EffectiveSettings["permissionMode"] =
-                JsonSerializer.SerializeToElement(_quickSettings.PermissionMode, AppServerControlHostJsonContext.Default.String);
+            if (field is not ("model" or "effort" or "permissionMode" or "planMode"))
+                response.UnconfirmedFields.Add(field);
         }
-        catch (Exception error) when (error is InvalidOperationException or TimeoutException)
+        var applied = response.UnconfirmedFields.Count < request.Settings.Count;
+        response.ThreadStatus = applied ? "applied" : "unconfirmed";
+        response.TurnStatus = request.ExpectedTurnId is null ? "notRequested" :
+            request.ExpectedTurnId == _activeTurnId ? response.ThreadStatus : "targetUnavailable";
+        response.Status = !applied ? "unconfirmed" :
+            response.UnconfirmedFields.Count == 0 && response.TurnStatus != "targetUnavailable" ? "applied" : "partial";
+        foreach (var (field, effective) in new (string, string?)[]
         {
-            response.Status = response.ThreadStatus = "unconfirmed";
-            response.Detail = error.Message;
+            ("model", _quickSettings.Model), ("effort", _quickSettings.Effort),
+            ("planMode", _quickSettings.PlanMode), ("permissionMode", _quickSettings.PermissionMode)
+        })
+        {
+            if (!response.UnconfirmedFields.Contains(field))
+                response.EffectiveSettings[field] = JsonSerializer.SerializeToElement(effective, AppServerControlHostJsonContext.Default.String);
         }
         return ConfigurationOutcome(command, response);
     }

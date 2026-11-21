@@ -25,6 +25,7 @@ public sealed class MidTermSettings
     public string DefaultWorkingDirectory { get; set; } = "";
     public string TerminalEnvironmentVariables { get; set; } = "";
     public bool CodexYoloDefault { get; set; } = false;
+    public Dictionary<string, Dictionary<string, string?>> AppServerControlProviderPreferences { get; set; } = new(StringComparer.Ordinal);
     public string CodexDefaultAppServerControlModel { get; set; } = "";
     public string CodexEnvironmentVariables { get; set; } = "";
     public string AgentMessageFontFamily { get; set; } = "default";

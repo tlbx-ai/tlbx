@@ -1771,6 +1771,7 @@
   "smartInput.settingScopeTurns": "For following turns; running inference unchanged",
   "smartInput.settingScopeCaptures": "For subsequent captures; running inference unchanged",
   "smartInput.settingScopeResponses": "Accepted defaults for subsequent responses; running inference unchanged",
+  "smartInput.permissionAntigravityAutoDescription": "Antigravity evaluates shell commands automatically. MCP tools can still require approval.",
   "smartInput.permissionFullAccess": "Full access",
   "smartInput.permissionFullAccessDescription": "Automatically approve one-time tool requests in this session.",
   "smartInput.settingPermissionAfterPlan": "Used when leaving Plan; Plan remains active",

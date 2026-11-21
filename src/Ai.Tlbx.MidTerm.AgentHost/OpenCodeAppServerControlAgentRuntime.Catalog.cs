@@ -61,6 +61,84 @@ internal sealed partial class OpenCodeAppServerControlAgentRuntime
             : [];
     }
 
+    private HostCommandOutcome Configure(AppServerControlHostCommandEnvelope command)
+    {
+        var request = command.Configure ?? throw new InvalidOperationException("Configure payload is required.");
+        var response = new AppServerControlConfigureResponse
+        {
+            SessionId = command.SessionId, ThreadId = _threadId, TurnId = request.ExpectedTurnId
+        };
+        lock (_state)
+        {
+            if (request.ExpectedThreadId != _threadId || request.ExpectedTurnId != _turnId)
+                response.Status = response.ThreadStatus = response.TurnStatus = "targetUnavailable";
+            else
+                ConfigureDefaults(request, response);
+        }
+        return new()
+        {
+            Result = new() { CommandId = command.CommandId, SessionId = command.SessionId, Status = "accepted", Configured = response }
+        };
+    }
+
+    private void ConfigureDefaults(AppServerControlConfigureRequest request, AppServerControlConfigureResponse response)
+    {
+        string? Read(string key) => request.Settings.TryGetValue(key, out var value) && value.ValueKind == JsonValueKind.String
+            ? value.GetString() : null;
+
+        var model = Read("model") ?? _settings.Model;
+        var effort = Read("effort");
+        var permission = Read("permissionMode");
+        var plan = Read("planMode");
+        var patch = new AppServerControlTurnRequest();
+        foreach (var field in request.Settings.Keys)
+        {
+            switch (field)
+            {
+                case "model" when model is not null && _models.ContainsKey(model):
+                    patch.Model = model;
+                    break;
+                case "effort" when model is not null && _models.TryGetValue(model, out var definition) &&
+                    Variants(definition).Any(v => v.Value == effort):
+                    patch.Effort = effort;
+                    break;
+                case "permissionMode" when permission is "auto" or "manual":
+                    patch.PermissionMode = permission;
+                    break;
+                case "planMode" when plan is "on" or "off":
+                    patch.PlanMode = plan;
+                    break;
+                default:
+                    response.UnconfirmedFields.Add(field);
+                    break;
+            }
+        }
+        if (response.UnconfirmedFields.Count == request.Settings.Count)
+        {
+            response.Status = response.ThreadStatus = "unconfirmed";
+            return;
+        }
+
+        ApplySettings(patch);
+        PublishSettings();
+        foreach (var (field, value) in new (string, string?)[]
+        {
+            ("model", _settings.Model), ("effort", _settings.Effort),
+            ("planMode", _settings.PlanMode), ("permissionMode", _settings.PermissionMode)
+        })
+        {
+            if (!response.UnconfirmedFields.Contains(field))
+                response.EffectiveSettings[field] = JsonSerializer.SerializeToElement(value, AppServerControlHostJsonContext.Default.String);
+        }
+        response.ThreadStatus = "applied";
+        if (_turnId is not null)
+        {
+            response.TurnStatus = "unconfirmed"; // The native prompt already in flight keeps its original options.
+            response.DeferredFields.AddRange(request.Settings.Keys.Except(response.UnconfirmedFields, StringComparer.Ordinal));
+        }
+        response.Status = response.UnconfirmedFields.Count == 0 && response.TurnStatus == "notRequested" ? "applied" : "partial";
+    }
+
     private void ApplySettings(AppServerControlTurnRequest request)
     {
         var model = string.IsNullOrEmpty(request.Model) ? _settings.Model! : request.Model;

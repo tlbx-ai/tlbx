@@ -113,7 +113,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
             {
                 "runtime.attach" => await AttachAsync(command, ct).ConfigureAwait(false),
                 "turn.start" => await StartTurnAsync(command, ct).ConfigureAwait(false),
-                "runtime.configure" when UsesAntigravityModes => await ConfigureAntigravityModeAsync(command, ct).ConfigureAwait(false),
+                "runtime.configure" => await ConfigureQuickSettingsAsync(command, ct).ConfigureAwait(false),
                 "turn.steer" => await SteerTurnAsync(command, ct).ConfigureAwait(false),
                 "turn.interrupt" => await InterruptTurnAsync(command, ct).ConfigureAwait(false),
                 "thread.compact" => await CompactViaNativeCommandAsync(command, ct).ConfigureAwait(false),
@@ -972,7 +972,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
             return;
         }
         var autoApprove = UsesAntigravityModes
-            ? _antigravityFullAccess && _currentModeId == "default"
+            ? (_antigravityFullAccess && _currentModeId == "default") || CanApproveAntigravityContextLookup(toolCall)
             : _quickSettings.PermissionMode == AppServerControlQuickSettings.PermissionModeAuto;
         var selectedOption = autoApprove ? SelectOneTimePermissionOption(options, "accept") : null;
         if (selectedOption is not null)
@@ -987,6 +987,28 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
             appServerControlEvent.RequestOpened = BuildAcpApproval(toolCall, _agentName);
             appServerControlEvent.RequestOpened.PermissionOptions = options;
         }, rawLine));
+    }
+
+    private bool CanApproveAntigravityContextLookup(JsonElement? toolCall)
+    {
+        // This is tlbx's required self-identification call, on the server
+        // injected for this runtime. Match the structured native tool, not its display title alone.
+        if (_currentModeId != "auto" || string.IsNullOrEmpty(_mcpServer?.ScopeIdentity) ||
+            GetString(toolCall, "kind") != "other" ||
+            GetString(toolCall, "name") != "mcp_tlbx_context_get" ||
+            GetString(toolCall, "title") != "Run mcp_tlbx_context_get")
+            return false;
+
+        if (Traverse(toolCall, "rawInput") is not { ValueKind: JsonValueKind.Object } input)
+            return false;
+        using var arguments = input.EnumerateObject();
+        while (arguments.MoveNext())
+        {
+            var argument = arguments.Current;
+            if (!argument.NameEquals("toolSummary") || argument.Value.ValueKind != JsonValueKind.String)
+                return false;
+        }
+        return true;
     }
 
     internal static AppServerControlProviderRequestOpenedPayload BuildAcpApproval(JsonElement? toolCall, string agentName)
