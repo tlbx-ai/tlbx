@@ -10,6 +10,7 @@ import { getActiveTab } from '../sessionTabs';
 import {
   acceptAppServerControlQuickSettings,
   createAppServerControlTurnRequestWithQuickSettings,
+  waitForAntigravityQuickSettings,
 } from './quickSettings';
 
 export const APP_SERVER_CONTROL_TURN_SUBMITTED_EVENT = 'midterm:appServerControl-turn-submitted';
@@ -230,6 +231,7 @@ async function sendAppServerControlTurnWithLifecycle(
   request: AppServerControlTurnRequest,
 ): Promise<AppServerControlTurnStartResponse> {
   try {
+    await waitForAntigravityQuickSettings(sessionId);
     const response = await sendAppServerControlTurn(sessionId, request);
     acceptAppServerControlQuickSettings(sessionId, response.provider, response.quickSettings);
     dispatchAppServerControlTurnEvent(APP_SERVER_CONTROL_TURN_ACCEPTED_EVENT, {

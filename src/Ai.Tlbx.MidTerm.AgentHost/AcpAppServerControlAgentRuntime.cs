@@ -565,20 +565,22 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
     private async Task<HostCommandOutcome> ResolvePermissionRequestAsync(AppServerControlHostCommandEnvelope command, CancellationToken ct)
     {
         var request = command.ResolveRequest ?? throw new InvalidOperationException("request.resolve payload is required.");
-        if (!_pendingPermissions.TryRemove(request.RequestId, out var pending))
+        if (!_pendingPermissions.TryGetValue(request.RequestId, out var pending))
         {
             throw new InvalidOperationException($"{_agentName} ACP permission request was not found: {request.RequestId}");
         }
 
-        var selectedOption = SelectPermissionOption(pending.Options, request.Decision);
-        if (string.IsNullOrWhiteSpace(selectedOption))
-        {
-            await WritePermissionResponseAsync(pending.RpcId, null, cancelled: true, ct).ConfigureAwait(false);
-        }
-        else
-        {
-            await WritePermissionResponseAsync(pending.RpcId, selectedOption, cancelled: false, ct).ConfigureAwait(false);
-        }
+        var selectedOption = request.OptionId is { } optionId
+            ? pending.Options.FirstOrDefault(option => option.OptionId == optionId)
+                ?? throw new InvalidOperationException($"{_agentName} did not offer that ACP permission option.")
+            : SelectOneTimePermissionOption(pending.Options, request.Decision);
+        if (selectedOption is null && IsApprovalDecision(request.Decision))
+            throw new InvalidOperationException($"{_agentName} did not offer a one-time approval. Select an explicit option.");
+
+        if (!_pendingPermissions.TryRemove(request.RequestId, out _))
+            throw new InvalidOperationException($"{_agentName} ACP permission request is no longer open.");
+
+        await WritePermissionResponseAsync(pending.RpcId, selectedOption?.OptionId, cancelled: selectedOption is null, ct).ConfigureAwait(false);
 
         return Accepted(
             command.CommandId,
@@ -596,7 +598,8 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
                     appServerControlEvent.RequestResolved = new AppServerControlProviderRequestResolvedPayload
                     {
                         RequestType = "command_execution_approval",
-                        Decision = request.Decision
+                        Decision = request.OptionId is not null ? selectedOption!.Name :
+                            selectedOption is null ? "cancel" : request.Decision
                     };
                 })
             ]);
@@ -971,11 +974,11 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
         // Antigravity Auto still requests review for some actions. Only the user can resolve those requests.
         var selectedOption = !UsesAntigravityModes &&
             string.Equals(_quickSettings.PermissionMode, AppServerControlQuickSettings.PermissionModeAuto, StringComparison.Ordinal)
-            ? SelectPermissionOption(options, "accept")
+            ? SelectOneTimePermissionOption(options, "accept")
             : null;
-        if (!string.IsNullOrWhiteSpace(selectedOption))
+        if (selectedOption is not null)
         {
-            await WritePermissionResponseAsync(idElement.Clone(), selectedOption, cancelled: false, ct).ConfigureAwait(false);
+            await WritePermissionResponseAsync(idElement.Clone(), selectedOption.OptionId, cancelled: false, ct).ConfigureAwait(false);
             return;
         }
 
@@ -983,6 +986,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
         _emit(CreateEvent("request.opened", turnId, null, requestId, "acp", "session/request_permission", root, appServerControlEvent =>
         {
             appServerControlEvent.RequestOpened = BuildAcpApproval(toolCall, _agentName);
+            appServerControlEvent.RequestOpened.PermissionOptions = options;
         }, rawLine));
     }
 
@@ -1921,7 +1925,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
         writer.WriteEndArray();
     }
 
-    private static List<PermissionOption> ReadPermissionOptions(JsonElement root)
+    private static List<AppServerControlPermissionOption> ReadPermissionOptions(JsonElement root)
     {
         var options = Traverse(root, "params", "options");
         if (options is not { ValueKind: JsonValueKind.Array } array)
@@ -1929,7 +1933,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
             return [];
         }
 
-        var result = new List<PermissionOption>();
+        var result = new List<AppServerControlPermissionOption>();
         using var optionEnumerator = array.EnumerateArray();
         while (optionEnumerator.MoveNext())
         {
@@ -1940,26 +1944,30 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
                 continue;
             }
 
-            result.Add(new PermissionOption(optionId, GetString(option, "name"), GetString(option, "kind")));
+            result.Add(new AppServerControlPermissionOption
+            {
+                OptionId = optionId,
+                Name = GetString(option, "name") ?? optionId,
+                Kind = GetString(option, "kind")
+            });
         }
 
         return result;
     }
 
-    private static string? SelectPermissionOption(IReadOnlyList<PermissionOption> options, string? decision)
-    {
-        var wantsAccept = string.Equals(decision, "accept", StringComparison.OrdinalIgnoreCase) ||
-                          string.Equals(decision, "approve", StringComparison.OrdinalIgnoreCase) ||
-                          string.Equals(decision, "allow", StringComparison.OrdinalIgnoreCase);
-        var preferredKind = wantsAccept ? "allow" : "reject";
-        var selected = options.FirstOrDefault(option => option.Kind?.StartsWith(preferredKind, StringComparison.OrdinalIgnoreCase) == true);
-        if (!string.IsNullOrWhiteSpace(selected.OptionId))
-        {
-            return selected.OptionId;
-        }
+    private static bool IsApprovalDecision(string? decision) =>
+        decision is "accept" or "approve" or "allow";
 
-        selected = options.FirstOrDefault(option => option.Name?.Contains(wantsAccept ? "allow" : "reject", StringComparison.OrdinalIgnoreCase) == true);
-        return string.IsNullOrWhiteSpace(selected.OptionId) ? null : selected.OptionId;
+    private static AppServerControlPermissionOption? SelectOneTimePermissionOption(
+        IReadOnlyList<AppServerControlPermissionOption> options, string? decision)
+    {
+        var kind = decision switch
+        {
+            "accept" or "approve" or "allow" => "allow_once",
+            "decline" or "reject" => "reject_once",
+            _ => null
+        };
+        return kind is null ? null : options.FirstOrDefault(option => option.Kind == kind);
     }
 
     private AppServerControlProviderEvent CreateQuickSettingsUpdatedEvent(
@@ -2557,9 +2565,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
         public static AcpPromptBlock CreateImage(string data, string mimeType, string uri) => new("image", null, data, mimeType, uri);
     }
 
-    private readonly record struct PermissionOption(string OptionId, string? Name, string? Kind);
-
-    private readonly record struct PendingPermissionRequest(JsonElement RpcId, string TurnId, IReadOnlyList<PermissionOption> Options);
+    private readonly record struct PendingPermissionRequest(JsonElement RpcId, string TurnId, IReadOnlyList<AppServerControlPermissionOption> Options);
 
     private sealed class AcpToolState
     {

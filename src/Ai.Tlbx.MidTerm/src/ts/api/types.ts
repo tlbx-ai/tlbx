@@ -411,6 +411,7 @@ export interface AppServerControlRequestSummary {
   detail?: string | null;
   approvalPurpose?: string | null;
   approvalTool?: string | null;
+  permissionOptions?: { optionId: string; name: string; kind?: string | null }[] | null;
   decision?: string | null;
   questions: AppServerControlQuestion[];
   answers: AppServerControlAnsweredQuestion[];
@@ -458,6 +459,7 @@ export type AppServerControlHistoryRuntimeNotice = AppServerControlRuntimeNotice
 
 export interface AppServerControlRequestDecisionRequest {
   decision: string;
+  optionId?: string;
 }
 
 export interface AppServerControlTerminalReplayStep {

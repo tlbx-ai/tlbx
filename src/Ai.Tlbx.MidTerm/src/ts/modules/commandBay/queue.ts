@@ -2,6 +2,7 @@ import type {
   AppServerControlTurnRequest,
   AppServerControlTurnStartResponse,
 } from '../../api/types';
+import { waitForAntigravityQuickSettings } from '../appServerControl/quickSettings';
 import type { NormalizedManagerButton } from '../managerBar/workflow';
 
 async function readQueueError(response: Response, fallback: string): Promise<Error> {
@@ -32,6 +33,7 @@ export async function sendCommandBayPrompt(
   sessionId: string,
   turn: AppServerControlTurnRequest,
 ): Promise<AppServerControlTurnStartResponse | null> {
+  await waitForAntigravityQuickSettings(sessionId);
   const response = await fetch('/api/command-bay/queue', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
