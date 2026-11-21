@@ -838,6 +838,7 @@
   "appServerControl.request.sending": "发送中...",
   "appServerControl.request.sendAnswer": "发送回答",
   "appServerControl.request.working": "处理中...",
+  "appServerControl.request.approveForSession": "允许本次会话",
   "appServerControl.request.approveOnce": "仅批准一次",
   "appServerControl.request.decline": "拒绝",
   "appServerControl.request.pendingUserInput": "等待用户输入",

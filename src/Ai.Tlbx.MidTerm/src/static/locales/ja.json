@@ -838,6 +838,7 @@
   "appServerControl.request.sending": "送信中...",
   "appServerControl.request.sendAnswer": "回答を送信",
   "appServerControl.request.working": "処理中...",
+  "appServerControl.request.approveForSession": "このセッション中は許可",
   "appServerControl.request.approveOnce": "一度だけ承認",
   "appServerControl.request.decline": "却下",
   "appServerControl.request.pendingUserInput": "ユーザー入力待ち",

@@ -215,6 +215,7 @@
   "appServerControl.request.sending": "Sending...",
   "appServerControl.request.sendAnswer": "Send answer",
   "appServerControl.request.working": "Working...",
+  "appServerControl.request.approveForSession": "Allow for this session",
   "appServerControl.request.approveOnce": "Allow",
   "appServerControl.request.decline": "Decline",
   "appServerControl.request.pendingUserInput": "Pending user input",

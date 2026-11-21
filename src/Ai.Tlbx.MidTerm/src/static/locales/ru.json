@@ -838,6 +838,7 @@
   "appServerControl.request.sending": "Отправка...",
   "appServerControl.request.sendAnswer": "Отправить ответ",
   "appServerControl.request.working": "В работе...",
+  "appServerControl.request.approveForSession": "Разрешить на время сеанса",
   "appServerControl.request.approveOnce": "Одобрить один раз",
   "appServerControl.request.decline": "Отклонить",
   "appServerControl.request.pendingUserInput": "Ожидается ввод пользователя",

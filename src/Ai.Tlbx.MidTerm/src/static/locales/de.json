@@ -934,6 +934,7 @@
   "appServerControl.request.sending": "Wird gesendet...",
   "appServerControl.request.sendAnswer": "Antwort senden",
   "appServerControl.request.working": "In Arbeit...",
+  "appServerControl.request.approveForSession": "Für diese Sitzung erlauben",
   "appServerControl.request.approveOnce": "Zulassen",
   "appServerControl.request.decline": "Ablehnen",
   "appServerControl.request.pendingUserInput": "Wartet auf Eingabe",
