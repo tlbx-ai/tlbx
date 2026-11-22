@@ -23,10 +23,12 @@ public sealed partial class SessionUpdateStateService
     private static readonly TimeSpan RestoredShellReadyTimeout = TimeSpan.FromSeconds(3);
     private static readonly TimeSpan RestoredAgentStartTimeout = TimeSpan.FromSeconds(6);
     private readonly string _statePath;
+    private readonly SessionControlStateService? _sessionControlState;
 
-    public SessionUpdateStateService(SettingsService settingsService)
+    public SessionUpdateStateService(SettingsService settingsService, SessionControlStateService? sessionControlState = null)
         : this(settingsService.SettingsDirectory)
     {
+        _sessionControlState = sessionControlState;
     }
 
     public SessionUpdateStateService(string settingsDirectory)
@@ -60,13 +62,13 @@ public sealed partial class SessionUpdateStateService
         bool fullUpdate,
         bool tryResumeNonAiAgentProcesses,
         SessionLayoutState? layout = null,
-        Func<string, string?>? resolveProviderThreadId = null,
+        Func<string, (string? ThreadId, string? PermissionMode)>? resolveProviderResumeState = null,
         CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(sessionManager);
         ArgumentNullException.ThrowIfNull(gitWatcher);
 
-        var decorations = CaptureSessionDecorations(sessionManager, gitWatcher, fullUpdate ? resolveProviderThreadId : null);
+        var decorations = CaptureSessionDecorations(sessionManager, gitWatcher, fullUpdate ? resolveProviderResumeState : null);
         var state = new SessionUpdateState
         {
             SavedAt = DateTimeOffset.UtcNow,
@@ -195,7 +197,7 @@ public sealed partial class SessionUpdateStateService
     internal static List<SessionDecorationState> CaptureSessionDecorations(
         TtyHostSessionManager sessionManager,
         GitWatcherService gitWatcher,
-        Func<string, string?>? resolveProviderThreadId = null)
+        Func<string, (string? ThreadId, string? PermissionMode)>? resolveProviderResumeState = null)
     {
         var visibleById = sessionManager.GetSessionList(includeHidden: true).Sessions
             .ToDictionary(static session => session.Id, StringComparer.Ordinal);
@@ -208,6 +210,7 @@ public sealed partial class SessionUpdateStateService
                 gitWatcher.GetRepoBindings(session.Id),
                 sessionManager.GetPersistedSessionExtraGitRepos(session.Id));
 
+            var resume = dto?.AppServerControlOnly == true ? resolveProviderResumeState?.Invoke(session.Id) : null;
             result.Add(new SessionDecorationState
             {
                 SessionId = session.Id,
@@ -229,9 +232,8 @@ public sealed partial class SessionUpdateStateService
                 AgentControlled = dto?.AgentControlled ?? false,
                 AppServerControlOnly = dto?.AppServerControlOnly ?? false,
                 ProfileHint = dto?.ProfileHint,
-                AppServerControlResumeThreadId = dto?.AppServerControlOnly == true
-                    ? resolveProviderThreadId?.Invoke(session.Id) ?? dto.AppServerControlResumeThreadId
-                    : dto?.AppServerControlResumeThreadId,
+                AppServerControlResumeThreadId = resume?.ThreadId ?? dto?.AppServerControlResumeThreadId,
+                AppServerControlResumePermissionMode = resume?.PermissionMode,
                 ForegroundName = dto?.ForegroundName ?? session.ForegroundName,
                 ForegroundCommandLine = dto?.ForegroundCommandLine ?? session.ForegroundCommandLine,
                 ForegroundDisplayName = dto?.ForegroundDisplayName ?? session.ForegroundDisplayName,
@@ -641,7 +643,7 @@ public sealed partial class SessionUpdateStateService
         ]);
     }
 
-    private static async Task RestoreDecorationsAsync(
+    private async Task RestoreDecorationsAsync(
         TtyHostSessionManager sessionManager,
         GitWatcherService gitWatcher,
         IEnumerable<SessionDecorationState> decorations,
@@ -966,7 +968,7 @@ public sealed partial class SessionUpdateStateService
         Log.Warn(() => $"Keeping update session state for retry; failedRestoreSessions={failed.Count}");
     }
 
-    private static async Task ApplyDecorationAsync(
+    private async Task ApplyDecorationAsync(
         TtyHostSessionManager sessionManager,
         GitWatcherService gitWatcher,
         string targetSessionId,
@@ -1004,6 +1006,11 @@ public sealed partial class SessionUpdateStateService
         sessionManager.SetAppServerControlOnly(targetSessionId, decoration.AppServerControlOnly);
         sessionManager.SetProfileHint(targetSessionId, decoration.ProfileHint);
         sessionManager.SetAppServerControlResumeThreadId(targetSessionId, decoration.AppServerControlResumeThreadId);
+        if (decoration.AppServerControlOnly && decoration.AppServerControlResumeThreadId is { Length: > 0 } nativeThread &&
+            decoration.AppServerControlResumePermissionMode is { Length: > 0 } mode)
+        {
+            _sessionControlState?.SetAppServerControlResumePermission(targetSessionId, new(nativeThread, mode));
+        }
         sessionManager.SetSpaceId(targetSessionId, decoration.SpaceId);
         sessionManager.SetWorkspacePath(targetSessionId, decoration.WorkspacePath);
         sessionManager.SetSurface(targetSessionId, decoration.Surface);
@@ -1461,6 +1468,7 @@ public sealed class SessionDecorationState
     public bool AppServerControlOnly { get; set; }
     public string? ProfileHint { get; set; }
     public string? AppServerControlResumeThreadId { get; set; }
+    public string? AppServerControlResumePermissionMode { get; set; }
     public string? ForegroundName { get; set; }
     public string? ForegroundCommandLine { get; set; }
     public string? ForegroundDisplayName { get; set; }
