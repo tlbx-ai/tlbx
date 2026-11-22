@@ -44,6 +44,9 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
     private string? _authenticationMethodId;
     private string? _providerThreadId;
     private string? _activeTurnId;
+    private string? _antigravityBackgroundReplyId;
+
+    private bool SupportsAntigravityBackgroundReplies => _protocolGeneration == 1 && Provider == "antigravity";
     private string? _cancellingTurnId;
     private TaskCompletionSource? _activeTurnCompletion;
     private string? _activeTurnModel;
@@ -346,7 +349,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
         _quickSettings = MergeRequestedQuickSettings(quickSettings);
         _activeTurnModel = _quickSettings.Model;
         _activeTurnEffort = _quickSettings.Effort;
-        if (_protocolGeneration == 1) _tools.Clear();
+        if (_protocolGeneration == 1 && !SupportsAntigravityBackgroundReplies) _tools.Clear();
 
         var requestId = NextRequestId();
         _pendingPromptTurns[requestId] = turnId;
@@ -859,8 +862,15 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
                 }
                 return;
             case "usage_update":
+                FinishAntigravityBackgroundReply(root, rawLine);
                 HandleUsageUpdate(updateElement, root, rawLine);
                 return;
+        }
+
+        if (SupportsAntigravityBackgroundReplies && !_applyingHistoryReplay &&
+            HandleAntigravityBackgroundUpdate(updateType, updateElement, root, rawLine, turnId))
+        {
+            return;
         }
 
         if (string.IsNullOrWhiteSpace(turnId))
@@ -893,6 +903,40 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
 
                 break;
         }
+    }
+
+    private bool HandleAntigravityBackgroundUpdate(string? type, JsonElement update, JsonElement root, string rawLine, string? turnId)
+    {
+        if (type == "tool_call_update" && GetString(update, "toolCallId") is { } id &&
+            _tools.TryGetValue(id, out var tool) && tool.TurnId is { } owner && owner != turnId)
+        {
+            HandleToolCallUpdate(owner, update, root, rawLine);
+            return true;
+        }
+
+        // agy can send another assistant response on the same session after end_turn.
+        // Its usage update marks the end of that response without another prompt RPC.
+        if (type != "agent_message_chunk" || (turnId is not null && _antigravityBackgroundReplyId is null))
+            return false;
+
+        var delta = ExtractContentText(update);
+        if (delta.Length == 0) return true;
+
+        var replyId = _antigravityBackgroundReplyId ??= "acp-background:" + Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
+        EmitContentDelta(replyId, "assistant_text", delta, "acp", type, root, rawLine, replyId);
+        return true;
+    }
+
+    private void FinishAntigravityBackgroundReply(JsonElement root, string rawLine)
+    {
+        if (_antigravityBackgroundReplyId is not { } replyId) return;
+        _antigravityBackgroundReplyId = null;
+        _emit(CreateEvent("item.completed", replyId, replyId, null, "acp", "usage_update", root,
+            e => e.Item = new AppServerControlProviderItemPayload
+            {
+                ItemType = "assistant_message",
+                Status = "completed"
+            }, rawLine));
     }
 
     private void HandleAvailableCommandsUpdate(JsonElement update, JsonElement root, string rawLine)
@@ -1053,6 +1097,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
             ItemId = toolCallId,
             ItemType = itemType,
             Title = title,
+            TurnId = SupportsAntigravityBackgroundReplies ? turnId : null,
             Presentation = presentation
         };
         AppServerControlToolPresentationProjector.AppendAcpContent(Traverse(update, "content"), state.Output);
@@ -1086,6 +1131,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
                 ItemId = toolCallId,
                 ItemType = NormalizeToolItemType(GetString(update, "kind"), GetString(update, "title")),
                 Title = GetString(update, "title") ?? toolCallId,
+                TurnId = SupportsAntigravityBackgroundReplies ? turnId : null,
                 Presentation = AppServerControlToolPresentationProjector.FromAcp(
                     NormalizeToolItemType(GetString(update, "kind"), GetString(update, "title")),
                     "in_progress",
@@ -1166,14 +1212,15 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
         string source,
         string method,
         JsonElement root,
-        string rawLine)
+        string rawLine,
+        string? itemId = null)
     {
         if (string.IsNullOrEmpty(delta))
         {
             return;
         }
 
-        _emit(CreateEvent("content.delta", turnId, null, null, source, method, root, appServerControlEvent =>
+        _emit(CreateEvent("content.delta", turnId, itemId, null, source, method, root, appServerControlEvent =>
         {
             appServerControlEvent.ContentDelta = new AppServerControlProviderContentDeltaPayload
             {
@@ -1209,7 +1256,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
         {
             completion = _activeTurnCompletion;
             _activeTurnCompletion = null;
-            ResetTurnState();
+            ResetTurnState(keepAntigravityBackgroundCommands: state == "completed");
         }
         _emit(CreateEvent("turn.completed", turnId, null, null, "acp", "session/prompt", null, appServerControlEvent =>
         {
@@ -2511,7 +2558,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
         return GetString(error, "message") ?? error.GetRawText();
     }
 
-    private void ResetTurnState()
+    private void ResetTurnState(bool keepAntigravityBackgroundCommands = false)
     {
         var completion = _activeTurnCompletion;
         _activeTurnCompletion = null;
@@ -2519,7 +2566,19 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
         _cancellingTurnId = null;
         _activeTurnModel = null;
         _activeTurnEffort = null;
-        if (_protocolGeneration == 1) _tools.Clear();
+        if (_protocolGeneration == 1)
+        {
+            if (keepAntigravityBackgroundCommands && SupportsAntigravityBackgroundReplies)
+            {
+                foreach (var tool in _tools.Values.Where(static tool => tool.ItemType != "command_execution").ToArray())
+                    _tools.Remove(tool.ItemId);
+            }
+            else
+            {
+                _tools.Clear();
+                FinishAntigravityBackgroundReply(default, string.Empty);
+            }
+        }
         completion?.TrySetResult();
     }
 
