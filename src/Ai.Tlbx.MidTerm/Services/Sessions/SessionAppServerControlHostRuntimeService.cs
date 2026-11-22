@@ -49,6 +49,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
     private readonly string _mode;
     private readonly RedirectedProcessLauncher _launcher;
     private readonly SessionPathAllowlistService? _pathAllowlist;
+    private readonly SessionControlStateService? _sessionControlState;
 
     internal IEnumerable<KeyValuePair<int, string>> GetProcessContextRoots() =>
         _states.Values.Where(state => state.HostPid > 0)
@@ -73,8 +74,9 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         MidTermInstanceIdentity? instanceIdentity = null,
         string? mode = null,
         AcpAgentCatalogService? acpAgentCatalog = null,
-        SessionPathAllowlistService? pathAllowlist = null)
-        : this(settingsService, instanceIdentity, mode, null, acpAgentCatalog, pathAllowlist)
+        SessionPathAllowlistService? pathAllowlist = null,
+        SessionControlStateService? sessionControlState = null)
+        : this(settingsService, instanceIdentity, mode, null, acpAgentCatalog, pathAllowlist, sessionControlState)
     {
     }
 
@@ -84,9 +86,11 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         string? mode,
         RedirectedProcessLauncher? launcher,
         AcpAgentCatalogService? acpAgentCatalog = null,
-        SessionPathAllowlistService? pathAllowlist = null)
+        SessionPathAllowlistService? pathAllowlist = null,
+        SessionControlStateService? sessionControlState = null)
     {
         _settingsService = settingsService;
+        _sessionControlState = sessionControlState;
         _pathAllowlist = pathAllowlist;
         _acpAgentCatalog = acpAgentCatalog ?? new AcpAgentCatalogService(settingsService);
         _instanceIdentity = instanceIdentity ?? MidTermInstanceIdentity.Load(
@@ -495,7 +499,9 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
                 state.LastAttachError = null;
                 await RefreshCachedHistoryWindowAsync(state, ct).ConfigureAwait(false);
                 if (newThread)
-                    await RestoreProviderPreferencesAsync(state, profile, ct).ConfigureAwait(false);
+                    await RestorePreferencesAsync(state, profile, _settingsService.ReadAppServerControlProviderPreferences(profile), ct).ConfigureAwait(false);
+                else if (session.AppServerControlOnly)
+                    await RestoreSessionPermissionAsync(state, profile, ct).ConfigureAwait(false);
             }
             state.ProviderReady = attachResult.Status == "accepted";
             state.Status = state.ProviderReady ? HostRuntimeStatus.Ready : HostRuntimeStatus.Error;
@@ -721,14 +727,38 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
             var configured = result.Configured ?? throw new InvalidOperationException("Runtime did not acknowledge configuration.");
             if (state.Profile is { } provider)
                 RememberProviderPreferences(provider, request, configured);
+            if (configured.ThreadStatus is "applied" or "acknowledged" &&
+                request.Settings.ContainsKey("permissionMode") && !configured.UnconfirmedFields.Contains("permissionMode"))
+            {
+                _sessionControlState?.SetAppServerControlResumePermission(sessionId, null);
+            }
             return configured;
         }
         finally { state.Gate.Release(); }
     }
 
-    private async Task RestoreProviderPreferencesAsync(HostRuntimeState state, string provider, CancellationToken ct)
+    private async Task RestoreSessionPermissionAsync(HostRuntimeState state, string profile, CancellationToken ct)
     {
-        var preferences = _settingsService.ReadAppServerControlProviderPreferences(provider);
+        var snapshot = _sessionControlState?.GetAppServerControlResumePermission(state.SessionId);
+        if (snapshot is null || snapshot.ThreadId != state.CachedHistoryWindow?.Thread.ThreadId ||
+            AppServerControlQuickSettings.NormalizePermissionMode(snapshot.Mode) != snapshot.Mode)
+            return;
+
+        if (state.CachedHistoryWindow!.QuickSettings.PermissionMode != snapshot.Mode)
+        {
+            await RestorePreferencesAsync(state, profile, new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                ["permissionMode"] = snapshot.Mode
+            }, ct).ConfigureAwait(false);
+        }
+
+        if (state.CachedHistoryWindow?.QuickSettings.PermissionMode == snapshot.Mode)
+            _sessionControlState?.SetAppServerControlResumePermission(state.SessionId, null);
+    }
+
+    private async Task RestorePreferencesAsync(HostRuntimeState state, string provider,
+        IReadOnlyDictionary<string, string?> preferences, CancellationToken ct)
+    {
         var history = state.CachedHistoryWindow;
         if (preferences.Count == 0 || history is null || string.IsNullOrWhiteSpace(history.Thread.ThreadId) || history.Thread.ThreadId == state.SessionId)
             return;
@@ -1037,16 +1067,17 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         lock (state.HistoryCacheSync) return state.CachedHistoryWindow?.Session.LastActivityAt;
     }
 
-    internal string? GetProviderThreadIdForUpdate(string sessionId)
+    internal (string? ThreadId, string? PermissionMode) GetProviderResumeStateForUpdate(string sessionId)
     {
-        if (!_states.TryGetValue(sessionId, out var state) || !state.ProviderReady)
+        if (_states.TryGetValue(sessionId, out var state) && state.ProviderReady &&
+            state.CachedHistoryWindow is { } history &&
+            !string.IsNullOrWhiteSpace(history.Thread.ThreadId) && history.Thread.ThreadId != sessionId)
         {
-            return null;
+            return (history.Thread.ThreadId, history.QuickSettings.PermissionMode);
         }
 
-        var threadId = state.CachedHistoryWindow?.Thread.ThreadId;
-        return string.IsNullOrWhiteSpace(threadId) || string.Equals(threadId, sessionId, StringComparison.Ordinal)
-            ? null : threadId;
+        var pending = _sessionControlState?.GetAppServerControlResumePermission(sessionId);
+        return (pending?.ThreadId, pending?.Mode);
     }
 
     public bool TryGetCachedHistoryWindow(string sessionId, out AppServerControlHistoryWindowResponse historyWindow)

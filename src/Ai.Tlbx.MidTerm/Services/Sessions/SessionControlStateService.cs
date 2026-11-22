@@ -14,6 +14,7 @@ public sealed class SessionControlStateService
     private Dictionary<string, string> _launchOrigins = new(StringComparer.Ordinal);
     private Dictionary<string, string> _profileHints = new(StringComparer.Ordinal);
     private Dictionary<string, string> _appServerControlResumeThreadIds = new(StringComparer.Ordinal);
+    private Dictionary<string, AppServerControlResumePermission> _appServerControlResumePermissions = new(StringComparer.Ordinal);
     private Dictionary<string, string> _spaceIds = new(StringComparer.Ordinal);
     private Dictionary<string, string> _workspacePaths = new(StringComparer.Ordinal);
     private Dictionary<string, string> _surfaces = new(StringComparer.Ordinal);
@@ -92,6 +93,25 @@ public sealed class SessionControlStateService
         lock (_lock)
         {
             return _appServerControlResumeThreadIds.TryGetValue(sessionId, out var resumeThreadId) ? resumeThreadId : null;
+        }
+    }
+
+    internal AppServerControlResumePermission? GetAppServerControlResumePermission(string sessionId)
+    {
+        lock (_lock)
+        {
+            return _appServerControlResumePermissions.GetValueOrDefault(sessionId);
+        }
+    }
+
+    internal void SetAppServerControlResumePermission(string sessionId, AppServerControlResumePermission? permission)
+    {
+        lock (_lock)
+        {
+            if (permission == _appServerControlResumePermissions.GetValueOrDefault(sessionId)) return;
+            if (permission is null) _appServerControlResumePermissions.Remove(sessionId);
+            else _appServerControlResumePermissions[sessionId] = permission;
+            PersistLocked();
         }
     }
 
@@ -261,6 +281,9 @@ public sealed class SessionControlStateService
                 _appServerControlResumeThreadIds[sessionId] = normalized;
                 changed = true;
             }
+
+            if (_appServerControlResumePermissions.TryGetValue(sessionId, out var permission) && permission.ThreadId != normalized)
+                changed |= _appServerControlResumePermissions.Remove(sessionId);
 
             if (!changed)
             {
@@ -482,6 +505,7 @@ public sealed class SessionControlStateService
             changed |= _launchOrigins.Remove(sessionId);
             changed |= _profileHints.Remove(sessionId);
             changed |= _appServerControlResumeThreadIds.Remove(sessionId);
+            changed |= _appServerControlResumePermissions.Remove(sessionId);
             changed |= _spaceIds.Remove(sessionId);
             changed |= _workspacePaths.Remove(sessionId);
             changed |= _surfaces.Remove(sessionId);
@@ -526,6 +550,9 @@ public sealed class SessionControlStateService
                 _appServerControlResumeThreadIds = state.AppServerControlResumeThreadIds
                     .Where(kvp => !string.IsNullOrWhiteSpace(kvp.Key) && !string.IsNullOrWhiteSpace(kvp.Value))
                     .ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.Ordinal);
+                _appServerControlResumePermissions = (state.AppServerControlResumePermissions ?? new(StringComparer.Ordinal))
+                    .Where(kvp => !string.IsNullOrWhiteSpace(kvp.Key) && kvp.Value is not null)
+                    .ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.Ordinal);
                 _spaceIds = state.SpaceIds
                     .Where(kvp => !string.IsNullOrWhiteSpace(kvp.Key) && !string.IsNullOrWhiteSpace(kvp.Value))
                     .ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.Ordinal);
@@ -552,6 +579,7 @@ public sealed class SessionControlStateService
                 _launchOrigins = new Dictionary<string, string>(StringComparer.Ordinal);
                 _profileHints = new Dictionary<string, string>(StringComparer.Ordinal);
                 _appServerControlResumeThreadIds = new Dictionary<string, string>(StringComparer.Ordinal);
+                _appServerControlResumePermissions = new(StringComparer.Ordinal);
                 _spaceIds = new Dictionary<string, string>(StringComparer.Ordinal);
                 _workspacePaths = new Dictionary<string, string>(StringComparer.Ordinal);
                 _surfaces = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -587,6 +615,7 @@ public sealed class SessionControlStateService
                 AppServerControlResumeThreadIds = _appServerControlResumeThreadIds
                     .OrderBy(kvp => kvp.Key, StringComparer.Ordinal)
                     .ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.Ordinal),
+                AppServerControlResumePermissions = new(_appServerControlResumePermissions, StringComparer.Ordinal),
                 SpaceIds = _spaceIds
                     .OrderBy(kvp => kvp.Key, StringComparer.Ordinal)
                     .ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.Ordinal),

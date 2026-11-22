@@ -393,7 +393,7 @@ public class Program
                     gitWatcher,
                     updateType == UpdateType.Full,
                     settingsService.Load().TryResumeNonAiAgentProcesses,
-                    resolveProviderThreadId: updateAgentHosts.GetProviderThreadIdForUpdate,
+                    resolveProviderResumeState: updateAgentHosts.GetProviderResumeStateForUpdate,
                     ct: ct);
         };
 #pragma warning restore IDISP013

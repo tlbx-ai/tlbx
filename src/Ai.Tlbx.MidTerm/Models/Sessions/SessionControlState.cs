@@ -9,11 +9,14 @@ public sealed class SessionControlState
     public Dictionary<string, string> LaunchOrigins { get; set; } = new(StringComparer.Ordinal);
     public Dictionary<string, string> ProfileHints { get; set; } = new(StringComparer.Ordinal);
     public Dictionary<string, string> AppServerControlResumeThreadIds { get; set; } = new(StringComparer.Ordinal);
+    public Dictionary<string, AppServerControlResumePermission> AppServerControlResumePermissions { get; set; } = new(StringComparer.Ordinal);
     public Dictionary<string, string> SpaceIds { get; set; } = new(StringComparer.Ordinal);
     public Dictionary<string, string> WorkspacePaths { get; set; } = new(StringComparer.Ordinal);
     public Dictionary<string, string> Surfaces { get; set; } = new(StringComparer.Ordinal);
     public Dictionary<string, Dictionary<string, SessionPreviewState>> Previews { get; set; } = new(StringComparer.Ordinal);
 }
+
+public sealed record AppServerControlResumePermission(string ThreadId, string Mode);
 
 // Only authoritative configuration survives a web restart. Capabilities, route
 // keys, connected clients and cookies are deliberately not part of this record.
