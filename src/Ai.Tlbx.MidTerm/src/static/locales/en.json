@@ -1764,6 +1764,8 @@
   "providerResume.loadFailed": "Conversations could not be loaded: {error}",
   "providerResume.count": "Matches: {count}",
   "providerResume.keyboardHint": "↑↓ select · Enter resume · Esc close",
+  "smartInput.agentStarting": "Starting agent…",
+  "smartInput.agentStartupFailed": "Agent unavailable",
   "smartInput.settingPending": "Setting…",
   "smartInput.settingPartial": "Partly confirmed",
   "smartInput.settingUnconfirmed": "Unconfirmed; showing the last confirmed value",

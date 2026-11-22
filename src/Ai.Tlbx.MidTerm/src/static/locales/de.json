@@ -1677,6 +1677,8 @@
   "providerResume.loadFailed": "Unterhaltungen konnten nicht geladen werden: {error}",
   "providerResume.count": "{count} Treffer",
   "providerResume.keyboardHint": "↑↓ auswählen · Enter fortsetzen · Esc schließen",
+  "smartInput.agentStarting": "Agent startet …",
+  "smartInput.agentStartupFailed": "Agent nicht verfügbar",
   "smartInput.settingPending": "Wird gesetzt…",
   "smartInput.settingPartial": "Teilweise bestätigt",
   "smartInput.settingUnconfirmed": "Unbestätigt; letzter bestätigter Wert wird angezeigt",
