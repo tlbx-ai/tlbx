@@ -60,12 +60,13 @@ public sealed partial class SessionUpdateStateService
         bool fullUpdate,
         bool tryResumeNonAiAgentProcesses,
         SessionLayoutState? layout = null,
+        Func<string, string?>? resolveProviderThreadId = null,
         CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(sessionManager);
         ArgumentNullException.ThrowIfNull(gitWatcher);
 
-        var decorations = CaptureSessionDecorations(sessionManager, gitWatcher);
+        var decorations = CaptureSessionDecorations(sessionManager, gitWatcher, fullUpdate ? resolveProviderThreadId : null);
         var state = new SessionUpdateState
         {
             SavedAt = DateTimeOffset.UtcNow,
@@ -193,7 +194,8 @@ public sealed partial class SessionUpdateStateService
 
     internal static List<SessionDecorationState> CaptureSessionDecorations(
         TtyHostSessionManager sessionManager,
-        GitWatcherService gitWatcher)
+        GitWatcherService gitWatcher,
+        Func<string, string?>? resolveProviderThreadId = null)
     {
         var visibleById = sessionManager.GetSessionList(includeHidden: true).Sessions
             .ToDictionary(static session => session.Id, StringComparer.Ordinal);
@@ -227,7 +229,9 @@ public sealed partial class SessionUpdateStateService
                 AgentControlled = dto?.AgentControlled ?? false,
                 AppServerControlOnly = dto?.AppServerControlOnly ?? false,
                 ProfileHint = dto?.ProfileHint,
-                AppServerControlResumeThreadId = dto?.AppServerControlResumeThreadId,
+                AppServerControlResumeThreadId = dto?.AppServerControlOnly == true
+                    ? resolveProviderThreadId?.Invoke(session.Id) ?? dto.AppServerControlResumeThreadId
+                    : dto?.AppServerControlResumeThreadId,
                 ForegroundName = dto?.ForegroundName ?? session.ForegroundName,
                 ForegroundCommandLine = dto?.ForegroundCommandLine ?? session.ForegroundCommandLine,
                 ForegroundDisplayName = dto?.ForegroundDisplayName ?? session.ForegroundDisplayName,

@@ -384,6 +384,7 @@ public class Program
 
 #pragma warning disable IDISP013 // Update capture intentionally runs during the app lifetime before restart.
         var sessionGitMetadata = app.Services.GetRequiredService<SessionGitMetadataService>();
+        var updateAgentHosts = app.Services.GetRequiredService<SessionAppServerControlHostRuntimeService>();
         updateService.BeforeApplyUpdateAsync = async (updateType, ct) =>
         {
             await sessionGitMetadata.ReconcileAllAsync(requireHosts: true, ct);
@@ -392,6 +393,7 @@ public class Program
                     gitWatcher,
                     updateType == UpdateType.Full,
                     settingsService.Load().TryResumeNonAiAgentProcesses,
+                    resolveProviderThreadId: updateAgentHosts.GetProviderThreadIdForUpdate,
                     ct: ct);
         };
 #pragma warning restore IDISP013
