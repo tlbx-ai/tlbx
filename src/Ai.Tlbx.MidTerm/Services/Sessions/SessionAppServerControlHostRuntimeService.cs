@@ -1037,6 +1037,18 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         lock (state.HistoryCacheSync) return state.CachedHistoryWindow?.Session.LastActivityAt;
     }
 
+    internal string? GetProviderThreadIdForUpdate(string sessionId)
+    {
+        if (!_states.TryGetValue(sessionId, out var state) || !state.ProviderReady)
+        {
+            return null;
+        }
+
+        var threadId = state.CachedHistoryWindow?.Thread.ThreadId;
+        return string.IsNullOrWhiteSpace(threadId) || string.Equals(threadId, sessionId, StringComparison.Ordinal)
+            ? null : threadId;
+    }
+
     public bool TryGetCachedHistoryWindow(string sessionId, out AppServerControlHistoryWindowResponse historyWindow)
     {
         historyWindow = default!;
