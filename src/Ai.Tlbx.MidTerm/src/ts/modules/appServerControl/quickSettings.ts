@@ -33,6 +33,7 @@ interface AppServerControlQuickSettingsSessionState {
   draft: AppServerControlQuickSettingsSummary;
   draftDirty: boolean;
   runtime?: RuntimeSettingsState;
+  startupFailed?: boolean;
 }
 
 const runtimeFields = ['model', 'effort', 'planMode', 'permissionMode', 'fastMode'] as const;
@@ -390,6 +391,19 @@ function ensureProviderSeeded(
   return state;
 }
 
+export function getAppServerControlStartupState(sessionId: string): 'loading' | 'ready' | 'failed' {
+  const state = sessionStates.get(sessionId);
+  if (state?.startupFailed) return 'failed';
+  return state?.runtime?.initialTarget ? 'ready' : 'loading';
+}
+
+export function setAppServerControlStartupFailed(sessionId: string, failed: boolean): void {
+  const state = getOrCreateSessionState(sessionId);
+  if (Boolean(state.startupFailed) === failed) return;
+  state.startupFailed = failed;
+  dispatchQuickSettingsChange(sessionId, state, 'sync');
+}
+
 export function getAppServerControlQuickSettingsDraft(
   sessionId: string,
 ): AppServerControlQuickSettingsSummary {
@@ -427,10 +441,10 @@ export function setAppServerControlQuickSettingsDraft(
     resolveSessionProvider(sessionId),
   );
   if (state.runtime) {
-    const target = state.runtime.target;
+    const { target, initialTarget } = state.runtime;
     cancelRuntimeReadinessWait(state.runtime);
     delete state.runtime;
-    getRuntimeSettingsState(state).target = target;
+    Object.assign(getRuntimeSettingsState(state), { target, initialTarget });
   }
   state.draft = normalizeQuickSettings({ ...state.draft, ...patch }, state.provider);
   state.draftDirty = true;

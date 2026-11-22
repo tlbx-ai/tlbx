@@ -111,6 +111,7 @@ import {
 import {
   removeAppServerControlQuickSettingsSessionState,
   syncAppServerControlQuickSettingsFromHistory,
+  setAppServerControlStartupFailed,
   syncAppServerControlQuickSettingsFromSnapshot,
   disconnectAppServerControlQuickSettingsRuntime,
 } from '../appServerControl/quickSettings';
@@ -746,6 +747,7 @@ export function showAppServerControlDebugScenario(sessionId: string, scenario = 
     window.location.origin,
   );
   state.snapshot = debugScenario.snapshot;
+  syncAppServerControlQuickSettingsFromHistory(state.snapshot, true);
   syncAppServerControlTurnExecutionState(sessionId, state.snapshot.currentTurn);
   state.historyWindowStart = debugScenario.snapshot.historyWindowStart;
   state.historyWindowCount =
@@ -831,6 +833,7 @@ async function activateAgentViewCore(sessionId: string, alreadyAttached: boolean
 
   state.activationRunId += 1;
   const activationRunId = state.activationRunId;
+  setAppServerControlStartupFailed(sessionId, false);
 
   const hasExistingHistory = state.snapshot !== null;
   if (hasExistingHistory) {
@@ -993,6 +996,7 @@ async function connectAppServerControlHistory(
 
     state.activationError = describeError(error);
     state.activationIssue = classifyAppServerControlActivationIssue(error, false);
+    setAppServerControlStartupFailed(sessionId, true);
     setActivationState(
       state,
       'failed',
@@ -1047,6 +1051,7 @@ async function resumeAppServerControlFromHistory(
     log.warn(() => `Failed to resume AppServerControl for ${sessionId}: ${String(error)}`);
     state.activationError = describeError(error);
     state.activationIssue = classifyAppServerControlActivationIssue(error, true);
+    setAppServerControlStartupFailed(sessionId, true);
     renderCurrentAgentView(sessionId);
   }
 }
@@ -2244,6 +2249,7 @@ function openLiveAppServerControlStream(sessionId: string, afterSequence: number
       current.streamConnected = true;
       if (current.snapshot) syncAppServerControlQuickSettingsFromHistory(current.snapshot, true);
       current.activationIssue = null;
+      setAppServerControlStartupFailed(sessionId, false);
       current.activationError = null;
       setActivationState(
         current,

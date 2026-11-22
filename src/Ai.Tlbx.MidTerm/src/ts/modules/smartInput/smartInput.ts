@@ -63,6 +63,7 @@ import {
 } from '../appServerControl/input';
 import {
   APP_SERVER_CONTROL_QUICK_SETTINGS_CHANGED_EVENT,
+  getAppServerControlStartupState,
   configureAppServerControlQuickSettings,
   getAppServerControlQuickSettingsDraft,
   getAppServerControlQuickSettingsProvider,
@@ -725,6 +726,13 @@ function syncRichComposerInputLock(): void {
   const locked = Boolean(
     sessionId && richComposer?.isActive(sessionId) && richComposer.isSubmitting(sessionId),
   );
+  if (sendBtn) {
+    sendBtn.disabled = Boolean(
+      sessionId &&
+      isAppServerControlActiveSession(sessionId) &&
+      (locked || getAppServerControlStartupState(sessionId) !== 'ready'),
+    );
+  }
   if (sharedAttachInput) sharedAttachInput.disabled = locked;
   if (sharedPhotoInput) sharedPhotoInput.disabled = locked;
   for (const button of footerDock?.querySelectorAll<HTMLButtonElement>(
@@ -2198,7 +2206,9 @@ function syncStatusRow(layoutState: AdaptiveFooterLayoutState): void {
   }
 
   if (layoutState.appServerControlActive) {
-    renderAppServerControlStatusRow(layoutState);
+    const startupState = getAppServerControlStartupState(layoutState.activeSessionId);
+    if (startupState === 'ready') renderAppServerControlStatusRow(layoutState);
+    else footerStatusHost.appendChild(createAgentStartupStatus(startupState));
     return;
   }
 
@@ -2217,6 +2227,17 @@ function syncStatusRow(layoutState: AdaptiveFooterLayoutState): void {
     footerStatusHost,
   });
   footerStatusHost.toggleAttribute('hidden', !renderedTerminalStatus);
+}
+
+function createAgentStartupStatus(state: 'loading' | 'failed'): HTMLElement {
+  const status = document.createElement('span');
+  status.className = 'adaptive-footer-agent-startup';
+  status.dataset.state = state;
+  status.setAttribute('role', 'status');
+  status.textContent = t(
+    state === 'loading' ? 'smartInput.agentStarting' : 'smartInput.agentStartupFailed',
+  );
+  return status;
 }
 
 function renderAppServerControlStatusRow(layoutState: AdaptiveFooterLayoutState): void {
@@ -3027,7 +3048,12 @@ async function sendQuestionComposerAnswer(args: {
 
 async function sendRichComposerTurn(sessionId: string, ta: HTMLTextAreaElement): Promise<void> {
   const editor = richComposer;
-  if (!editor || editor.isSubmitting(sessionId)) return;
+  if (
+    !editor ||
+    editor.isSubmitting(sessionId) ||
+    getAppServerControlStartupState(sessionId) !== 'ready'
+  )
+    return;
   let handledCommand = false;
   const isCurrentDocument = editor.captureDocumentGuard(sessionId);
   editor.setSubmitting(sessionId, true);
@@ -3244,6 +3270,15 @@ function pinToolForSession(sessionId: string, tool: ToolKind): void {
 }
 
 function syncAppServerControlQuickSettingsControls(): void {
+  const sessionId = $activeSessionId.get();
+  if (
+    sessionId &&
+    isAppServerControlActiveSession(sessionId) &&
+    getAppServerControlStartupState(sessionId) !== 'ready'
+  ) {
+    setAppServerControlQuickSettingsSheetOpen(false);
+    return;
+  }
   syncAppServerControlQuickSettingsControlsSupport({
     appServerControlQuickSettingsRow,
     appServerControlQuickSettingsActions,
