@@ -61,6 +61,9 @@ public sealed partial class MidTermSettingsPublic
             ShowAgentTechnicalDetails = settings.ShowAgentTechnicalDetails,
             ToolCallOutputLines = NormalizeToolCallOutputLines(settings.ToolCallOutputLines),
             AgentImagePreviewWidth = Math.Clamp(settings.AgentImagePreviewWidth, 120, 1000),
+            AgentChatFontScale = Math.Clamp(settings.AgentChatFontScale, 80, 160),
+            AgentChatPanelTransparency = ClampAgentChatPanelTransparency(settings.AgentChatPanelTransparency),
+            AgentChatColumnWidth = Math.Clamp(settings.AgentChatColumnWidth, 24, 100),
             FontSize = settings.FontSize,
             FontFamily = settings.FontFamily,
             TerminalLigaturesEnabled = settings.TerminalLigaturesEnabled,
@@ -171,6 +174,9 @@ public sealed partial class MidTermSettingsPublic
         settings.ShowAgentTechnicalDetails = ShowAgentTechnicalDetails;
         settings.ToolCallOutputLines = NormalizeToolCallOutputLines(ToolCallOutputLines);
         settings.AgentImagePreviewWidth = Math.Clamp(AgentImagePreviewWidth, 120, 1000);
+        settings.AgentChatFontScale = Math.Clamp(AgentChatFontScale, 80, 160);
+        settings.AgentChatPanelTransparency = ClampAgentChatPanelTransparency(AgentChatPanelTransparency);
+        settings.AgentChatColumnWidth = Math.Clamp(AgentChatColumnWidth, 24, 100);
         settings.FontSize = FontSize;
         settings.FontFamily = FontFamily;
         settings.TerminalLigaturesEnabled = TerminalLigaturesEnabled;
@@ -435,5 +441,10 @@ public sealed partial class MidTermSettingsPublic
     private static int NormalizeToolCallOutputLines(int value)
     {
         return Math.Clamp(value, MinToolCallOutputLines, MaxToolCallOutputLines);
+    }
+
+    private static int? ClampAgentChatPanelTransparency(int? value)
+    {
+        return value is int percent ? Math.Clamp(percent, 0, 100) : null;
     }
 }

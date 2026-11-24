@@ -173,6 +173,8 @@ The canonical history contract must satisfy the following:
 - Command disclosures lead with a single-line, ellipsized monospace preview of the script, including while expanded. A known shell launcher may be omitted from that preview; the expanded script retains the exact source. Exit outcomes are quiet trailing metadata, including nonzero exit codes. Expanded scripts use lightweight syntax accents and compact regular-weight monospace text; accessible script/output labels do not become visible section headers. Output is separated with a subtle rule. Touch disclosures retain a 44px hit target.
 - Use separators, spacing, and type hierarchy instead of ornamental containers.
 
+- Keep chat appearance settings behind a quiet gear at the upper inline end of the chat panel. Reveal the gear on hover and keyboard focus, and keep it visible on touch. Font scale, panel transparency, and column width update live in both the quick panel and the Agent UI settings.
+
 ### 3. One interaction model
 
 - User messages, assistant output, tool progress, approvals, diffs, and plan-mode questions should feel like one coherent history/timeline system.
@@ -185,7 +187,7 @@ The canonical history contract must satisfy the following:
 - Avoid narrow bubble layouts that waste the center column.
 - Long assistant output should read like a document, not like a chat toy.
 - Tool activity should compress well and expand only when detail is useful.
-- Every provider shares one centered reading column, at most `54rem` wide, for prose, code, tables, tool rows and the collapsed composer. Content is left-aligned inside that column. Narrow panes fill their available width; mobile/tablet portrait viewports up to 1100px use the full available width. Wide code and tables scroll within their own wrappers. Expanded composition retains the full workspace.
+- Every provider shares one centered reading column, with a configurable maximum width (default `54rem`), for prose, code, tables, tool rows and the collapsed composer. Content is left-aligned inside that column. Narrow panes fill their available width; mobile/tablet portrait viewports up to 1100px use the full available width by default. Wide code and tables scroll within their own wrappers. Expanded composition retains the full workspace.
 - User and assistant rows share the same left edge and are distinguished by quiet role labels, a slim user rule and turn spacing rather than opposing alignment, bubbles or cards.
 
 ### 5. Clear hierarchy
@@ -321,7 +323,7 @@ The canonical history contract must satisfy the following:
 - Agent Controller Session must own the visible backdrop of its active surface. When terminal transparency is configured as fully opaque, Agent Controller Session should sit on an opaque terminal-toned underlay so wallpaper or hidden sibling panels cannot bleed through the active Agent Controller Session surface.
 - Agent Controller Session pane background/transparency should follow the terminal transparency model, not the surrounding generic UI shell transparency model.
 - Agent Controller Session and Terminal panes should be the only workspace backdrop layer between their content and the app wallpaper. Parent workspace shells must stay transparent so stacked translucent backgrounds do not change the intended terminal-transparency opacity.
-- Agent Controller Session must match the effective stacked xterm background users see behind terminal text, not a single token layer. The generic tab panel stays transparent; the content shell repeats the terminal canvas background layer to mirror the visible `.xterm` + `.xterm-viewport` + rendered canvas stack. `Terminal Cell Background Transparency` affects rendered terminal cells/ANSI backgrounds inside xterm, not the full Agent Controller pane.
+- Agent Controller Session must match the effective stacked xterm background users see behind terminal text, not a single token layer. The generic tab panel stays transparent; by default the content shell repeats the terminal canvas background layer to mirror the visible `.xterm` + `.xterm-viewport` + rendered canvas stack. `Terminal Cell Background Transparency` affects rendered terminal cells/ANSI backgrounds inside xterm, not the full Agent Controller pane. An explicit Agent Chat transparency setting replaces the chat backdrop while leaving the text opaque.
 
 ### Color and emphasis
 
@@ -770,7 +772,7 @@ Status in this branch/work item:
 - implemented: assistant markdown tables render plainly without automatic cell pills or guessed tones; sort and filter controls are added only for tables with 10 or more body rows
 - implemented: fenced CSV code blocks in assistant markdown now render through the same table treatment instead of raw code blocks
 - implemented: fenced code blocks render on a quiet tinted surface with padding and their own horizontal overflow; inline code uses a subtle tinted span
-- implemented: all Agent Controller providers use the same centered 54rem reading column and aligned collapsed composer, with full-width narrow/portrait layouts; the obsolete Codex-only layout branch is removed
+- implemented: Agent Controller providers share a configurable centered reading column and aligned collapsed composer, with the existing default narrow/portrait layouts. Chat font scale, backdrop transparency, and column width are shared persisted settings edited live from the chat gear or Agent UI settings.
 - implemented: Codex Agent Controller Session distinguishes user and assistant rows with quiet `User` and `Agent` labels rather than right-floating user bubbles
 - implemented: Agent Controller Session row metadata is timestamp-only; transient progress words no longer linger beside older user, assistant, tool, diff, or request rows
 - implemented: Agent Controller Session history headers no longer right-bind labels or timestamps; row badges and any meta text stay left-anchored across user, assistant, tool, diff, request, system, and notice rows

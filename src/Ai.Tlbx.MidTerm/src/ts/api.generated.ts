@@ -5063,6 +5063,12 @@ export interface components {
       /** Format: int32 */
       agentImagePreviewWidth: number;
       /** Format: int32 */
+      agentChatFontScale: number;
+      /** Format: int32 */
+      agentChatPanelTransparency: null | number;
+      /** Format: int32 */
+      agentChatColumnWidth: number;
+      /** Format: int32 */
       fontSize: number;
       fontFamily: string;
       terminalLigaturesEnabled: boolean;

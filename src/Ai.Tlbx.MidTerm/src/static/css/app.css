@@ -13778,7 +13778,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
 
 .agent-view-panel,
 .adaptive-footer-dock[data-surface='appServerControl'] {
-  --agent-reading-column-width: 54rem;
+  --agent-reading-column-width: var(--agent-chat-column-width, 54rem);
 }
 
 .agent-view-panel {
@@ -13810,7 +13810,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
   --agent-appServerControl-assistant-label: color-mix(in srgb, var(--text-muted) 84%, transparent);
   --agent-history-message-font-family: var(--font-ui);
   --agent-history-user-font-family: var(--agent-history-message-font-family);
-  --agent-history-prose-font-size: calc(1.0625rem - 1pt);
+  --agent-history-prose-font-size: calc((1.0625rem - 1pt) * var(--agent-chat-font-scale, 1));
   --agent-history-prose-line-height: 1.7;
   --agent-history-assistant-font-family: var(--agent-history-message-font-family);
   --agent-appServerControl-ready: color-mix(in srgb, var(--accent-green) 74%, white 10%);
@@ -13824,7 +13824,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
 @media (orientation: portrait) and (max-width: 1100px) {
   .agent-view-panel,
   .adaptive-footer-dock[data-surface='appServerControl'] {
-    --agent-reading-column-width: 100%;
+    --agent-reading-column-width: var(--agent-chat-column-width, 100%);
   }
 }
 
@@ -13843,15 +13843,99 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
   min-height: 0;
   flex-direction: column;
   position: relative;
-  background: var(--terminal-canvas-background-stack);
+  container-type: inline-size;
+  background: var(--agent-chat-background, var(--terminal-canvas-background-stack));
 }
 
+.agent-chat-quick-settings {
+  position: absolute;
+  inset-block-start: 4px;
+  inset-inline-end: 8px;
+  z-index: 5;
+}
 
+.agent-chat-quick-trigger {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+  opacity: 0;
+  list-style: none;
+}
+
+.agent-chat-quick-trigger span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+.agent-chat-quick-trigger::-webkit-details-marker {
+  display: none;
+}
+
+.agent-chat-quick-trigger:focus-visible,
+:where(.agent-chat-shell:hover, .agent-chat-quick-settings[open]) .agent-chat-quick-trigger {
+  opacity: 0.65;
+}
+
+.agent-chat-quick-trigger:hover,
+.agent-chat-quick-trigger:focus-visible {
+  background: var(--bg-dropdown-opaque);
+  opacity: 1;
+}
+
+.agent-chat-quick-controls {
+  position: absolute;
+  inset-block-start: 100%;
+  inset-inline-end: 0;
+  width: min(264px, calc(100vw - 24px));
+  max-width: calc(100cqw - 16px);
+  padding: 12px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--bg-dropdown-opaque);
+  box-shadow: 0 6px 20px #0003;
+}
+
+.agent-chat-quick-controls .setting-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 4px;
+  padding: 6px 0;
+  margin: 0;
+  background: transparent;
+}
+
+.agent-chat-quick-controls .setting-row label {
+  font-size: var(--fs-md);
+}
+
+.agent-chat-quick-controls .transparency-slider-row {
+  min-width: 0;
+}
+
+.agent-chat-quick-controls input[type='range'] {
+  width: 100%;
+  min-width: 0;
+}
+
+@media (hover: none) {
+  .agent-chat-quick-trigger {
+    width: 44px;
+    height: 44px;
+    opacity: 0.55;
+  }
+}
 
 .agent-runtime-stats {
   position: absolute;
   top: 12px;
-  right: 18px;
+  inset-inline-end: 54px;
   z-index: 3;
   display: inline-flex;
   flex-direction: column;
@@ -16325,7 +16409,7 @@ button.agent-history-attachment-image {
 
 @media (max-width: 720px) {
   .agent-view-panel {
-    --agent-history-prose-font-size: calc(1rem - 1pt);
+    --agent-history-prose-font-size: calc((1rem - 1pt) * var(--agent-chat-font-scale, 1));
     --agent-history-prose-line-height: 1.65;
   }
   .agent-history {
@@ -22366,6 +22450,7 @@ button.tree-expand { height: 22px; padding: 0; border: 0; background: transparen
 }
 .adaptive-footer-dock[data-surface='appServerControl'] .smart-input-rich-composer .ProseMirror {
   padding-inline-end: 10px;
+  font-size: calc(1em * var(--agent-chat-font-scale, 1));
 }
 .adaptive-footer-dock[data-surface='appServerControl']:not([data-composer-expanded='true']) .smart-input-rich-composer .ProseMirror {
   min-height: 88px;
