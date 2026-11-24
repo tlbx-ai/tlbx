@@ -50,7 +50,10 @@ public sealed class HubStateWebSocketHandler
             return;
         }
 
-        using var localSocket = await context.WebSockets.AcceptWebSocketAsync();
+        using var localSocket = await context.WebSockets.AcceptWebSocketAsync(new WebSocketAcceptContext
+        {
+            DangerousEnableCompression = true
+        });
         using var remoteSocket = new ClientWebSocket();
         var localBrowserId = BrowserIdentity.BuildFromRequest(context.Request);
         var browserLabel = BrowserIdentity.GetDeviceLabel(context.Request);

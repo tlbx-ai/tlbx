@@ -48,7 +48,11 @@ public sealed class AppServerControlWebSocketHandler
 
         const string binaryProtocol = "tlbx-history-ach1";
         var nativeHistory = context.WebSockets.WebSocketRequestedProtocols.Contains(binaryProtocol, StringComparer.Ordinal);
-        using var ws = await context.WebSockets.AcceptWebSocketAsync(nativeHistory ? binaryProtocol : null);
+        using var ws = await context.WebSockets.AcceptWebSocketAsync(new WebSocketAcceptContext
+        {
+            SubProtocol = nativeHistory ? binaryProtocol : null,
+            DangerousEnableCompression = true
+        });
         using var authLease = _authService.TrackWebSocketAuthentication(authentication, ws);
         var sendLock = new SemaphoreSlim(1, 1);
         var subscriptions = new Dictionary<string, AppServerControlSocketSubscription>(StringComparer.Ordinal);
@@ -159,15 +163,65 @@ public sealed class AppServerControlWebSocketHandler
             subscriptions[sessionId] = state;
             state.ReaderTask = Task.Run(async () =>
             {
+                const int coalesceWindowMs = 32;
                 try
                 {
-                    await foreach (var patch in subscription.Reader.ReadAllAsync(cancellation.Token).ConfigureAwait(false))
+                    var reader = subscription.Reader;
+                    while (await reader.WaitToReadAsync(cancellation.Token).ConfigureAwait(false))
                     {
+                        if (!reader.TryRead(out var merged))
+                        {
+                            continue;
+                        }
+
+                        // Coalesce burst streaming token deltas into a single 32ms frame.
+                        if (merged.HistoryTextDeltas.Count > 0 &&
+                            merged.HistoryUpserts.Count == 0 &&
+                            merged.RequestUpserts.Count == 0 &&
+                            merged.ItemUpserts.Count == 0)
+                        {
+                            var deadline = Environment.TickCount64 + coalesceWindowMs;
+                            while (true)
+                            {
+                                while (reader.TryRead(out var next))
+                                {
+                                    merged = MergePatches(merged, next);
+                                }
+
+                                var remaining = deadline - Environment.TickCount64;
+                                if (remaining <= 0 || merged.RequestUpserts.Count > 0)
+                                {
+                                    break;
+                                }
+
+                                using var delayCts = CancellationTokenSource.CreateLinkedTokenSource(cancellation.Token);
+                                delayCts.CancelAfter((int)remaining);
+                                try
+                                {
+                                    if (!await reader.WaitToReadAsync(delayCts.Token).ConfigureAwait(false))
+                                    {
+                                        break;
+                                    }
+                                }
+                                catch (OperationCanceledException) when (!cancellation.Token.IsCancellationRequested)
+                                {
+                                    break;
+                                }
+                            }
+                        }
+                        else
+                        {
+                            while (reader.TryRead(out var next))
+                            {
+                                merged = MergePatches(merged, next);
+                            }
+                        }
+
                         await SendJsonAsync(
                             new AppServerControlWsHistoryPatchMessage
                             {
                                 SessionId = sessionId,
-                                Patch = patch
+                                Patch = merged
                             },
                             AppJsonContext.Default.AppServerControlWsHistoryPatchMessage).ConfigureAwait(false);
                     }
@@ -181,15 +235,19 @@ public sealed class AppServerControlWebSocketHandler
 
             if (currentHistoryWindow is not null)
             {
+                var clientAlreadyUpToDate = afterSequence > 0 && currentHistoryWindow.LatestSequence <= afterSequence;
                 afterSequence = Math.Max(afterSequence, currentHistoryWindow.LatestSequence);
-                await SendJsonAsync(
-                    new AppServerControlWsHistoryWindowMessage
-                    {
-                        SessionId = sessionId,
-                        WindowRevision = requestedWindow?.WindowRevision,
-                        HistoryWindow = currentHistoryWindow
-                    },
-                    AppJsonContext.Default.AppServerControlWsHistoryWindowMessage).ConfigureAwait(false);
+                if (!clientAlreadyUpToDate)
+                {
+                    await SendJsonAsync(
+                        new AppServerControlWsHistoryWindowMessage
+                        {
+                            SessionId = sessionId,
+                            WindowRevision = requestedWindow?.WindowRevision,
+                            HistoryWindow = currentHistoryWindow
+                        },
+                        AppJsonContext.Default.AppServerControlWsHistoryWindowMessage).ConfigureAwait(false);
+                }
             }
 
             await SendJsonAsync(
@@ -561,6 +619,122 @@ public sealed class AppServerControlWebSocketHandler
             Log.Warn(() => $"App Server Controller WebSocket request '{request.Action}' failed for {request.SessionId}: {ex.Message}");
             await sendError(request.Id, request.Action, request.SessionId, ex.Message).ConfigureAwait(false);
         }
+    }
+
+    private static AppServerControlHistoryPatch MergePatches(
+        AppServerControlHistoryPatch previous,
+        AppServerControlHistoryPatch next)
+    {
+        var mergedSession = next.Session;
+        if (mergedSession.AvailableCommandsOmitted && !previous.Session.AvailableCommandsOmitted)
+        {
+            mergedSession.AvailableCommands = previous.Session.AvailableCommands;
+            mergedSession.AvailableCommandsOmitted = false;
+        }
+
+        var mergedQuickSettings = next.QuickSettings;
+        if (mergedQuickSettings.OptionsOmitted && !previous.QuickSettings.OptionsOmitted)
+        {
+            mergedQuickSettings.ModelOptions = previous.QuickSettings.ModelOptions;
+            mergedQuickSettings.EffortOptions = previous.QuickSettings.EffortOptions;
+            mergedQuickSettings.ConfigOptions = previous.QuickSettings.ConfigOptions;
+            mergedQuickSettings.OptionsOmitted = false;
+        }
+
+        var mergedStreams = next.Streams.StreamsOmitted && !previous.Streams.StreamsOmitted
+            ? previous.Streams
+            : next.Streams;
+
+        var historyRemovals = previous.HistoryRemovals.ToHashSet(StringComparer.Ordinal);
+        foreach (var removed in next.HistoryRemovals) historyRemovals.Add(removed);
+
+        var historyUpserts = new Dictionary<string, AppServerControlHistoryItem>(StringComparer.Ordinal);
+        foreach (var entry in previous.HistoryUpserts)
+        {
+            if (!historyRemovals.Contains(entry.EntryId)) historyUpserts[entry.EntryId] = entry;
+        }
+        foreach (var entry in next.HistoryUpserts)
+        {
+            historyRemovals.Remove(entry.EntryId);
+            historyUpserts[entry.EntryId] = entry;
+        }
+
+        var textDeltas = new Dictionary<string, AppServerControlHistoryTextDelta>(StringComparer.Ordinal);
+        foreach (var td in previous.HistoryTextDeltas)
+        {
+            if (!historyRemovals.Contains(td.EntryId) && !historyUpserts.ContainsKey(td.EntryId))
+            {
+                textDeltas[td.EntryId] = td;
+            }
+        }
+        foreach (var td in next.HistoryTextDeltas)
+        {
+            if (historyRemovals.Contains(td.EntryId)) continue;
+            if (historyUpserts.TryGetValue(td.EntryId, out var upserted))
+            {
+                if (upserted.Body.Length == td.ExpectedBaseLength)
+                {
+                    upserted.Body += td.AppendBody;
+                    upserted.Status = td.Status;
+                    upserted.Streaming = td.Streaming;
+                    upserted.UpdatedAt = td.UpdatedAt;
+                }
+                continue;
+            }
+
+            if (textDeltas.TryGetValue(td.EntryId, out var existingDelta) &&
+                existingDelta.ExpectedBaseLength + existingDelta.AppendBody.Length == td.ExpectedBaseLength)
+            {
+                existingDelta.AppendBody += td.AppendBody;
+                existingDelta.Status = td.Status;
+                existingDelta.Streaming = td.Streaming;
+                existingDelta.UpdatedAt = td.UpdatedAt;
+                if (!string.IsNullOrWhiteSpace(td.Title)) existingDelta.Title = td.Title;
+                if (!string.IsNullOrWhiteSpace(td.ItemType)) existingDelta.ItemType = td.ItemType;
+            }
+            else
+            {
+                textDeltas[td.EntryId] = td;
+            }
+        }
+
+        var itemRemovals = previous.ItemRemovals.ToHashSet(StringComparer.Ordinal);
+        foreach (var id in next.ItemRemovals) itemRemovals.Add(id);
+        var itemUpserts = new Dictionary<string, AppServerControlItemSummary>(StringComparer.Ordinal);
+        foreach (var item in previous.ItemUpserts) { if (!itemRemovals.Contains(item.ItemId)) itemUpserts[item.ItemId] = item; }
+        foreach (var item in next.ItemUpserts) { itemRemovals.Remove(item.ItemId); itemUpserts[item.ItemId] = item; }
+
+        var requestRemovals = previous.RequestRemovals.ToHashSet(StringComparer.Ordinal);
+        foreach (var id in next.RequestRemovals) requestRemovals.Add(id);
+        var requestUpserts = new Dictionary<string, AppServerControlRequestSummary>(StringComparer.Ordinal);
+        foreach (var req in previous.RequestUpserts) { if (!requestRemovals.Contains(req.RequestId)) requestUpserts[req.RequestId] = req; }
+        foreach (var req in next.RequestUpserts) { requestRemovals.Remove(req.RequestId); requestUpserts[req.RequestId] = req; }
+
+        var noticeUpserts = new Dictionary<string, AppServerControlRuntimeNotice>(StringComparer.Ordinal);
+        foreach (var notice in previous.NoticeUpserts) noticeUpserts[notice.EventId] = notice;
+        foreach (var notice in next.NoticeUpserts) noticeUpserts[notice.EventId] = notice;
+
+        return new AppServerControlHistoryPatch
+        {
+            SessionId = next.SessionId,
+            Provider = next.Provider,
+            GeneratedAt = next.GeneratedAt,
+            LatestSequence = Math.Max(previous.LatestSequence, next.LatestSequence),
+            HistoryCount = next.HistoryCount,
+            Session = mergedSession,
+            Thread = next.Thread,
+            CurrentTurn = next.CurrentTurn,
+            QuickSettings = mergedQuickSettings,
+            Streams = mergedStreams,
+            HistoryUpserts = historyUpserts.Values.OrderBy(static e => e.Order).ToList(),
+            HistoryTextDeltas = textDeltas.Values.OrderBy(static d => d.Order).ToList(),
+            HistoryRemovals = [.. historyRemovals],
+            ItemUpserts = itemUpserts.Values.OrderByDescending(static i => i.UpdatedAt).ToList(),
+            ItemRemovals = [.. itemRemovals],
+            RequestUpserts = requestUpserts.Values.OrderByDescending(static r => r.UpdatedAt).ToList(),
+            RequestRemovals = [.. requestRemovals],
+            NoticeUpserts = noticeUpserts.Values.OrderByDescending(static n => n.CreatedAt).ToList()
+        };
     }
 
     private async Task<SessionInfoDto> EnsureAppServerControlAttachedAsync(string sessionId, CancellationToken ct)

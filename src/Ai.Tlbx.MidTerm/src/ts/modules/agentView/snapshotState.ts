@@ -72,11 +72,14 @@ export function applyCanonicalAppServerControlDelta(
   snapshot.generatedAt = delta.generatedAt;
   snapshot.latestSequence = Math.max(snapshot.latestSequence, delta.latestSequence);
   snapshot.historyCount = Math.max(delta.historyCount, snapshot.historyCount);
-  snapshot.session = cloneSnapshotSessionSummary(delta.session);
+  snapshot.session = cloneSnapshotSessionSummary(delta.session, snapshot.session);
   snapshot.thread = cloneSnapshotThreadSummary(delta.thread);
   snapshot.currentTurn = cloneSnapshotTurnSummary(delta.currentTurn);
-  snapshot.quickSettings = cloneSnapshotQuickSettingsSummary(delta.quickSettings);
-  snapshot.streams = cloneSnapshotStreamsSummary(delta.streams);
+  snapshot.quickSettings = cloneSnapshotQuickSettingsSummary(
+    delta.quickSettings,
+    snapshot.quickSettings,
+  );
+  snapshot.streams = cloneSnapshotStreamsSummary(delta.streams, snapshot.streams);
   snapshot.items = upsertSnapshotItems(snapshot.items, delta.itemUpserts, delta.itemRemovals);
   snapshot.requests = upsertSnapshotRequests(
     snapshot.requests,
@@ -89,6 +92,7 @@ export function applyCanonicalAppServerControlDelta(
     snapshot,
     previousHistoryCount,
     delta.historyUpserts,
+    delta.historyTextDeltas ?? [],
     delta.historyRemovals,
   );
   retainWindowSummaries(snapshot);
@@ -147,6 +151,7 @@ function applyHistoryWindowDelta(
   snapshot: AppServerControlHistorySnapshot,
   previousHistoryCount: number,
   upserts: readonly AppServerControlHistoryItem[],
+  textDeltas: readonly NonNullable<AppServerControlHistoryDelta['historyTextDeltas']>[number][],
   removals: readonly string[],
 ): boolean {
   const currentWindowStart = snapshot.historyWindowStart;
@@ -154,7 +159,7 @@ function applyHistoryWindowDelta(
   const wasLiveEdge = state.historyAutoScrollPinned && currentWindowEnd >= previousHistoryCount;
   const nextEntries = snapshot.history.map(cloneSnapshotHistoryEntry);
   const entryIndexById = new Map(nextEntries.map((entry, index) => [entry.entryId, index]));
-  const requiresWindowRefresh = resolveHistoryWindowRefreshRequirement(
+  let requiresWindowRefresh = resolveHistoryWindowRefreshRequirement(
     wasLiveEdge,
     currentWindowStart,
     upserts,
@@ -169,6 +174,29 @@ function applyHistoryWindowDelta(
     currentWindowStart,
     currentWindowEnd,
   );
+
+  for (const textDelta of textDeltas) {
+    const existingIndex = entryIndexById.get(textDelta.entryId);
+    if (existingIndex === undefined) {
+      if (wasLiveEdge) {
+        requiresWindowRefresh = true;
+      }
+      continue;
+    }
+
+    const target = nextEntries[existingIndex];
+    if (!target || target.body.length !== textDelta.expectedBaseLength) {
+      requiresWindowRefresh = true;
+      continue;
+    }
+
+    target.body += textDelta.appendBody;
+    target.status = textDelta.status;
+    target.streaming = textDelta.streaming;
+    target.updatedAt = textDelta.updatedAt;
+    if (textDelta.title) target.title = textDelta.title;
+    if (textDelta.itemType) target.itemType = textDelta.itemType;
+  }
 
   nextEntries.sort((left, right) => left.order - right.order);
   const targetWindowCount = Math.max(
@@ -430,9 +458,15 @@ function cloneSnapshotRuntimeNotice(
 
 function cloneSnapshotSessionSummary(
   session: AppServerControlHistorySnapshot['session'],
+  previous?: AppServerControlHistorySnapshot['session'],
 ): AppServerControlHistorySnapshot['session'] {
+  const availableCommands =
+    session.availableCommandsOmitted && previous?.availableCommands
+      ? previous.availableCommands
+      : session.availableCommands;
   return {
     ...session,
+    ...(availableCommands !== undefined ? { availableCommands } : {}),
     reason: session.reason ?? null,
     lastError: session.lastError ?? null,
     lastEventAt: session.lastEventAt ?? null,
@@ -458,10 +492,21 @@ function cloneSnapshotTurnSummary(
   };
 }
 
+function applyOmittedQuickSettingsOptions(
+  target: AppServerControlHistorySnapshot['quickSettings'],
+  previous: AppServerControlHistorySnapshot['quickSettings'] | null | undefined,
+): void {
+  if (!target.optionsOmitted || !previous) return;
+  if (previous.modelOptions) target.modelOptions = previous.modelOptions;
+  if (previous.effortOptions) target.effortOptions = previous.effortOptions;
+  if (previous.configOptions) target.configOptions = previous.configOptions;
+}
+
 function cloneSnapshotQuickSettingsSummary(
   quickSettings: AppServerControlHistorySnapshot['quickSettings'] | null | undefined,
+  previous?: AppServerControlHistorySnapshot['quickSettings'] | null,
 ): AppServerControlHistorySnapshot['quickSettings'] {
-  return {
+  const result: AppServerControlHistorySnapshot['quickSettings'] = {
     ...structuredClone(quickSettings),
     model: quickSettings?.model ?? null,
     effort: quickSettings?.effort ?? null,
@@ -469,11 +514,17 @@ function cloneSnapshotQuickSettingsSummary(
     permissionMode: quickSettings?.permissionMode ?? 'manual',
     fastMode: quickSettings?.fastMode ?? 'off',
   };
+  applyOmittedQuickSettingsOptions(result, previous);
+  return result;
 }
 
 function cloneSnapshotStreamsSummary(
   streams: AppServerControlHistorySnapshot['streams'],
+  previous?: AppServerControlHistorySnapshot['streams'],
 ): AppServerControlHistorySnapshot['streams'] {
+  if (streams.streamsOmitted && previous) {
+    return { ...previous };
+  }
   return {
     ...streams,
   };

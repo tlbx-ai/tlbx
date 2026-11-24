@@ -62,7 +62,7 @@ public static class MuxProtocol
 
     // Compression settings
     public const int CompressionChunkSize = 256 * 1024; // Chunk large data before compressing
-    public const int CompressionThreshold = 8192; // Only compress payloads > 8KB (buffer replays)
+    public const int CompressionThreshold = 1024; // Compress terminal payloads > 1KB
     public const int CompressedOutputHeaderSize = 25; // HeaderSize + seq(8) + dims(4) + uncompressedLen(4)
     public const int InputTraceMarkerPayloadSize = 4;
     public const int InputTraceResultPayloadSize = 68;

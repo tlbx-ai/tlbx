@@ -202,6 +202,7 @@ export interface AppServerControlQuickSettingsPayload {
   modelOptions?: AppServerControlQuickSettingsOption[];
   effortOptions?: AppServerControlQuickSettingsOption[];
   configOptions?: AppServerControlConfigOption[];
+  optionsOmitted?: boolean;
 }
 
 export interface AppServerControlQuickSettingsSummary {
@@ -214,6 +215,7 @@ export interface AppServerControlQuickSettingsSummary {
   modelOptions?: AppServerControlQuickSettingsOption[];
   effortOptions?: AppServerControlQuickSettingsOption[];
   configOptions?: AppServerControlConfigOption[];
+  optionsOmitted?: boolean;
 }
 
 export interface AppServerControlConfigOption {
@@ -251,6 +253,21 @@ export interface AppServerControlQuestion {
   options: AppServerControlQuestionOption[];
 }
 
+export interface AppServerControlHistoryTextDelta {
+  entryId: string;
+  order: number;
+  kind: string;
+  turnId?: string | null;
+  itemId?: string | null;
+  status: string;
+  itemType?: string | null;
+  title?: string | null;
+  expectedBaseLength: number;
+  appendBody: string;
+  streaming: boolean;
+  updatedAt: string;
+}
+
 export interface AppServerControlHistoryPatch {
   sessionId: string;
   provider: string;
@@ -263,6 +280,7 @@ export interface AppServerControlHistoryPatch {
   quickSettings: AppServerControlQuickSettingsSummary;
   streams: AppServerControlStreamsSummary;
   historyUpserts: AppServerControlHistoryItem[];
+  historyTextDeltas?: AppServerControlHistoryTextDelta[];
   historyRemovals: string[];
   itemUpserts: AppServerControlItemSummary[];
   itemRemovals: string[];
@@ -276,6 +294,7 @@ export type AppServerControlHistoryDelta = AppServerControlHistoryPatch;
 export interface AppServerControlSessionSummary {
   agentName?: string | null;
   availableCommands?: AppServerControlCommand[];
+  availableCommandsOmitted?: boolean;
   usage?: AppServerControlUsageSummary | null;
   state: string;
   stateLabel: string;
@@ -343,6 +362,7 @@ export interface AppServerControlStreamsSummary {
   commandOutput: string;
   fileChangeOutput: string;
   unifiedDiff: string;
+  streamsOmitted?: boolean;
 }
 
 export interface AppServerControlToolPresentation {

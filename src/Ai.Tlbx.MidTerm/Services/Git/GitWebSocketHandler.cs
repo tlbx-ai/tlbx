@@ -38,7 +38,10 @@ public sealed class GitWebSocketHandler
             return;
         }
 
-        using var ws = await context.WebSockets.AcceptWebSocketAsync();
+        using var ws = await context.WebSockets.AcceptWebSocketAsync(new WebSocketAcceptContext
+        {
+            DangerousEnableCompression = true
+        });
         using var authLease = _authService.TrackWebSocketAuthentication(authentication, ws);
         var sendLock = new SemaphoreSlim(1, 1);
         var subscribedSessions = new HashSet<string>(StringComparer.Ordinal);
@@ -71,21 +74,31 @@ public sealed class GitWebSocketHandler
 
         void OnStatusChanged(string repoRoot, GitStatusResponse status)
         {
+            List<string>? matchingSessions = null;
             lock (subscribedSessions)
             {
                 foreach (var sessionId in subscribedSessions)
                 {
                     if (_gitWatcher.SessionHasRepo(sessionId, repoRoot))
                     {
-                        _ = SendMessageAsync(new GitWsMessage
-                        {
-                            Type = "status",
-                            SessionId = sessionId,
-                            Status = status
-                        });
+                        matchingSessions ??= [];
+                        matchingSessions.Add(sessionId);
                     }
                 }
             }
+
+            if (matchingSessions is null || matchingSessions.Count == 0)
+            {
+                return;
+            }
+
+            _ = SendMessageAsync(new GitWsMessage
+            {
+                Type = "status",
+                SessionId = matchingSessions[0],
+                SessionIds = matchingSessions.ToArray(),
+                Status = status.ToSummary()
+            });
         }
 
         void OnReposChanged(string sessionId)
@@ -102,7 +115,7 @@ public sealed class GitWebSocketHandler
             {
                 Type = "repos",
                 SessionId = sessionId,
-                Repos = _gitWatcher.GetRepoBindings(sessionId)
+                Repos = SummarizeRepoBindings(_gitWatcher.GetRepoBindings(sessionId))
             });
         }
 
@@ -212,7 +225,7 @@ public sealed class GitWebSocketHandler
                     {
                         Type = "repos",
                         SessionId = sessionId,
-                        Repos = metadata.IsSuccess ? metadata.Repos : []
+                        Repos = metadata.IsSuccess ? SummarizeRepoBindings(metadata.Repos) : []
                     });
 
                     if (isNew)
@@ -243,5 +256,25 @@ public sealed class GitWebSocketHandler
         {
             Log.Verbose(() => $"[GitWS] Failed to parse client message: {ex.Message}");
         }
+    }
+
+    private static GitRepoBinding[] SummarizeRepoBindings(GitRepoBinding[] bindings)
+    {
+        if (bindings.Length == 0) return bindings;
+        var summarized = new GitRepoBinding[bindings.Length];
+        for (var i = 0; i < bindings.Length; i++)
+        {
+            var binding = bindings[i];
+            summarized[i] = new GitRepoBinding
+            {
+                RepoRoot = binding.RepoRoot,
+                Label = binding.Label,
+                Role = binding.Role,
+                Source = binding.Source,
+                IsPrimary = binding.IsPrimary,
+                Status = binding.Status?.ToSummary()
+            };
+        }
+        return summarized;
     }
 }

@@ -2,6 +2,31 @@ import type { GitStatusResponse } from './types';
 import { t } from '../i18n';
 import { escapeHtml } from '../../utils';
 
+function summarySignature(s: GitStatusResponse): string {
+  return [
+    s.readState ?? '',
+    s.branch,
+    s.headHash ?? '',
+    s.indexVersion ?? '',
+    s.ahead,
+    s.behind,
+    s.stashCount,
+    s.totalAdditions,
+    s.totalDeletions,
+    s.stagedCount ?? s.staged.length,
+    s.modifiedCount ?? s.modified.length,
+    s.untrackedCount ?? s.untracked.length,
+    s.conflictedCount ?? s.conflicted.length,
+  ].join('|');
+}
+
+export function hasSummaryChanged(
+  current: GitStatusResponse | null,
+  summary: GitStatusResponse,
+): boolean {
+  return !current || summarySignature(current) !== summarySignature(summary);
+}
+
 function countWorktreeChanges(status: GitStatusResponse): number {
   return (
     status.conflicted.length +

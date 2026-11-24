@@ -92,6 +92,7 @@ public sealed class AppServerControlHistoryPatch
     public AppServerControlQuickSettingsSummary QuickSettings { get; set; } = new();
     public AppServerControlStreamsSummary Streams { get; set; } = new();
     public List<AppServerControlHistoryItem> HistoryUpserts { get; set; } = [];
+    public List<AppServerControlHistoryTextDelta> HistoryTextDeltas { get; set; } = [];
     public List<string> HistoryRemovals { get; set; } = [];
     public List<AppServerControlItemSummary> ItemUpserts { get; set; } = [];
     public List<string> ItemRemovals { get; set; } = [];
@@ -100,11 +101,28 @@ public sealed class AppServerControlHistoryPatch
     public List<AppServerControlRuntimeNotice> NoticeUpserts { get; set; } = [];
 }
 
+public sealed class AppServerControlHistoryTextDelta
+{
+    public string EntryId { get; set; } = string.Empty;
+    public long Order { get; set; }
+    public string Kind { get; set; } = string.Empty;
+    public string? TurnId { get; set; }
+    public string? ItemId { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public string? ItemType { get; set; }
+    public string? Title { get; set; }
+    public int ExpectedBaseLength { get; set; }
+    public string AppendBody { get; set; } = string.Empty;
+    public bool Streaming { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
 public sealed class AppServerControlSessionSummary
 {
     public string? AgentName { get; set; }
     public AppServerControlUsageSummary? Usage { get; set; }
     public List<AppServerControlCommand> AvailableCommands { get; set; } = [];
+    public bool AvailableCommandsOmitted { get; set; }
     public string State { get; set; } = string.Empty;
     public string StateLabel { get; set; } = string.Empty;
     public string? Reason { get; set; }
@@ -316,6 +334,7 @@ public sealed class AppServerControlQuickSettingsSummary
     public List<AppServerControlQuickSettingsOption> ModelOptions { get; set; } = [];
     public List<AppServerControlQuickSettingsOption> EffortOptions { get; set; } = [];
     public List<JsonElement> ConfigOptions { get; set; } = [];
+    public bool OptionsOmitted { get; set; }
 }
 
 public sealed class AppServerControlStreamsSummary
@@ -327,6 +346,7 @@ public sealed class AppServerControlStreamsSummary
     public string CommandOutput { get; set; } = string.Empty;
     public string FileChangeOutput { get; set; } = string.Empty;
     public string UnifiedDiff { get; set; } = string.Empty;
+    public bool StreamsOmitted { get; set; }
 }
 
 public sealed class AppServerControlToolPresentation

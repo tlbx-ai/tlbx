@@ -1675,6 +1675,27 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         AppServerControlHistoryWindowResponse? current, AppServerControlHistoryPatch patch)
     {
         if (current is not null && patch.LatestSequence < current.LatestSequence) return current;
+        var mergedSession = CloneSessionSummary(patch.Session);
+        if (mergedSession.AvailableCommandsOmitted && current is not null)
+        {
+            mergedSession.AvailableCommands = AppServerControlCommand.CloneMany(current.Session.AvailableCommands);
+            mergedSession.AvailableCommandsOmitted = false;
+        }
+
+        var mergedQuickSettings = CloneQuickSettings(patch.QuickSettings);
+        if (mergedQuickSettings.OptionsOmitted && current is not null)
+        {
+            mergedQuickSettings.ModelOptions = AppServerControlQuickSettings.CloneOptions(current.QuickSettings.ModelOptions);
+            mergedQuickSettings.EffortOptions = AppServerControlQuickSettings.CloneOptions(current.QuickSettings.EffortOptions);
+            mergedQuickSettings.ConfigOptions = AppServerControlQuickSettings.CloneConfigOptions(current.QuickSettings.ConfigOptions);
+            mergedQuickSettings.OptionsOmitted = false;
+        }
+
+        var mergedStreams = patch.Streams.StreamsOmitted && current is not null
+            ? CloneStreams(current.Streams)
+            : CloneStreams(patch.Streams);
+        mergedStreams.StreamsOmitted = false;
+
         var next = new AppServerControlHistoryWindowResponse
         {
             SessionId = patch.SessionId,
@@ -1683,11 +1704,11 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
             LatestSequence = patch.LatestSequence,
             HistoryCount = Math.Max(0, patch.HistoryCount),
             HistoryWindowStart = current?.HistoryWindowStart ?? 0,
-            Session = CloneSessionSummary(patch.Session),
+            Session = mergedSession,
             Thread = CloneThreadSummary(patch.Thread),
             CurrentTurn = CloneTurnSummary(patch.CurrentTurn),
-            QuickSettings = CloneQuickSettings(patch.QuickSettings),
-            Streams = CloneStreams(patch.Streams),
+            QuickSettings = mergedQuickSettings,
+            Streams = mergedStreams,
             History = MergeCachedHistory(current, patch)
         };
         next.HistoryWindowStart = Math.Clamp(next.HistoryWindowStart, 0, next.HistoryCount);
@@ -1711,10 +1732,29 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         {
             if (retainedIds.Contains(entry.EntryId)) upserts[entry.EntryId] = entry;
         }
+        var textDeltas = new Dictionary<string, AppServerControlHistoryTextDelta>(StringComparer.Ordinal);
+        foreach (var td in patch.HistoryTextDeltas)
+        {
+            if (retainedIds.Contains(td.EntryId)) textDeltas[td.EntryId] = td;
+        }
         // Only the fetched kernel belongs to this cache. Off-window live history stays in the fanout.
         return current.History
             .Where(entry => !removals.Contains(entry.EntryId) || upserts.ContainsKey(entry.EntryId))
-            .Select(entry => CloneHistoryEntry(upserts.GetValueOrDefault(entry.EntryId) ?? entry))
+            .Select(entry =>
+            {
+                var cloned = CloneHistoryEntry(upserts.GetValueOrDefault(entry.EntryId) ?? entry);
+                if (textDeltas.TryGetValue(cloned.EntryId, out var td) &&
+                    cloned.Body.Length == td.ExpectedBaseLength)
+                {
+                    cloned.Body += td.AppendBody;
+                    cloned.Status = td.Status;
+                    cloned.Streaming = td.Streaming;
+                    cloned.UpdatedAt = td.UpdatedAt;
+                    if (!string.IsNullOrWhiteSpace(td.Title)) cloned.Title = td.Title;
+                    if (!string.IsNullOrWhiteSpace(td.ItemType)) cloned.ItemType = td.ItemType;
+                }
+                return cloned;
+            })
             .OrderBy(entry => entry.Order).ToList();
     }
 
@@ -1866,6 +1906,21 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
             QuickSettings = CloneQuickSettings(source.QuickSettings),
             Streams = CloneStreams(source.Streams),
             HistoryUpserts = source.HistoryUpserts.Select(CloneHistoryEntry).ToList(),
+            HistoryTextDeltas = source.HistoryTextDeltas.Select(static td => new AppServerControlHistoryTextDelta
+            {
+                EntryId = td.EntryId,
+                Order = td.Order,
+                Kind = td.Kind,
+                TurnId = td.TurnId,
+                ItemId = td.ItemId,
+                Status = td.Status,
+                ItemType = td.ItemType,
+                Title = td.Title,
+                ExpectedBaseLength = td.ExpectedBaseLength,
+                AppendBody = td.AppendBody,
+                Streaming = td.Streaming,
+                UpdatedAt = td.UpdatedAt
+            }).ToList(),
             HistoryRemovals = [.. source.HistoryRemovals],
             ItemUpserts = source.ItemUpserts.Select(CloneItemSummary).ToList(),
             ItemRemovals = [.. source.ItemRemovals],
@@ -1958,6 +2013,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
             AgentName = source.AgentName,
             Usage = source.Usage?.Clone(),
             AvailableCommands = AppServerControlCommand.CloneMany(source.AvailableCommands),
+            AvailableCommandsOmitted = source.AvailableCommandsOmitted,
             State = source.State,
             StateLabel = source.StateLabel,
             Reason = source.Reason,
@@ -2004,7 +2060,8 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
             ModelOptions = AppServerControlQuickSettings.CloneOptions(source.ModelOptions),
             EffortOptions = AppServerControlQuickSettings.CloneOptions(source.EffortOptions),
             AcknowledgedFields = [.. source.AcknowledgedFields],
-            ConfigOptions = AppServerControlQuickSettings.CloneConfigOptions(source.ConfigOptions)
+            ConfigOptions = AppServerControlQuickSettings.CloneConfigOptions(source.ConfigOptions),
+            OptionsOmitted = source.OptionsOmitted
         };
     }
 
@@ -2018,7 +2075,8 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
             PlanText = source.PlanText,
             CommandOutput = source.CommandOutput,
             FileChangeOutput = source.FileChangeOutput,
-            UnifiedDiff = source.UnifiedDiff
+            UnifiedDiff = source.UnifiedDiff,
+            StreamsOmitted = source.StreamsOmitted
         };
     }
 

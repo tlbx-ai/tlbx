@@ -534,6 +534,7 @@ export function initAgentView(): void {
       return;
     }
 
+    closeAppServerControlStream(sessionId);
     releaseHiddenAppServerControlRenderState(state);
     void compactHiddenAppServerControlSessionHistory(sessionId, state);
   });

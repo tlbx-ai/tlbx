@@ -152,6 +152,96 @@ public sealed class HistoryWindowTests : IDisposable
         Assert.Equal("new-tool", service.GetSnapshotWindow(SessionId, 4, 1)!.Items[0].ItemId);
     }
 
+    [Fact]
+    public void StreamingAssistantChunksEmitAppendDeltasAndOmitStaticMetadata()
+    {
+        var service = new SessionAppServerControlHistoryService(storeDirectory: null, enableScreenLogging: false);
+        _services.Add(service);
+
+        service.Append(new()
+        {
+            SessionId = SessionId,
+            EventId = "meta",
+            Type = "agent.metadata.updated",
+            CreatedAt = DateTimeOffset.UtcNow,
+            AgentMetadataUpdated = new()
+            {
+                AgentName = "TestAgent",
+                AvailableCommands = [new() { Name = "plan", Description = "Plan work" }]
+            }
+        });
+        service.Append(new()
+        {
+            SessionId = SessionId,
+            EventId = "qs",
+            Type = "quick-settings.updated",
+            CreatedAt = DateTimeOffset.UtcNow,
+            QuickSettingsUpdated = new()
+            {
+                Model = "model-a",
+                ModelOptions = [new() { Value = "model-a", Label = "Model A" }]
+            }
+        });
+        service.Append(new()
+        {
+            SessionId = SessionId,
+            EventId = "chunk-0",
+            Type = "content.delta",
+            TurnId = "turn-1",
+            ItemId = "msg-1",
+            CreatedAt = DateTimeOffset.UtcNow,
+            ContentDelta = new() { StreamKind = "assistant_text", Delta = "Hello " }
+        });
+
+        using var subscription = service.SubscribeHistoryPatches(SessionId, TestContext.Current.CancellationToken);
+        var mirror = new SessionAppServerControlHistoryService(storeDirectory: null, enableScreenLogging: false);
+        _services.Add(mirror);
+        mirror.ImportHistoryWindow(service.GetSnapshot(SessionId)!);
+
+        long totalPatchBytes = 0;
+        var patchSizes = new List<int>(50);
+        for (var i = 1; i <= 50; i++)
+        {
+            var chunk = new string('x', 40);
+            service.Append(new()
+            {
+                SessionId = SessionId,
+                EventId = $"chunk-{i.ToString(System.Globalization.CultureInfo.InvariantCulture)}",
+                Type = "content.delta",
+                TurnId = "turn-1",
+                ItemId = "msg-1",
+                CreatedAt = DateTimeOffset.UtcNow,
+                ContentDelta = new() { StreamKind = "assistant_text", Delta = chunk }
+            });
+            Assert.True(subscription.Reader.TryRead(out var patch));
+            Assert.Empty(patch!.HistoryUpserts);
+            var textDelta = Assert.Single(patch.HistoryTextDeltas);
+            Assert.Equal(chunk, textDelta.AppendBody);
+            Assert.True(patch.Streams.StreamsOmitted);
+            Assert.Empty(patch.Streams.AssistantText);
+            Assert.True(patch.Session.AvailableCommandsOmitted);
+            Assert.Empty(patch.Session.AvailableCommands);
+            Assert.True(patch.QuickSettings.OptionsOmitted);
+            Assert.Empty(patch.QuickSettings.ModelOptions);
+
+            var patchBytes = JsonSerializer.SerializeToUtf8Bytes(patch, AppServerControlHostJsonContext.Default.AppServerControlHistoryPatch).Length;
+            patchSizes.Add(patchBytes);
+            totalPatchBytes += patchBytes;
+            mirror.ApplyHistoryPatch(patch);
+        }
+
+        // Each chunk patch stays O(1) in size instead of growing linearly with cumulative body length (O(N^2) total).
+        Assert.True(patchSizes[^1] - patchSizes[0] < 32,
+            string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Expected constant patch size across chunks, got first={patchSizes[0]} last={patchSizes[^1]}"));
+        Assert.True(totalPatchBytes < 90_000,
+            string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Expected linear delta traffic, got {totalPatchBytes} bytes"));
+        var mirrored = mirror.GetSnapshot(SessionId)!;
+        var expectedBody = "Hello " + new string('x', 50 * 40);
+        Assert.Equal(expectedBody, Assert.Single(mirrored.History).Body);
+        Assert.Single(mirrored.Session.AvailableCommands);
+        Assert.Single(mirrored.QuickSettings.ModelOptions);
+    }
+
     private SessionAppServerControlHistoryService SeedPersisted(AppServerControlHistoryWindowResponse source)
     {
         Directory.CreateDirectory(_directory);

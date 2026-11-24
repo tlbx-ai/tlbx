@@ -16,6 +16,7 @@ public sealed class MuxWebSocketHandler
     private const int ReplayFrameChunkBytes = 32 * 1024;
     private const int QuickResumeShellBurstBytes = 192 * 1024;
     private const int QuickResumeInteractiveBurstBytes = 64 * 1024;
+    private const int QuickResumeFallbackMaxBytes = 512 * 1024;
     private const int ReplayRowsMinimum = 10;
     private const int ReplayRowsMaximum = 500;
     private const int ReplayRowsOverscan = 12;
@@ -73,7 +74,10 @@ public sealed class MuxWebSocketHandler
             }
         }
 
-        using var ws = await context.WebSockets.AcceptWebSocketAsync();
+        using var ws = await context.WebSockets.AcceptWebSocketAsync(new WebSocketAcceptContext
+        {
+            DangerousEnableCompression = true
+        });
         using var authLease = isShareConnection
             ? null
             : _authService.TrackWebSocketAuthentication(authentication, ws);
@@ -515,12 +519,16 @@ public sealed class MuxWebSocketHandler
                     // MuxClient's ordered live lane. Recapturing a capped tail could cut
                     // the start of a large image or repaint. A resize acknowledgement alone
                     // is insufficient: require a fresh complete synchronized full redraw.
-                    // Unsupported, slow or oversized repaints retain full-history recovery.
+                    // Bound QuickResume fallbacks to 512 KiB instead of replaying the full
+                    // 8 MiB ring on every reconnect; explicit full replays still pass null.
                     if (!boundedRedrawReady)
                     {
+                        var fallbackMaxBytes = maxBytes is > 0 && reason != TerminalReplayReason.BufferRefreshTailReplay
+                            ? Math.Max(maxBytes.Value, QuickResumeFallbackMaxBytes)
+                            : (int?)null;
                         var fullSnapshot = await _sessionManager.GetBufferAsync(
                             session.Id,
-                            maxBytes: null,
+                            maxBytes: fallbackMaxBytes,
                             reason: reason,
                             sinceSequence: null,
                             ct: recoveryCt).ConfigureAwait(false);

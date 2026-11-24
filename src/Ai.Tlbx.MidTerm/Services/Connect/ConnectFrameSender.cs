@@ -6,6 +6,7 @@ internal sealed class ConnectFrameSender(
     CancellationToken lifetime) : IDisposable
 {
     internal const int FragmentPayloadSize = 1024;
+    internal const int BulkFragmentPayloadSize = 8192;
     internal const int InteractiveMessageSize = 16 * 1024;
     private const int InteractiveBurst = 8;
     private readonly ConnectFrames _frames = new();
@@ -64,7 +65,7 @@ internal sealed class ConnectFrameSender(
         try
         {
             var token = ct;
-            foreach (var frame in _frames.Encode(message, FragmentPayloadSize))
+            foreach (var frame in _frames.Encode(message, BulkFragmentPayloadSize))
             {
                 await sendBulk(frame, token).ConfigureAwait(false);
                 token = lifetime;

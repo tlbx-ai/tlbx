@@ -74,6 +74,21 @@ export function setGitReposCallback(
   reposCallback = cb;
 }
 
+function handleStatusMessage(msg: GitWsMessage): void {
+  if (!msg.status) return;
+  const targetSessionIds = msg.sessionIds?.length ? msg.sessionIds : [msg.sessionId];
+  const staged = msg.status.stagedCount ?? msg.status.staged.length;
+  const modified = msg.status.modifiedCount ?? msg.status.modified.length;
+  const untracked = msg.status.untrackedCount ?? msg.status.untracked.length;
+  const summary = `${msg.status.branch} +${staged} ~${modified} ?${untracked}`;
+  for (const targetSessionId of targetSessionIds) {
+    if (!targetSessionId) continue;
+    cancelFallback(targetSessionId);
+    emitDiag('status', `${targetSessionId.substring(0, 8)}: ${summary}`);
+    statusCallback?.(targetSessionId, msg.status);
+  }
+}
+
 export function connectGitWebSocket(): void {
   if (browserBackgroundSuspended) return;
   if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
@@ -96,11 +111,8 @@ export function connectGitWebSocket(): void {
     if (ws !== socket) return;
     try {
       const msg = JSON.parse(event.data as string) as GitWsMessage;
-      if (msg.type === 'status' && msg.status && msg.sessionId) {
-        cancelFallback(msg.sessionId);
-        const summary = `${msg.status.branch} +${msg.status.staged.length} ~${msg.status.modified.length} ?${msg.status.untracked.length}`;
-        emitDiag('status', `${msg.sessionId.substring(0, 8)}: ${summary}`);
-        statusCallback?.(msg.sessionId, msg.status);
+      if (msg.type === 'status' && msg.status && (msg.sessionId || msg.sessionIds?.length)) {
+        handleStatusMessage(msg);
       } else if (msg.type === 'repos' && msg.repos && msg.sessionId) {
         cancelFallback(msg.sessionId);
         emitDiag('repos', `${msg.sessionId.substring(0, 8)}: ${msg.repos.length}`);
