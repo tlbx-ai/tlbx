@@ -43,7 +43,10 @@ public sealed class SettingsWebSocketHandler
             return;
         }
 
-        using var ws = await context.WebSockets.AcceptWebSocketAsync();
+        using var ws = await context.WebSockets.AcceptWebSocketAsync(new WebSocketAcceptContext
+        {
+            DangerousEnableCompression = true
+        });
         using var authLease = _authService.TrackWebSocketAuthentication(authentication, ws);
         var sendLock = new SemaphoreSlim(1, 1);
         var shutdownToken = _shutdownService.Token;

@@ -1044,7 +1044,7 @@ public sealed class MuxClient : IAsyncDisposable
                         Log.Warn(() => string.Create(CultureInfo.InvariantCulture, $"[MuxClient] {Id}: Active session flush delayed {delayMs}ms"));
                     }
                 }
-                await FlushBufferAsync(activeId, activeBuffer, compress: false, flushAllAvailable: true, maxChunks: ActiveFlushMaxChunksPerPass).ConfigureAwait(false);
+                await FlushBufferAsync(activeId, activeBuffer, compress: true, flushAllAvailable: true, maxChunks: ActiveFlushMaxChunksPerPass).ConfigureAwait(false);
                 activeBuffer.LastFlushTicks = nowTicks;
             }
         }

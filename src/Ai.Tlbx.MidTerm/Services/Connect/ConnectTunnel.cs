@@ -220,7 +220,8 @@ internal sealed class ConnectTunnel : IAsyncDisposable
         }
         var builder = new UriBuilder(destination) { Scheme = "wss" };
         var socket = new ClientWebSocket();
-        var owner = new ConnectWebSocketRelay(socket, message.Id, SendEnvelopeAsync, MaximumBody);
+        var gzipSocket = string.Equals(message.AcceptBodyEncoding, "gzip", StringComparison.OrdinalIgnoreCase);
+        var owner = new ConnectWebSocketRelay(socket, message.Id, SendEnvelopeAsync, MaximumBody, gzipOutbound: gzipSocket);
         var registered = false;
         var started = false;
         try

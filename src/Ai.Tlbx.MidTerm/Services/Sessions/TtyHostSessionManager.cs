@@ -40,6 +40,9 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _resizeGates = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _metadataGates = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, TerminalDimensions> _redrawDimensionOverrides = new(StringComparer.Ordinal);
+    private const long OscTitleNotifyIntervalMs = 1000;
+    private readonly ConcurrentDictionary<string, long> _lastOscTitleNotifyMs = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, byte> _pendingOscTitleNotify = new(StringComparer.Ordinal);
     private string? _runAsUser;
     private string? _runAsUserSid;
     private bool _disposed;
@@ -1480,7 +1483,10 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
             {
                 case 0:
                 case 2:
-                    changed |= HandleOscTitle(sessionId, payload);
+                    if (HandleOscTitle(sessionId, payload))
+                    {
+                        ScheduleThrottledOscTitleNotify(sessionId);
+                    }
                     break;
                 case 7:
                     changed |= HandleOscCwdUpdate(sessionId, payload);
@@ -1494,6 +1500,39 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         {
             NotifyStateChange();
         }
+    }
+
+    private void ScheduleThrottledOscTitleNotify(string sessionId)
+    {
+        var now = Environment.TickCount64;
+        if (!_lastOscTitleNotifyMs.TryGetValue(sessionId, out var last) || now - last >= OscTitleNotifyIntervalMs)
+        {
+            _lastOscTitleNotifyMs[sessionId] = now;
+            _pendingOscTitleNotify.TryRemove(sessionId, out _);
+            NotifyStateChange();
+            return;
+        }
+
+        if (!_pendingOscTitleNotify.TryAdd(sessionId, 0))
+        {
+            return;
+        }
+
+        var delayMs = Math.Max(50, (int)(OscTitleNotifyIntervalMs - (now - last)));
+        DelayedActionScheduler.Schedule(TimeSpan.FromMilliseconds(delayMs), () =>
+        {
+            if (_disposed || !_pendingOscTitleNotify.TryRemove(sessionId, out _))
+            {
+                return;
+            }
+            if (!_sessionCache.ContainsKey(sessionId))
+            {
+                _lastOscTitleNotifyMs.TryRemove(sessionId, out _);
+                return;
+            }
+            _lastOscTitleNotifyMs[sessionId] = Environment.TickCount64;
+            NotifyStateChange();
+        });
     }
 
     private bool HandleOscTitle(string sessionId, string title)

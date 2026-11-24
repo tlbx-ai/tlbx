@@ -108,7 +108,10 @@ public sealed class StateWebSocketHandler
                 "true",
                 StringComparison.OrdinalIgnoreCase);
 
-        using var ws = await context.WebSockets.AcceptWebSocketAsync();
+        using var ws = await context.WebSockets.AcceptWebSocketAsync(new WebSocketAcceptContext
+        {
+            DangerousEnableCompression = true
+        });
         using var authLease = isShareConnection
             ? null
             : _authService.TrackWebSocketAuthentication(authentication, ws);
@@ -125,6 +128,7 @@ public sealed class StateWebSocketHandler
         long? lastStateSendAtMs = null;
         Task? stateSendTask = null;
         var stateDeliveryActive = 1;
+        byte[]? lastSentStateBytes = null;
         var connectionToken = new object();
         var browserId = BuildBrowserConnectionId(context.Request);
         var browserLabel = BrowserIdentity.GetDeviceLabel(context.Request);
@@ -187,7 +191,32 @@ public sealed class StateWebSocketHandler
                 return;
             }
 
-            await SendJsonAsync(state, AppJsonContext.Default.StateUpdate);
+            if (ws.State != WebSocketState.Open) return;
+            var acquired = false;
+            try
+            {
+                await sendLock.WaitAsync(stateSendToken);
+                acquired = true;
+                if (ws.State != WebSocketState.Open) return;
+                var bytes = JsonSerializer.SerializeToUtf8Bytes(state, AppJsonContext.Default.StateUpdate);
+                if (lastSentStateBytes is not null && lastSentStateBytes.AsSpan().SequenceEqual(bytes))
+                {
+                    return;
+                }
+                await ws.SendAsync(bytes, WebSocketMessageType.Text, true, stateSendToken);
+                lastSentStateBytes = bytes;
+            }
+            catch (WebSocketException) { }
+            catch (ObjectDisposedException) { }
+            catch (OperationCanceledException) { }
+            catch (Exception ex)
+            {
+                Log.Verbose(() => $"[StateWS] SendStateAsync failed: {ex.GetType().Name}: {ex.Message}");
+            }
+            finally
+            {
+                if (acquired) sendLock.Release();
+            }
         }
 
         SessionListDto GetSessionListDto()
@@ -247,7 +276,7 @@ public sealed class StateWebSocketHandler
                     // A fast socket can otherwise serialize every notification in a
                     // burst. Bound metadata work to one frame without delaying input
                     // or explicit command replies, which have their own send paths.
-                    const int stateFrameIntervalMs = 16;
+                    const int stateFrameIntervalMs = 100;
                     if (lastStateSendAtMs is { } lastSent)
                     {
                         var remaining = stateFrameIntervalMs - (Environment.TickCount64 - lastSent);

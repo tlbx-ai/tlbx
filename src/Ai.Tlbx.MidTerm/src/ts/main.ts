@@ -196,7 +196,6 @@ import { createMidtermPerfDebugApi } from './modules/perf/midtermPerfDebug';
 import {
   cacheDOMElements,
   sessionTerminals,
-  hiddenSessionIds,
   dom,
   setFontsReadyPromise,
   newlyCreatedSessions,
@@ -607,17 +606,10 @@ function syncMuxTerminalVisibility(): void {
   if (activeSessionId && !isHubSessionId(activeSessionId)) {
     prioritySessionIds.add(activeSessionId);
   }
-  const backgroundSessionIds: string[] = [];
-  sessionTerminals.forEach((_state, sessionId) => {
-    if (
-      !isHubSessionId(sessionId) &&
-      !hiddenSessionIds.has(sessionId) &&
-      !prioritySessionIds.has(sessionId)
-    ) {
-      backgroundSessionIds.push(sessionId);
-    }
-  });
-  updateTerminalVisibility(activeSessionId, visibleSessionIds, backgroundSessionIds);
+  // Keep non-visible terminals paused on the host instead of streaming hidden
+  // output continuously; mthost retains the ring buffer and resumes by cursor
+  // when a tab is activated.
+  updateTerminalVisibility(activeSessionId, visibleSessionIds, []);
 
   syncWebglSessionPriority([...prioritySessionIds]);
 }

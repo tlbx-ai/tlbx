@@ -24,6 +24,34 @@ public sealed class GitStatusResponse
     public string RepoRoot { get; set; } = "";
     public int TotalAdditions { get; set; }
     public int TotalDeletions { get; set; }
+    public bool FilesOmitted { get; set; }
+    public int? StagedCount { get; set; }
+    public int? ModifiedCount { get; set; }
+    public int? UntrackedCount { get; set; }
+    public int? ConflictedCount { get; set; }
+    public int? RecentCommitsCount { get; set; }
+
+    internal GitStatusResponse ToSummary()
+    {
+        if (FilesOmitted)
+        {
+            return this;
+        }
+
+        var copy = (GitStatusResponse)MemberwiseClone();
+        copy.FilesOmitted = true;
+        copy.StagedCount = Staged.Length;
+        copy.ModifiedCount = Modified.Length;
+        copy.UntrackedCount = Untracked.Length;
+        copy.ConflictedCount = Conflicted.Length;
+        copy.RecentCommitsCount = RecentCommits.Length;
+        copy.Staged = [];
+        copy.Modified = [];
+        copy.Untracked = [];
+        copy.Conflicted = [];
+        copy.RecentCommits = [];
+        return copy;
+    }
 
     internal GitStatusResponse WithReadFailure(GitStatusResponse failure)
     {

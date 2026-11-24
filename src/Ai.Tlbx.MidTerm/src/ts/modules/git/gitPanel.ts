@@ -35,7 +35,7 @@ import { buildCommitCommandSuggestions, buildFileCommandSuggestions } from './gi
 import { pasteToTerminal } from '../terminal';
 import { escapeHtml } from '../../utils';
 import { renderPatchFile } from './gitDiffView';
-import { renderPanelFill, renderSummary } from './gitPanelSummary';
+import { hasSummaryChanged, renderPanelFill, renderSummary } from './gitPanelSummary';
 import { openGitWorkspace } from './gitWorkspace';
 import { renderCommitsSection, handleGitHistoryKey } from './gitHistory';
 import { renderGitFileTree } from './gitFileTree';
@@ -187,13 +187,15 @@ export function createGitPanel(container: HTMLElement, sessionId: string, repoRo
 export function updateGitStatus(sessionId: string, status: GitStatusResponse): void {
   const explicit = panelStates.get(getPanelKey(sessionId, status.repoRoot));
   const implicit = panelStates.get(sessionId);
-  const states = new Set([
-    explicit,
-    implicit?.status?.repoRoot === status.repoRoot ? implicit : undefined,
-  ]);
-  for (const state of states) {
-    if (!state || (areJsonLikeEqual(state.status, status) && state.read.phase === 'ready'))
+  const match = implicit?.status?.repoRoot === status.repoRoot ? implicit : undefined;
+  for (const state of new Set([explicit, match])) {
+    if (!state) continue;
+    if (status.filesOmitted) {
+      const open = activePanels.get(state.container) === state;
+      if (open && hasSummaryChanged(state.status, status)) void refreshPanelRead(state);
       continue;
+    }
+    if (areJsonLikeEqual(state.status, status) && state.read.phase === 'ready') continue;
     state.read.sequence++;
     applyPanelRead(state, { ok: true, status });
   }
@@ -201,14 +203,9 @@ export function updateGitStatus(sessionId: string, status: GitStatusResponse): v
 
 export async function refreshGitPanel(sessionId: string, repoRoot?: string): Promise<void> {
   const state = panelStates.get(getPanelKey(sessionId, repoRoot));
-  if (state) {
-    await refreshPanelRead(state);
-    return;
-  }
+  if (state) return refreshPanelRead(state);
   const status = await fetchGitStatus(sessionId, repoRoot);
-  if (status) {
-    updateGitStatus(sessionId, status);
-  }
+  if (status) updateGitStatus(sessionId, status);
 }
 
 async function refreshPanelRead(state: GitPanelState): Promise<void> {

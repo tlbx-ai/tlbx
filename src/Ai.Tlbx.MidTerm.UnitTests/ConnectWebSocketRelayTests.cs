@@ -102,6 +102,39 @@ public sealed class ConnectWebSocketRelayTests
         Assert.True(socket.Disposed);
     }
 
+    [Fact]
+    public async Task GzipNegotiatedRelayCompressesOutboundAndDecompressesInbound()
+    {
+        using var socket = new FakeSocket();
+        var repeated = System.Text.Encoding.UTF8.GetBytes(new string('A', 2048));
+        socket.EnqueueData(repeated, end: true);
+        socket.EnqueueClose(WebSocketCloseStatus.NormalClosure);
+        var messages = new ConcurrentQueue<ConnectEnvelope>();
+        await using var relay = new ConnectWebSocketRelay(
+            socket,
+            "socket",
+            (message, _) => { messages.Enqueue(message); return Task.CompletedTask; },
+            maximumBody: 8192,
+            gzipOutbound: true);
+        relay.ReceiveTask = relay.ReceiveAsync(TestContext.Current.CancellationToken);
+        await relay.ReceiveTask.WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
+
+        var dataEnvelope = Assert.Single(messages, static m => m.Type == "ws-data");
+        Assert.Equal("gzip", dataEnvelope.BodyEncoding);
+        var compressedBytes = Convert.FromBase64String(dataEnvelope.Data!);
+        Assert.True(compressedBytes.Length < repeated.Length / 4, $"Expected strong gzip compression, got {compressedBytes.Length} bytes");
+
+        using var targetSocket = new FakeSocket();
+        var outbound = new ConcurrentQueue<ConnectEnvelope>();
+        await using var inboundRelay = new ConnectWebSocketRelay(
+            targetSocket,
+            "socket",
+            (message, _) => { outbound.Enqueue(message); return Task.CompletedTask; },
+            maximumBody: 8192);
+        await inboundRelay.DispatchAsync(dataEnvelope, TestContext.Current.CancellationToken);
+        Assert.Equal(repeated, targetSocket.LastSentBytes);
+    }
+
     private static ConnectWebSocketRelay Create(FakeSocket socket, ConcurrentQueue<ConnectEnvelope> messages) =>
         new(socket, "socket", (message, _) => { messages.Enqueue(message); return Task.CompletedTask; }, maximumBody: 1024);
 
@@ -112,6 +145,7 @@ public sealed class ConnectWebSocketRelayTests
         private WebSocketCloseStatus? _closeStatus;
         public bool Disposed { get; private set; }
         public bool FailSend { get; init; }
+        public byte[] LastSentBytes { get; private set; } = [];
         public override WebSocketCloseStatus? CloseStatus => _closeStatus;
         public override string? CloseStatusDescription => new('x', 500);
         public override WebSocketState State => _state;
@@ -145,8 +179,12 @@ public sealed class ConnectWebSocketRelayTests
             if (step.Type == WebSocketMessageType.Close) _state = WebSocketState.CloseReceived;
             return new ValueWebSocketReceiveResult(step.Data.Length, step.Type, step.End);
         }
-        public override Task SendAsync(ArraySegment<byte> buffer, WebSocketMessageType messageType, bool endOfMessage, CancellationToken cancellationToken) =>
-            FailSend ? Task.FromException(new WebSocketException("fixture send failure")) : Task.CompletedTask;
+        public override Task SendAsync(ArraySegment<byte> buffer, WebSocketMessageType messageType, bool endOfMessage, CancellationToken cancellationToken)
+        {
+            if (FailSend) return Task.FromException(new WebSocketException("fixture send failure"));
+            LastSentBytes = buffer.ToArray();
+            return Task.CompletedTask;
+        }
         private sealed record Step(byte[] Data, WebSocketMessageType Type, bool End, Exception? Error = null);
     }
 }
