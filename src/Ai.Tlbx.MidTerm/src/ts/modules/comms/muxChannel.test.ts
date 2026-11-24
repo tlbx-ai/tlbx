@@ -2416,4 +2416,54 @@ describe('muxChannel', () => {
 
     expect(isBracketedPasteEnabled(sessionId)).toBe(false);
   });
+
+  it('clears a stalled in-flight recovery request after timeout and runs queued follow-up recovery', async () => {
+    vi.useFakeTimers();
+    try {
+      const harness = await loadHarness([0, 0, 0, 0, 0, 0]);
+      harness.ws.send.mockClear();
+
+      const dataLossMessage = buildDataLossMessage(
+        harness.encodeSessionId,
+        harness.constants.MUX_TYPE_DATA_LOSS,
+        harness.constants.MUX_HEADER_SIZE,
+        'sess5678',
+        128,
+      );
+
+      harness.ws.onmessage?.({ data: dataLossMessage } as MessageEvent<ArrayBuffer>);
+      harness.ws.onmessage?.({ data: dataLossMessage } as MessageEvent<ArrayBuffer>);
+
+      const countBufferRequests = (): number =>
+        harness.ws.send.mock.calls
+          .map((call) => call[0] as Uint8Array)
+          .filter((frame) => frame[0] === harness.constants.MUX_TYPE_BUFFER_REQUEST).length;
+
+      expect(countBufferRequests()).toBe(1);
+
+      vi.advanceTimersByTime(4000);
+
+      expect(countBufferRequests()).toBe(2);
+      resetMuxChannelRuntimeForTests();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('sends active session hint when updateTerminalVisibility switches the active local session', async () => {
+    const harness = await loadHarness([0, 0, 0, 0]);
+    harness.ws.send.mockClear();
+
+    harness.updateTerminalVisibility('sess5678', ['sess5678']);
+
+    const frames = harness.ws.send.mock.calls.map((call) => call[0] as Uint8Array);
+    expect(frames).toHaveLength(2);
+    expect(frames[0]?.[0]).toBe(harness.constants.MUX_TYPE_ACTIVE_HINT);
+    expect(harness.decodeSessionId(frames[0]!, 1)).toBe('sess5678');
+    expect(frames[1]?.[0]).toBe(harness.constants.MUX_TYPE_VISIBLE_SESSIONS_HINT);
+
+    harness.ws.send.mockClear();
+    harness.updateTerminalVisibility('sess5678', ['sess5678']);
+    expect(harness.ws.send).not.toHaveBeenCalled();
+  });
 });
