@@ -70,10 +70,15 @@ public sealed partial class TlbxCliScriptWriterTests
                     values.TryAdd("workLimit", "100");
                     values.TryAdd("checkpointLimit", "30");
                 }
-                if (item.Tool == "repos_list")
+                if (item.Tool is "repos_list" or "repo_bind" or "repo_refresh")
                 {
-                    // GitEndpoints returns full status unless details=false; CLI status omits it.
+                    // GitEndpoints returns full status unless details=false; CLI omits it.
                     values.TryAdd("details", "true");
+                }
+                if (item.Tool == "agent_history")
+                {
+                    // agent-control/history returns full metadata unless includeMetadata=false; CLI omits it.
+                    values.TryAdd("includeMetadata", "true");
                 }
                 return values.Select(pair => pair.Key + "=" + (pair.Key is "agentOnly" or "stripAnsi"
                     ? pair.Value.ToString().ToLowerInvariant() : pair.Value.ToString())).Order(StringComparer.Ordinal).ToArray();
@@ -120,12 +125,12 @@ public sealed partial class TlbxCliScriptWriterTests
         ("input_history_list", """{"targetSessionId":"1234abcd","kind":"paste","limit":7}""", "Mt-InputHistory -SessionId 1234abcd -Kind paste -Limit 7", "mt_input_history 1234abcd paste 7"),
         ("input_history_replay", """{"entryId":"entry-1","targetSessionId":"1234abcd"}""", "Mt-InputHistoryReplay -Id entry-1 -TargetSessionId 1234abcd", "mt_input_history_replay entry-1 1234abcd"),
         ("input_history_clear", """{"targetSessionId":"1234abcd"}""", "Mt-InputHistoryClear -SessionId 1234abcd", "mt_input_history_clear 1234abcd"),
-        ("agent_history", """{"targetSessionId":"1234abcd","startIndex":3,"count":7,"viewportWidth":390}""", "Mt-AcpHistory -SessionId 1234abcd -StartIndex 3 -Count 7 -ViewportWidth 390", "mt_acp_history 1234abcd 3 7 390"),
+        ("agent_history", """{"targetSessionId":"1234abcd","startIndex":3,"count":7,"viewportWidth":390,"includeMetadata":true}""", "Mt-AcpHistory -SessionId 1234abcd -StartIndex 3 -Count 7 -ViewportWidth 390", "mt_acp_history 1234abcd 3 7 390"),
         ("agent_turn", """{"targetSessionId":"1234abcd","text":"Grüße 東京","model":"fixture-model","effort":"high","planMode":"plan","permissionMode":"manual"}""", "Mt-AcpTurn 'Grüße 東京' -SessionId 1234abcd", "mt_acp_turn 1234abcd 'Grüße 東京'"),
         ("agent_interrupt", """{"targetSessionId":"1234abcd","turnId":"turn-1"}""", "Mt-AcpInterrupt -SessionId 1234abcd -TurnId turn-1", "mt_acp_interrupt 1234abcd turn-1"),
         ("agent_steer", """{"targetSessionId":"1234abcd","expectedTurnId":"turn-1","text":"Grüße 東京"}""", "Mt-AcpSteer -SessionId 1234abcd -ExpectedTurnId turn-1 -Text 'Grüße 東京'", "mt_acp_steer 1234abcd turn-1 'Grüße 東京'"),
-        ("repo_bind", """{"targetSessionId":"1234abcd","path":"/repo mit 空","role":"target","label":"Grüße 東京"}""", "Mt-Repo -SessionId 1234abcd add '/repo mit 空' target 'Grüße 東京'", "mt_repo --session 1234abcd add '/repo mit 空' target 'Grüße 東京'"),
-        ("repo_refresh", """{"targetSessionId":"1234abcd","repoRoot":"/repo mit 空"}""", "Mt-Repo -SessionId 1234abcd refresh '/repo mit 空'", "mt_repo --session 1234abcd refresh '/repo mit 空'"),
+        ("repo_bind", """{"targetSessionId":"1234abcd","path":"/repo mit 空","role":"target","label":"Grüße 東京","details":true}""", "Mt-Repo -SessionId 1234abcd add '/repo mit 空' target 'Grüße 東京'", "mt_repo --session 1234abcd add '/repo mit 空' target 'Grüße 東京'"),
+        ("repo_refresh", """{"targetSessionId":"1234abcd","repoRoot":"/repo mit 空","details":true}""", "Mt-Repo -SessionId 1234abcd refresh '/repo mit 空'", "mt_repo --session 1234abcd refresh '/repo mit 空'"),
         ("repo_remove", """{"targetSessionId":"1234abcd","repoRoot":"/repo mit 空"}""", "Mt-Repo -SessionId 1234abcd rm '/repo mit 空'", "mt_repo --session 1234abcd rm '/repo mit 空'"),
         ("repos_list", """{"targetSessionId":"1234abcd","details":true}""", "Mt-Repo -SessionId 1234abcd status", "mt_repo --session 1234abcd status"),
         ("terminal_buffer", """{"targetSessionId":"1234abcd"}""", "Mt-Buffer 1234abcd", "mt_buffer 1234abcd"),

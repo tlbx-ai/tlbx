@@ -122,7 +122,7 @@ public static class GitEndpoints
                 : ToResult(result);
         });
 
-        app.MapPost("/api/git/repos", async (GitRepoBindRequest request, CancellationToken ct) =>
+        app.MapPost("/api/git/repos", async (GitRepoBindRequest request, bool? details, CancellationToken ct) =>
         {
             if (string.IsNullOrEmpty(request.SessionId) || string.IsNullOrEmpty(request.Path))
             {
@@ -135,7 +135,9 @@ public static class GitEndpoints
                 request.Label,
                 request.Role,
                 ct);
-            return ToResult(result);
+            return result.IsSuccess && details == false
+                ? Results.Json(SummarizeRepos(result.Repos), GitJsonContext.Default.JsonObject)
+                : ToResult(result);
         });
 
         app.MapDelete("/api/git/repos", async (string? sessionId, string? repoRoot, CancellationToken ct) =>
@@ -148,7 +150,7 @@ public static class GitEndpoints
             return ToResult(await gitMetadata.RemoveAsync(sessionId, repoRoot, ct));
         });
 
-        app.MapPost("/api/git/repos/refresh", async (GitRepoRefreshRequest request, CancellationToken ct) =>
+        app.MapPost("/api/git/repos/refresh", async (GitRepoRefreshRequest request, bool? details, CancellationToken ct) =>
         {
             if (string.IsNullOrEmpty(request.SessionId))
             {
@@ -180,9 +182,12 @@ public static class GitEndpoints
                 await Task.WhenAll(repoRoots.Select(gitWatcher.RefreshStatusAsync));
             }
 
-            return Results.Json(
-                new GitRepoListResponse { Repos = gitWatcher.GetRepoBindings(request.SessionId) },
-                GitJsonContext.Default.GitRepoListResponse);
+            var bindings = gitWatcher.GetRepoBindings(request.SessionId);
+            return details == false
+                ? Results.Json(SummarizeRepos(bindings), GitJsonContext.Default.JsonObject)
+                : Results.Json(
+                    new GitRepoListResponse { Repos = bindings },
+                    GitJsonContext.Default.GitRepoListResponse);
         });
 
         app.MapGet("/api/git/status", async Task<IResult> (string? sessionId, string? repoRoot, CancellationToken ct) =>

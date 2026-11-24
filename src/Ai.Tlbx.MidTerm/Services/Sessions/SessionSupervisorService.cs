@@ -13,13 +13,19 @@ public sealed class SessionSupervisorService
 
     private readonly SessionHeatService _heatService;
     private readonly AiCliProfileService _profileService;
+    private readonly SessionAppServerControlHostRuntimeService? _appServerControlHostRuntime;
+    private readonly AcpAgentCatalogService? _acpAgentCatalog;
 
     public SessionSupervisorService(
         SessionHeatService heatService,
-        AiCliProfileService profileService)
+        AiCliProfileService profileService,
+        SessionAppServerControlHostRuntimeService? appServerControlHostRuntime = null,
+        AcpAgentCatalogService? acpAgentCatalog = null)
     {
         _heatService = heatService;
         _profileService = profileService;
+        _appServerControlHostRuntime = appServerControlHostRuntime;
+        _acpAgentCatalog = acpAgentCatalog;
     }
 
     public SessionSupervisorInfoDto Describe(SessionInfoDto session)
@@ -28,12 +34,12 @@ public sealed class SessionSupervisorService
         var profile = _profileService.NormalizeProfile(null, session);
         var now = DateTimeOffset.UtcNow;
 
-        var state = ResolveState(session, profile, telemetry, now);
+        var (state, customReason) = ResolveStateAndReason(session, profile, telemetry, now);
         var needsAttention = session.AgentControlled &&
             (state is DeadState or BlockedState or ShellState);
 
         var attentionReason = needsAttention
-            ? state switch
+            ? customReason ?? state switch
             {
                 DeadState => "session-exited",
                 BlockedState => "prompt-not-acknowledged",
@@ -87,7 +93,7 @@ public sealed class SessionSupervisorService
         };
     }
 
-    private string ResolveState(
+    private (string State, string? AttentionReason) ResolveStateAndReason(
         SessionInfoDto session,
         string profile,
         SessionHeatSnapshot telemetry,
@@ -95,36 +101,100 @@ public sealed class SessionSupervisorService
     {
         if (!session.IsRunning)
         {
-            return DeadState;
+            return (DeadState, "session-exited");
         }
 
-        if (!_profileService.IsInteractiveAi(profile))
+        if (session.AppServerControlOnly || _appServerControlHostRuntime?.OwnsSession(session.Id) == true)
         {
-            return ShellState;
+            return ResolveAppServerControlState(session, profile);
+        }
+
+        if (!IsInteractiveAiProfile(profile))
+        {
+            return (ShellState, "ai-cli-not-running");
         }
 
         if (telemetry.LastInputAt is { } lastInput &&
             lastInput >= now.AddMinutes(-5) &&
             (telemetry.LastOutputAt is null || lastInput > telemetry.LastOutputAt.Value.AddSeconds(15)))
         {
-            return BlockedState;
+            return (BlockedState, "prompt-not-acknowledged");
         }
 
         if (telemetry.LastBellAt is { } lastBell &&
             lastBell >= now.AddSeconds(-20) &&
             telemetry.CurrentHeat < 0.12)
         {
-            return BlockedState;
+            return (BlockedState, "prompt-not-acknowledged");
         }
 
         if (telemetry.LastOutputAt is { } lastOutput &&
             lastOutput >= now.AddSeconds(-4) &&
             telemetry.CurrentHeat > 0.02)
         {
-            return BusyTurnState;
+            return (BusyTurnState, null);
         }
 
-        return IdlePromptState;
+        return (IdlePromptState, null);
+    }
+
+    private (string State, string? AttentionReason) ResolveAppServerControlState(
+        SessionInfoDto session,
+        string profile)
+    {
+        if (_appServerControlHostRuntime is not null)
+        {
+            if (_appServerControlHostRuntime.TryGetCachedHistoryWindow(session.Id, out var history))
+            {
+                if (history.Requests.Any(static request =>
+                        string.Equals(request.State, "open", StringComparison.OrdinalIgnoreCase)))
+                {
+                    return (BlockedState, "approval-required");
+                }
+
+                if (string.Equals(history.CurrentTurn.State, "running", StringComparison.OrdinalIgnoreCase) ||
+                    history.Session.State is "running" or "starting" or "connecting")
+                {
+                    return (BusyTurnState, null);
+                }
+
+                if (history.Session.State is "error" or "failed" ||
+                    !string.IsNullOrWhiteSpace(history.Session.LastError))
+                {
+                    return (BlockedState, "agent-runtime-error");
+                }
+            }
+
+            if (_appServerControlHostRuntime.TryGetRuntimeSummary(session.Id, out var summary))
+            {
+                if (string.Equals(summary.Status, "error", StringComparison.OrdinalIgnoreCase) ||
+                    !string.IsNullOrWhiteSpace(summary.LastError))
+                {
+                    return (BlockedState, "agent-runtime-error");
+                }
+
+                if (summary.Status is "starting" or "connecting")
+                {
+                    return (BusyTurnState, null);
+                }
+            }
+
+            if (_appServerControlHostRuntime.OwnsSession(session.Id) ||
+                _appServerControlHostRuntime.IsEnabledFor(profile))
+            {
+                return (IdlePromptState, null);
+            }
+        }
+
+        return IsInteractiveAiProfile(profile)
+            ? (IdlePromptState, null)
+            : (ShellState, "ai-cli-not-running");
+    }
+
+    private bool IsInteractiveAiProfile(string profile)
+    {
+        return _profileService.IsInteractiveAi(profile) ||
+            _acpAgentCatalog?.ContainsProfile(profile) == true;
     }
 
     private static int GetAttentionScore(

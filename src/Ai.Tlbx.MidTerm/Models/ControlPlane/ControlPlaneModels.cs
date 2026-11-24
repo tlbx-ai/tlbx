@@ -1,5 +1,6 @@
 using System.Text.Json.Serialization;
 using Ai.Tlbx.MidTerm.Common.Protocol;
+using Ai.Tlbx.MidTerm.Models.Sessions;
 
 namespace Ai.Tlbx.MidTerm.Models.ControlPlane;
 
@@ -244,6 +245,7 @@ public sealed class ControlPlaneCapabilitiesResponse
     public List<string> Features { get; set; } = [];
     public List<string> WorkItemStates { get; set; } = [];
     public List<string> SessionStates { get; set; } = [];
+    public List<AgentControllerInstallationDto> Providers { get; set; } = [];
     public List<ControlPlaneSessionCapability> Sessions { get; set; } = [];
 }
 

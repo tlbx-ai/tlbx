@@ -105,6 +105,11 @@ public sealed class SessionAppServerControlRuntimeService : IAsyncDisposable, IS
         return _hostRuntime.OwnsSession(sessionId);
     }
 
+    public bool IsEnabledFor(string? profile)
+    {
+        return _hostRuntime.IsEnabledFor(profile);
+    }
+
     public Task<TtyHostGitRepoMetadata[]?> GetGitMetadataAsync(string sessionId, CancellationToken ct = default)
     {
         return _hostRuntime.GetGitMetadataAsync(sessionId, ct);
