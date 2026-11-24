@@ -56,6 +56,7 @@ import { renderUpdatePanel } from '../updating/checker';
 import { createLogger } from '../logging';
 import { setDevMode } from '../sidebar/voiceSection';
 import { buildAgentMessageFontStack } from '../agentView/fontConfig';
+import { mountAgentChatAppearance } from './agentChatAppearance';
 import { syncInlineTextInputWrappers, updateInlineTextInputWrapperState } from './inlineInputState';
 import {
   bindTerminalColorSchemeEditor,
@@ -530,6 +531,10 @@ export function populateUserDropdown(
 export function populateSettingsForm(settings: MidTermSettingsPublic): void {
   settingsFormHydrated = false;
   settingsSaveArmed = false;
+  const agentChatAppearance = document.getElementById('settings-agent-chat-appearance');
+  if (agentChatAppearance && !agentChatAppearance.hasChildNodes()) {
+    mountAgentChatAppearance(agentChatAppearance);
+  }
   syncTerminalColorSchemeOptions(settings);
   getSettingsRegistryControlEntries().forEach((entry) => {
     setRegistryControlValue(entry, settings[entry.key]);

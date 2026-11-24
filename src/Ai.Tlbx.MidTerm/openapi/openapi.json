@@ -6789,6 +6789,9 @@
           "showAgentTechnicalDetails",
           "toolCallOutputLines",
           "agentImagePreviewWidth",
+          "agentChatFontScale",
+          "agentChatPanelTransparency",
+          "agentChatColumnWidth",
           "fontSize",
           "fontFamily",
           "terminalLigaturesEnabled",
@@ -6915,6 +6918,21 @@
             "format": "int32"
           },
           "agentImagePreviewWidth": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "agentChatFontScale": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "agentChatPanelTransparency": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int32"
+          },
+          "agentChatColumnWidth": {
             "type": "integer",
             "format": "int32"
           },

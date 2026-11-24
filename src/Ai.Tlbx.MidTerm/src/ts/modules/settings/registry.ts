@@ -8,7 +8,7 @@
 import type { MidTermSettingsPublic } from '../../api/types';
 
 export type SettingApplyMode = 'immediate' | 'lazy' | 'new-session' | 'server-only';
-export type SettingSaveStrategy = 'control' | 'preserve' | 'readonly';
+export type SettingSaveStrategy = 'control' | 'preserve' | 'dedicated' | 'readonly';
 export type SettingControlType =
   | 'text'
   | 'textarea'
@@ -171,6 +171,22 @@ export const SETTINGS_REGISTRY: readonly SettingsRegistryEntry[] = [
     validation: 'integer, 120-1000 px',
     applyMode: 'immediate',
   }),
+  ...(
+    [
+      ['agentChatFontScale', 100, 'integer, 80-160%'],
+      ['agentChatPanelTransparency', null, 'nullable integer, 0-100%'],
+      ['agentChatColumnWidth', 54, 'integer, 24-100 rem'],
+    ] as const
+  ).map(([key, fallbackValue, validation]): SettingsRegistryEntry => ({
+    key,
+    editable: true,
+    storage: 'settings.json',
+    validation,
+    applyMode: 'immediate',
+    saveStrategy: 'dedicated',
+    fallbackValue,
+    specialWriter: 'modules/settings/agentChatAppearance.ts',
+  })),
   controlEntry('toolCallOutputLines', 'setting-tool-call-output-lines', 'int', 5, {
     editable: true,
     storage: 'settings.json',
@@ -716,5 +732,7 @@ export function getSettingsRegistryControlEntries(): readonly SettingsRegistryEn
 }
 
 export function getSettingsRegistryWritableEntries(): readonly SettingsRegistryEntry[] {
-  return SETTINGS_REGISTRY.filter((entry) => entry.saveStrategy !== 'readonly');
+  return SETTINGS_REGISTRY.filter(
+    (entry) => entry.saveStrategy === 'control' || entry.saveStrategy === 'preserve',
+  );
 }

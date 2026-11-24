@@ -33,6 +33,9 @@ public sealed class MidTermSettings
     public bool ShowAgentTechnicalDetails { get; set; } = false;
     public int ToolCallOutputLines { get; set; } = 5;
     public int AgentImagePreviewWidth { get; set; } = 520;
+    public int AgentChatFontScale { get; set; } = 100;
+    public int? AgentChatPanelTransparency { get; set; }
+    public int AgentChatColumnWidth { get; set; } = 54;
 
     private static ShellType GetPlatformDefaultShell()
     {
