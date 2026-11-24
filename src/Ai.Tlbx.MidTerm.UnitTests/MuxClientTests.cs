@@ -46,6 +46,93 @@ public sealed class MuxClientTests
     }
 
     [Fact]
+    public async Task PausedDeliverableSession_RenotifiesDataLossOnNewOutputAndResumesAfterRecovery()
+    {
+        const string sessionId = "heal0001";
+        using var socket = new RecordingWebSocket();
+        await using var client = new MuxClient("heal", socket, () => TerminalResumeModeSetting.QuickResume)
+        {
+            PausedRenotifyInterval = TimeSpan.FromMilliseconds(40)
+        };
+        client.SetActiveSession("other001");
+
+        Assert.False(client.QueueOutput(sessionId, 3, 80, 24, RentOutput("old")));
+        Assert.True(client.TryGetPausedSession(sessionId, out _));
+
+        // Session becomes deliverable while still paused and without an active recovery
+        // (for example, if a recovery request was dropped or raced with a visibility change).
+        client.SetActiveSession(sessionId);
+
+        // Inside the grace window after becoming deliverable, QueueOutput does not emit a
+        // spurious DATA_LOSS while normal server-side recovery is about to start.
+        Assert.False(client.QueueOutput(sessionId, 5, 80, 24, RentOutput("hi")));
+        await Task.Delay(15, Xunit.TestContext.Current.CancellationToken);
+        Assert.Empty(socket.SentFrames);
+
+        // Once the grace interval passes with no recovery, new output self-heals by
+        // emitting DATA_LOSS so the browser can recover without switching sessions.
+        await Task.Delay(40, Xunit.TestContext.Current.CancellationToken);
+        Assert.False(client.QueueOutput(sessionId, 8, 80, 24, RentOutput("new")));
+        await WaitForAsync(() => socket.SentFrames.Count(frame => frame[0] == MuxProtocol.TypeDataLoss) == 1);
+
+        // Immediate follow-up output within the throttle window does not spam DATA_LOSS.
+        Assert.False(client.QueueOutput(sessionId, 12, 80, 24, RentOutput("more")));
+        await Task.Delay(15, Xunit.TestContext.Current.CancellationToken);
+        Assert.Equal(1, socket.SentFrames.Count(frame => frame[0] == MuxProtocol.TypeDataLoss));
+        Assert.DoesNotContain(socket.SentFrames, frame => frame[0] == MuxProtocol.TypeTerminalOutput);
+
+        Assert.True(await client.ExecuteRecoveryAsync(
+            sessionId,
+            static (_, _) => Task.FromResult(new MuxClient.RecoveryResult(true, 12, 12, false)),
+            CancellationToken.None));
+        Assert.False(client.TryGetPausedSession(sessionId, out _));
+
+        Assert.True(client.QueueOutput(sessionId, 16, 80, 24, RentOutput("live")));
+        await WaitForAsync(() => socket.SentFrames.Any(frame => frame[0] == MuxProtocol.TypeTerminalOutput));
+    }
+
+    [Fact]
+    public async Task PartialRecovery_DoesNotFlushBufferedLiveOutputAcrossPausedGap()
+    {
+        const string sessionId = "gap00001";
+        using var socket = new RecordingWebSocket();
+        await using var client = new MuxClient("gap", socket, () => TerminalResumeModeSetting.QuickResume);
+        client.SetActiveSession(sessionId);
+
+        var recoveryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseRecovery = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var recovery = client.ExecuteRecoveryAsync(
+            sessionId,
+            async (_, ct) =>
+            {
+                recoveryStarted.TrySetResult();
+                await releaseRecovery.Task.WaitAsync(ct);
+                return new MuxClient.RecoveryResult(true, 10, 10, false);
+            },
+            CancellationToken.None);
+        await recoveryStarted.Task.WaitAsync(TimeSpan.FromSeconds(2), Xunit.TestContext.Current.CancellationToken);
+
+        // Buffer live output while recovery is active, then record a data-loss gap beyond
+        // the snapshot's end sequence so the session remains paused when recovery finishes.
+        Assert.True(client.QueueOutput(sessionId, 14, 80, 24, RentOutput("live")));
+        client.NotifyDataLoss(
+            sessionId,
+            TerminalReplayReason.MuxOverflow,
+            4,
+            missingSequenceStart: 14,
+            missingSequenceEndExclusive: 18);
+
+        releaseRecovery.TrySetResult();
+        Assert.True(await recovery);
+        await WaitForAsync(() => socket.SentFrames.Any(frame => frame[0] == MuxProtocol.TypeDataLoss));
+        await Task.Delay(40, Xunit.TestContext.Current.CancellationToken);
+
+        Assert.True(client.TryGetPausedSession(sessionId, out _));
+        Assert.DoesNotContain(socket.SentFrames, frame => frame[0] == MuxProtocol.TypeTerminalOutput);
+    }
+
+    [Fact]
     public void OutputCoalescing_NeverMutatesABroadcastBuffer()
     {
         var shared = RentOutput("original");
