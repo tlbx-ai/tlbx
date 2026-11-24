@@ -81,7 +81,7 @@ internal static partial class TlbxMcpApiTools
 
         yield return Remote("control_plane_get", "/api/control-plane", "/api/hub/machines/{id}/control-plane", "Read explicitly published work, status and checkpoints locally or on a registered Hub machine.")
             .With(Q("workLimit", "integer", "100"), Q("checkpointLimit", "integer", "30"));
-        yield return Remote("agent_capabilities", "/api/control-plane/capabilities", "/api/hub/machines/{id}/control-plane/capabilities", "Read exact product and per-session agent capabilities locally or on a registered Hub machine.");
+        yield return Remote("agent_capabilities", "/api/control-plane/capabilities", "/api/hub/machines/{id}/control-plane/capabilities", "Read exact product, installed Agent Controller providers, and per-session agent capabilities locally or on a registered Hub machine.");
         yield return Remote("control_events", "/api/control-plane/events", "/api/hub/machines/{id}/control-plane/events", "Read exact mutation events after a sequence, locally or on a registered Hub machine.")
             .With(Q("after", "integer", "0"), Q("limit", "integer", "100"));
         yield return Body("agent_dispatch", "POST", "/api/control-plane/dispatch", "Explicit deterministic fan-out to one to 32 sessionIds. The complete structured turn supports attachments and provider options; no PTY meaning is inferred.", AppJsonContext.Default.ControlPlaneDispatchRequest);
@@ -125,8 +125,8 @@ internal static partial class TlbxMcpApiTools
         agentNew.Defaults["injectGuidance"] = true;
         agentNew.Defaults["profile"] = "codex";
         yield return agentNew;
-        yield return Target("agent_history", "GET", "/api/sessions/{id}/agent-control/history", "Read canonical structured agent history, not terminal transcript scraping.")
-            .With(Q("startIndex", "integer"), Q("count", "integer"), Q("viewportWidth", "integer"));
+        yield return Target("agent_history", "GET", "/api/sessions/{id}/agent-control/history", "Read canonical structured agent history, not terminal transcript scraping. Omits command/model catalogs and verbose telemetry notices by default; pass includeMetadata:true for the full UI bootstrap payload.")
+            .With(Q("startIndex", "integer"), Q("count", "integer"), Q("viewportWidth", "integer"), Q("includeMetadata", "boolean", "false"));
         yield return Target("agent_turn", "POST", "/api/sessions/{id}/agent-control/turn", "Submit a structured agent turn with model/effort/plan/permission options and attachments.", AppJsonContext.Default.AppServerControlTurnRequest);
         yield return Target("agent_interrupt", "POST", "/api/sessions/{id}/agent-control/interrupt", "Interrupt the structured runtime, optionally targeting a specific turnId.", AppJsonContext.Default.AppServerControlInterruptRequest);
         yield return Target("agent_steer", "POST", "/api/sessions/{id}/agent-control/steer", "Steer the exact expected active turn with text/attachments, retaining concurrency checks.", AppJsonContext.Default.AppServerControlSteerRequest);
@@ -137,9 +137,9 @@ internal static partial class TlbxMcpApiTools
                 Q("expectedTurnId", required: true));
 
         yield return D("repos_list", "GET", "/api/git/repos", "List watched repositories with Git counts. details:true includes full file lists and commit history.").With(SessionQuery(), Q("details", "boolean", "false"));
-        yield return ScopedBody("repo_bind", "POST", "/api/git/repos", "Bind a repository path to the target session with the existing role/label contract. After work is complete and pushed, offer the user release of the checkout; once accepted, clear its control-plane work assignment with work_update(sessionId:'') and remove this watch with repo_remove if no longer needed. A watch alone is not an exclusive checkout lock.", AppJsonContext.Default.GitRepoBindRequest);
+        yield return ScopedBody("repo_bind", "POST", "/api/git/repos", "Bind a repository path to the target session with the existing role/label contract. Returns Git counts by default; details:true includes full file lists and commit history. After work is complete and pushed, offer the user release of the checkout; once accepted, clear its control-plane work assignment with work_update(sessionId:'') and remove this watch with repo_remove if no longer needed. A watch alone is not an exclusive checkout lock.", AppJsonContext.Default.GitRepoBindRequest).With(Q("details", "boolean", "false"));
         yield return D("repo_remove", "DELETE", "/api/git/repos", "Remove an explicit watched repository binding from the target session.").With(SessionQuery(), Q("repoRoot", required: true));
-        yield return ScopedBody("repo_refresh", "POST", "/api/git/repos/refresh", "Refresh repository state for the target session; optionally select one repoRoot.", AppJsonContext.Default.GitRepoRefreshRequest);
+        yield return ScopedBody("repo_refresh", "POST", "/api/git/repos/refresh", "Refresh repository state for the target session; optionally select one repoRoot. Returns Git counts by default; details:true includes full file lists and commit history.", AppJsonContext.Default.GitRepoRefreshRequest).With(Q("details", "boolean", "false"));
 
         yield return D("boards_list", "GET", "/api/boards", "List boards and current revision tokens.");
         yield return Board("board_get", "GET", "/api/boards/{id}", "Read a board and its current revision.");

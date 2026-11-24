@@ -93,12 +93,15 @@ public static class ControlPlaneEndpoints
                     Surface = session.Surface,
                     ProfileHint = session.ProfileHint,
                     PromptModes = session.IsRunning
-                        ? appServerControlRuntime.IsAttached(session.Id) || session.AppServerControlOnly
-                            ? ["terminal", "appServerControl"]
-                            : ["terminal"]
+                        ? session.AppServerControlOnly
+                            ? ["appServerControl"]
+                            : appServerControlRuntime.IsAttached(session.Id)
+                                ? ["terminal", "appServerControl"]
+                                : ["terminal"]
                         : []
                 })
                 .ToList();
+            var installations = app.Services.GetService<AgentControllerInstallationService>();
             var response = new ControlPlaneCapabilitiesResponse
             {
                 Features =
@@ -111,6 +114,7 @@ public static class ControlPlaneEndpoints
                 ],
                 WorkItemStates = ControlPlaneWorkItemStates.All.Order(StringComparer.Ordinal).ToList(),
                 SessionStates = ControlPlaneSessionStates.All.Order(StringComparer.Ordinal).ToList(),
+                Providers = installations?.GetInstalled().ToList() ?? [],
                 Sessions = sessions
             };
             return Results.Json(response, AppJsonContext.Default.ControlPlaneCapabilitiesResponse);
