@@ -24,17 +24,44 @@ import { createSessionFilterController } from './sessionFilterController';
 // Helpers
 // =============================================================================
 
+const BARE_SHELL_WRAPPER_NAMES = new Set([
+  'cmd',
+  'conhost',
+  'pwsh',
+  'powershell',
+  'bash',
+  'zsh',
+  'sh',
+  'fish',
+  'wsl',
+]);
+
 /**
- * Check if a foreground process name is just the session's own shell.
- * Compares basename + extensionless identity of both values, handling
- * full paths, quoted command lines, and command arguments.
+ * Check if a terminal-reported title is just the session's own shell or a bare
+ * system shell/console wrapper path (e.g. `C:\WINDOWS\system32\cmd.exe`).
  */
 function isShellProcess(processName: string, sessionId: string): boolean {
+  const normalizedProcess = normalizeExecutableName(processName);
+  if (!normalizedProcess) return false;
+  if (BARE_SHELL_WRAPPER_NAMES.has(normalizedProcess) && isBareExecutableTitle(processName)) {
+    return true;
+  }
   const session = getSession(sessionId);
   if (!session?.shellType) return false;
-  const normalizedProcess = normalizeExecutableName(processName);
   const normalizedShell = normalizeExecutableName(session.shellType);
-  return normalizedProcess !== '' && normalizedProcess === normalizedShell;
+  return normalizedShell !== '' && normalizedProcess === normalizedShell;
+}
+
+function isBareExecutableTitle(value: string): boolean {
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  const unquoted =
+    trimmed.length >= 2 && trimmed.startsWith('"') && trimmed.endsWith('"')
+      ? trimmed.slice(1, -1)
+      : trimmed;
+  const normalized = unquoted.replace(/\\/g, '/');
+  const tail = normalized.slice(normalized.lastIndexOf('/') + 1);
+  return tail.length > 0 && !/\s/.test(tail);
 }
 
 /**
@@ -128,13 +155,14 @@ interface SessionDisplayInfo {
  */
 export function getSessionDisplayInfo(session: Session): SessionDisplayInfo {
   const sessionSurfaceLabel = getPrimarySurfaceLabel(session);
-  const termTitle = isAgentSurfaceSession(session)
+  const isAgent = isAgentSurfaceSession(session);
+  const termTitle = isAgent
     ? sessionSurfaceLabel
     : session.terminalTitle || session.shellType || t('session.terminal');
   if (session.name) {
-    return { primary: session.name, secondary: termTitle };
+    return { primary: session.name, secondary: isAgent ? sessionSurfaceLabel : null };
   }
-  if (isAgentSurfaceSession(session)) {
+  if (isAgent) {
     return { primary: termTitle, secondary: null };
   }
   // Process set a console title — show it as the primary title with process info below

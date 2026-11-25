@@ -1544,7 +1544,20 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         return true;
     }
 
-    private static string? NormalizeTerminalTitle(SessionInfo session, string? title)
+    private static readonly HashSet<string> BareShellWrapperNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "cmd",
+        "conhost",
+        "pwsh",
+        "powershell",
+        "bash",
+        "zsh",
+        "sh",
+        "fish",
+        "wsl"
+    };
+
+    internal static string? NormalizeTerminalTitle(SessionInfo session, string? title)
     {
         var trimmed = string.IsNullOrWhiteSpace(title) ? null : title.Trim();
         if (trimmed is null)
@@ -1553,6 +1566,13 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         }
 
         var normalizedTitle = NormalizeExecutableIdentity(trimmed);
+        if (!string.IsNullOrEmpty(normalizedTitle) &&
+            BareShellWrapperNames.Contains(normalizedTitle) &&
+            IsBareExecutablePathTitle(trimmed))
+        {
+            return null;
+        }
+
         var normalizedShell = NormalizeExecutableIdentity(session.ShellType);
         if (!string.IsNullOrEmpty(normalizedTitle) &&
             !string.IsNullOrEmpty(normalizedShell) &&
@@ -1562,6 +1582,16 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         }
 
         return trimmed;
+    }
+
+    private static bool IsBareExecutablePathTitle(string trimmed)
+    {
+        var unquoted = trimmed.Length >= 2 && trimmed[0] == '"' && trimmed[^1] == '"'
+            ? trimmed[1..^1]
+            : trimmed;
+        var lastSep = unquoted.LastIndexOfAny(['\\', '/']);
+        var tail = lastSep >= 0 ? unquoted[(lastSep + 1)..] : unquoted;
+        return tail.Length > 0 && !tail.Any(char.IsWhiteSpace);
     }
 
     private static string NormalizeExecutableIdentity(string? value)
