@@ -108,6 +108,12 @@ try {
         Test-BuildCheck (($first|ConvertTo-Json -Depth 5 -Compress) -ceq ($script:sent.ToArray()|ConvertTo-Json -Depth 5 -Compress)) 'Resuming changed the bytes or publication payload.'
         $payload=$script:sent[2].Json|ConvertFrom-Json
         Test-BuildCheck ($payload.sourceCommit -ceq ('c'*40) -and $payload.releaseNotes -ceq 'Release notes' -and @($payload.assets).Count -eq 2) 'Publication metadata changed.'
+        $longRelease=New-TestRelease 'v11.5.0'
+        $longRelease.body=(('old entry line' + "`n") * 2500) + "v11.4.18-dev: Latest change`n## Platform availability"
+        $script:sent.Clear()
+        Publish-BuildRelease $longRelease 'https://builds.tlbx.ai'
+        $longPayload=$script:sent[2].Json|ConvertFrom-Json
+        Test-BuildCheck ($longPayload.releaseNotes.Length -le 32768 -and $longPayload.releaseNotes.StartsWith('[Older release notes omitted') -and $longPayload.releaseNotes.EndsWith('## Platform availability')) 'Oversized release notes were not bounded cleanly to the build API limit.'
         $script:sent.Clear();$script:rejectProvenance=$true
         Test-BuildReject {Publish-BuildRelease $release 'https://builds.tlbx.ai'} 'Invalid provenance was accepted.'
         Test-BuildCheck ($script:sent.Count -eq 0) 'Failed verification uploaded or published assets.'
