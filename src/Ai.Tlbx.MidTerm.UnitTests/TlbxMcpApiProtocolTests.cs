@@ -83,8 +83,10 @@ public sealed class TlbxMcpApiProtocolTests
         var schema = operation.BuildSchema();
         var priority = schema["properties"]!["priority"]!;
         Assert.Equal("string", priority["type"]!.GetValue<string>());
-        Assert.Equal(new[] { "normal", "important" },
-            priority["enum"]!.AsArray().Select(value => value!.GetValue<string>()));
+        Assert.Equal(
+            ["normal", "important"],
+            priority["enum"]!.AsArray().Select(value => value!.GetValue<string>()),
+            StringComparer.Ordinal);
         Assert.DoesNotContain(schema["required"]!.AsArray(), value => value!.GetValue<string>() == "priority");
 
         var explicitNull = operation.Bind(Args("""{"body":"hello","priority":null}"""), "self");
