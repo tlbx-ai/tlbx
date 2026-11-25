@@ -156,7 +156,8 @@ public sealed class HistoryService : IDisposable
         string? foregroundProcessName = null,
         string? foregroundProcessCommandLine = null,
         string? foregroundProcessDisplayName = null,
-        string? foregroundProcessIdentity = null)
+        string? foregroundProcessIdentity = null,
+        bool allowShellOnly = false)
     {
         var normalizedLaunchMode = NormalizeLaunchMode(launchMode);
         var normalizedProfile = NormalizeProfile(profile);
@@ -164,6 +165,7 @@ public sealed class HistoryService : IDisposable
         var normalizedSurfaceType = NormalizeSurfaceType(surfaceType, normalizedLaunchMode, normalizedProfile);
         Log.Info(() => $"RecordEntry: shell={shellType}, exe={executable}, cmd={commandLine}, cwd={workingDirectory}, label={label}, dedupeKey={dedupeKey}, launchMode={normalizedLaunchMode}, profile={normalizedProfile}, launchOrigin={normalizedLaunchOrigin}, surfaceType={normalizedSurfaceType}");
         var normalizedNotes = NormalizeNotes(notes);
+        var trimmedLabel = string.IsNullOrWhiteSpace(label) ? null : label.Trim();
 
         if (string.IsNullOrWhiteSpace(executable) || string.IsNullOrWhiteSpace(workingDirectory))
         {
@@ -176,11 +178,16 @@ public sealed class HistoryService : IDisposable
             ? executable[..^4]
             : executable;
 
-        // Don't record shell as subprocess (e.g., "pwsh" when running pwsh)
+        // Skip shell-as-subprocess for unstarred history, but allow explicit plain-shell bookmarks.
         if (cleanExecutable.Equals(shellType, StringComparison.OrdinalIgnoreCase))
         {
-            Log.Info(() => $"RecordEntry skipped: exe matches shell ({cleanExecutable})");
-            return null;
+            if (!allowShellOnly)
+            {
+                Log.Info(() => $"RecordEntry skipped: exe matches shell ({cleanExecutable})");
+                return null;
+            }
+
+            commandLine = null;
         }
         executable = cleanExecutable;
 
@@ -189,9 +196,13 @@ public sealed class HistoryService : IDisposable
 
         lock (_lock)
         {
-            var existing = _history.Entries.FirstOrDefault(e => e.Id == id);
+            var existing = _history.Entries.FirstOrDefault(e => e.Id == id)
+                ?? (allowShellOnly
+                    ? FindEquivalentStarredEntry(shellType, executable, commandLine, workingDirectory, normalizedLaunchMode, normalizedProfile)
+                    : null);
             if (existing is not null)
             {
+                id = existing.Id;
                 existing.ShellType = shellType;
                 existing.Executable = executable;
                 existing.CommandLine = commandLine;
@@ -205,9 +216,9 @@ public sealed class HistoryService : IDisposable
                 existing.ForegroundProcessCommandLine = foregroundProcessCommandLine;
                 existing.ForegroundProcessDisplayName = foregroundProcessDisplayName;
                 existing.ForegroundProcessIdentity = foregroundProcessIdentity;
-                if (!string.IsNullOrWhiteSpace(label))
+                if (trimmedLabel is not null)
                 {
-                    existing.Label = label;
+                    existing.Label = trimmedLabel;
                 }
                 if (notes is not null)
                 {
@@ -224,7 +235,7 @@ public sealed class HistoryService : IDisposable
                     CommandLine = commandLine,
                     WorkingDirectory = workingDirectory,
                     IsStarred = false,
-                    Label = string.IsNullOrWhiteSpace(label) ? null : label,
+                    Label = trimmedLabel,
                     Notes = normalizedNotes,
                     LastUsed = DateTime.UtcNow,
                     LaunchMode = normalizedLaunchMode,
@@ -246,6 +257,33 @@ public sealed class HistoryService : IDisposable
 
         Log.Verbose(() => $"Recorded history: {executable} in {workingDirectory}");
         return id;
+    }
+
+    private LaunchEntry? FindEquivalentStarredEntry(
+        string shellType,
+        string executable,
+        string? commandLine,
+        string workingDirectory,
+        string launchMode,
+        string? profile)
+    {
+        var normalizedCwd = NormalizePath(workingDirectory);
+        var normalizedCmd = NormalizeCommandLine(commandLine);
+        return _history.Entries.FirstOrDefault(entry =>
+            entry.IsStarred &&
+            string.Equals(NormalizeLaunchMode(entry.LaunchMode), launchMode, StringComparison.Ordinal) &&
+            string.Equals(NormalizeProfile(entry.Profile), profile, StringComparison.Ordinal) &&
+            string.Equals(entry.ShellType, shellType, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(entry.Executable, executable, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(NormalizeCommandLine(entry.CommandLine), normalizedCmd, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(NormalizePath(entry.WorkingDirectory), normalizedCwd, StringComparison.Ordinal));
+    }
+
+    private static string NormalizeCommandLine(string? commandLine)
+    {
+        return string.IsNullOrWhiteSpace(commandLine)
+            ? string.Empty
+            : string.Join(' ', commandLine.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
     }
 
     public List<LaunchEntry> GetEntries()

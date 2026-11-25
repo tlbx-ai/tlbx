@@ -15,8 +15,8 @@ export function resolveSessionLaunchOrigin(
 }
 
 export function shouldShowAdHocBookmarkAction(
-  session: Pick<Session, 'isAdHoc' | 'spaceId' | 'bookmarkId'>,
-  _machineId: string | null,
+  session: Pick<Session, 'isAdHoc' | 'spaceId' | 'bookmarkId' | 'appServerControlOnly'>,
+  machineId: string | null,
   showBookmarks: boolean,
   allowAdHocSessionBookmarks: boolean,
 ): boolean {
@@ -25,6 +25,10 @@ export function shouldShowAdHocBookmarkAction(
   }
 
   if (!isAdHocSession(session)) {
+    return false;
+  }
+
+  if (machineId !== null && session.appServerControlOnly) {
     return false;
   }
 

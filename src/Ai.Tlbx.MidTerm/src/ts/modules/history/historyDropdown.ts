@@ -327,14 +327,23 @@ function startHistoryInlineRename(item: HTMLElement, entry: LaunchEntry): void {
     info.innerHTML = originalContent;
 
     if (newLabel !== currentLabel) {
+      const primaryRow = info.querySelector('.history-item-primary');
       const newLabelEl = info.querySelector('.history-item-label');
       if (newLabelEl) {
-        newLabelEl.textContent = newLabel || '';
+        if (newLabel) {
+          newLabelEl.textContent = newLabel;
+        } else {
+          newLabelEl.remove();
+        }
       } else if (newLabel) {
         const span = document.createElement('span');
         span.className = 'history-item-label';
         span.textContent = newLabel;
-        info.insertBefore(span, info.firstChild);
+        if (primaryRow) {
+          primaryRow.appendChild(span);
+        } else {
+          info.insertBefore(span, info.firstChild);
+        }
       }
 
       entry.label = newLabel || null;

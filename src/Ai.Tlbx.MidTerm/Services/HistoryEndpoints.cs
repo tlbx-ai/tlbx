@@ -35,7 +35,8 @@ public static class HistoryEndpoints
                 request.ForegroundProcessName,
                 request.ForegroundProcessCommandLine,
                 request.ForegroundProcessDisplayName,
-                request.ForegroundProcessIdentity);
+                request.ForegroundProcessIdentity,
+                allowShellOnly: request.IsStarred);
 
             if (id is null)
             {

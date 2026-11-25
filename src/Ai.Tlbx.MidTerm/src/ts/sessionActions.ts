@@ -14,7 +14,6 @@ import {
   ensureTerminalStartupPaintRecovery,
 } from './modules/terminal';
 import { getInjectGuidancePromptKey } from './modules/midtermGuidance';
-import { buildProcessCwdTuple } from './modules/sidebar/processDisplay';
 import {
   handleSessionClosed,
   isSessionInLayout,
@@ -48,6 +47,14 @@ import {
   type LaunchEntry,
   createHistoryEntry,
 } from './modules/history';
+import {
+  buildPlainShellBookmarkDedupeKey,
+  buildTerminalBookmarkDedupeKey,
+  doesSessionMatchTerminalBookmark,
+  findEquivalentStarredBookmark,
+  isPlainShellExecutable,
+  resolveBookmarkTitle,
+} from './modules/history/bookmarkSession';
 import {
   isAdHocSession,
   resolveSessionLaunchOrigin,
@@ -117,8 +124,14 @@ interface ResolvedPinnedHistoryTarget {
   foregroundProcessIdentity: string | null;
   foregroundProcessName: string | null;
   historyMode: ReturnType<typeof resolveSessionHistoryMode>;
+  isPlainShell: boolean;
   surfaceType: 'trm' | 'cdx' | 'acp';
   workingDirectory: string;
+}
+
+interface ResolvePinnedHistoryTargetResult {
+  target: ResolvedPinnedHistoryTarget | null;
+  reason?: string;
 }
 
 interface BookmarkSessionRef {
@@ -160,6 +173,211 @@ function hideStandaloneTerminalContainers(): void {
       state.container.classList.add('hidden');
     }
   });
+}
+
+function getBookmarkForegroundInfo(
+  sessionId: string,
+  session: Session,
+): ReturnType<typeof getForegroundInfo> {
+  const foreground = getForegroundInfo(sessionId);
+  return {
+    name: foreground.name ?? session.foregroundName ?? null,
+    commandLine: foreground.commandLine ?? session.foregroundCommandLine ?? null,
+    cwd: foreground.cwd ?? session.currentDirectory ?? null,
+    displayName: foreground.displayName ?? session.foregroundDisplayName ?? null,
+    processIdentity: foreground.processIdentity ?? session.foregroundProcessIdentity ?? null,
+  };
+}
+
+function resolvePinnedHistoryTargetForSession(
+  sessionId: string,
+  session: Session,
+  deps: Pick<
+    SessionActionsDeps,
+    'buildAppServerControlHistoryDedupeKey' | 'getBookmarkSurfaceType'
+  >,
+): ResolvePinnedHistoryTargetResult {
+  const historyMode = resolveSessionHistoryMode(session);
+  const fgInfo = getBookmarkForegroundInfo(sessionId, session);
+  const surfaceType = deps.getBookmarkSurfaceType(session, historyMode.profile);
+  const workingDirectory = (fgInfo.cwd ?? session.currentDirectory ?? '').trim();
+
+  if (historyMode.launchMode === 'appServerControl') {
+    if (!historyMode.profile) {
+      log.info(
+        () => `pinSessionToHistory: missing profile for appServerControl session ${sessionId}`,
+      );
+      return {
+        target: null,
+        reason:
+          'Cannot bookmark this Agent Controller session because its provider profile is unknown.',
+      };
+    }
+    if (!workingDirectory) {
+      log.info(
+        () =>
+          `pinSessionToHistory: missing working directory for appServerControl session ${sessionId}`,
+      );
+      return {
+        target: null,
+        reason: 'Cannot bookmark this session because its working directory is unavailable.',
+      };
+    }
+
+    return {
+      target: {
+        commandLine: null,
+        dedupeKey: deps.buildAppServerControlHistoryDedupeKey(
+          historyMode.profile,
+          workingDirectory,
+        ),
+        executable: historyMode.profile,
+        fgInfo,
+        foregroundProcessCommandLine: null,
+        foregroundProcessDisplayName: null,
+        foregroundProcessIdentity: null,
+        foregroundProcessName: null,
+        historyMode,
+        isPlainShell: false,
+        surfaceType,
+        workingDirectory,
+      },
+    };
+  }
+
+  if (!workingDirectory) {
+    log.info(
+      () => `pinSessionToHistory: missing working directory for terminal session ${sessionId}`,
+    );
+    return {
+      target: null,
+      reason: 'Cannot bookmark this terminal because its working directory is unavailable.',
+    };
+  }
+
+  if (isPlainShellExecutable(fgInfo.name, session.shellType)) {
+    const shellDedupeKey = buildPlainShellBookmarkDedupeKey(session.shellType, workingDirectory);
+    if (!shellDedupeKey) {
+      return {
+        target: null,
+        reason: 'Cannot bookmark this terminal because its shell type is unavailable.',
+      };
+    }
+    return {
+      target: {
+        commandLine: null,
+        dedupeKey: shellDedupeKey,
+        executable: session.shellType,
+        fgInfo,
+        foregroundProcessCommandLine: null,
+        foregroundProcessDisplayName: null,
+        foregroundProcessIdentity: null,
+        foregroundProcessName: null,
+        historyMode,
+        isPlainShell: true,
+        surfaceType,
+        workingDirectory,
+      },
+    };
+  }
+
+  const terminalDedupeKey = buildTerminalBookmarkDedupeKey(
+    session.shellType,
+    fgInfo.name,
+    fgInfo.commandLine,
+    workingDirectory,
+    fgInfo.processIdentity,
+  );
+  if (!fgInfo.name || !terminalDedupeKey) {
+    log.info(() => `pinSessionToHistory: missing process tuple for ${sessionId}`);
+    return {
+      target: null,
+      reason: 'Cannot bookmark this terminal because its foreground process could not be resolved.',
+    };
+  }
+
+  return {
+    target: {
+      commandLine: fgInfo.commandLine,
+      dedupeKey: terminalDedupeKey,
+      executable: fgInfo.name,
+      fgInfo,
+      foregroundProcessCommandLine: fgInfo.commandLine,
+      foregroundProcessDisplayName: fgInfo.displayName,
+      foregroundProcessIdentity: fgInfo.processIdentity,
+      foregroundProcessName: fgInfo.name,
+      historyMode,
+      isPlainShell: false,
+      surfaceType,
+      workingDirectory,
+    },
+  };
+}
+
+async function resolvePinnedBookmarkLabel(
+  session: Session,
+  machineId: string | null,
+  target: ResolvedPinnedHistoryTarget,
+): Promise<string | null> {
+  const { explicitLabel, defaultLabel } = resolveBookmarkTitle(session, {
+    launchMode: target.historyMode.launchMode,
+    profile: target.historyMode.profile,
+    workingDirectory: target.workingDirectory,
+    executable: target.executable,
+    commandLine: target.commandLine,
+    isPlainShell: target.isPlainShell,
+  });
+
+  if (explicitLabel !== null) {
+    return explicitLabel;
+  }
+
+  if (!machineId) {
+    try {
+      const entries = await fetchHistory();
+      const existing = findEquivalentStarredBookmark(entries, {
+        bookmarkId: session.bookmarkId,
+        launchMode: target.historyMode.launchMode,
+        profile: target.historyMode.profile,
+        shellType: session.shellType,
+        executable: target.executable,
+        commandLine: target.commandLine,
+        workingDirectory: target.workingDirectory,
+      });
+      if (existing?.label?.trim()) {
+        return null;
+      }
+    } catch {
+      // Fall through to defaultLabel when history cannot be inspected.
+    }
+  }
+
+  return defaultLabel;
+}
+
+function buildPinnedHistoryEntryInput(
+  session: Session,
+  label: string | null,
+  target: ResolvedPinnedHistoryTarget,
+) {
+  return {
+    shellType: session.shellType,
+    executable: target.executable,
+    commandLine: target.commandLine,
+    workingDirectory: target.workingDirectory,
+    isStarred: true,
+    label,
+    notes: session.notes ?? null,
+    dedupeKey: target.dedupeKey,
+    launchMode: target.historyMode.launchMode,
+    profile: target.historyMode.profile,
+    launchOrigin: resolveSessionLaunchOrigin(session),
+    surfaceType: target.surfaceType,
+    foregroundProcessName: target.foregroundProcessName,
+    foregroundProcessCommandLine: target.foregroundProcessCommandLine,
+    foregroundProcessDisplayName: target.foregroundProcessDisplayName,
+    foregroundProcessIdentity: target.foregroundProcessIdentity,
+  };
 }
 
 export function createSessionActionHandlers({
@@ -435,15 +653,6 @@ export function createSessionActionHandlers({
       return;
     }
 
-    const fgInfo = getForegroundInfo(sessionId);
-    const currentTuple = buildProcessCwdTuple(
-      fgInfo.name,
-      fgInfo.commandLine,
-      fgInfo.cwd,
-      fgInfo.processIdentity,
-    );
-    if (!currentTuple) return;
-
     let entries: LaunchEntry[];
     try {
       entries = await fetchHistory();
@@ -454,12 +663,8 @@ export function createSessionActionHandlers({
     const linkedEntry = entries.find((entry) => entry.id === bookmarkId);
     if (!linkedEntry) return;
 
-    const linkedTuple = buildProcessCwdTuple(
-      linkedEntry.executable,
-      linkedEntry.commandLine ?? null,
-      linkedEntry.workingDirectory,
-    );
-    if (!linkedTuple || linkedTuple !== currentTuple) {
+    const fgInfo = getForegroundInfo(sessionId);
+    if (!doesSessionMatchTerminalBookmark(currentSession, fgInfo, linkedEntry)) {
       log.verbose(() => `Skip bookmark label patch for ${sessionId}: tuple moved`);
       return;
     }
@@ -595,111 +800,12 @@ export function createSessionActionHandlers({
       : null;
   }
 
-  function getBookmarkForegroundInfo(
-    sessionId: string,
-    session: Session,
-  ): ReturnType<typeof getForegroundInfo> {
-    const foreground = getForegroundInfo(sessionId);
-    return {
-      name: foreground.name ?? session.foregroundName ?? null,
-      commandLine: foreground.commandLine ?? session.foregroundCommandLine ?? null,
-      cwd: foreground.cwd ?? session.currentDirectory ?? null,
-      displayName: foreground.displayName ?? session.foregroundDisplayName ?? null,
-      processIdentity: foreground.processIdentity ?? session.foregroundProcessIdentity ?? null,
-    };
-  }
-
-  function resolvePinnedHistoryTarget(
-    sessionId: string,
-    session: Session,
-  ): ResolvedPinnedHistoryTarget | null {
-    const historyMode = resolveSessionHistoryMode(session);
-    const fgInfo = getBookmarkForegroundInfo(sessionId, session);
-    const surfaceType = getBookmarkSurfaceType(session, historyMode.profile);
-
-    if (historyMode.launchMode === 'appServerControl' && historyMode.profile) {
-      const workingDirectory = fgInfo.cwd ?? session.currentDirectory ?? '';
-      if (!workingDirectory) {
-        log.info(
-          () =>
-            `pinSessionToHistory: missing working directory for appServerControl session ${sessionId}`,
-        );
-        return null;
-      }
-
-      return {
-        commandLine: null,
-        dedupeKey: buildAppServerControlHistoryDedupeKey(historyMode.profile, workingDirectory),
-        executable: historyMode.profile,
-        fgInfo,
-        foregroundProcessCommandLine: null,
-        foregroundProcessDisplayName: null,
-        foregroundProcessIdentity: null,
-        foregroundProcessName: null,
-        historyMode,
-        surfaceType,
-        workingDirectory,
-      };
-    }
-
-    const tupleKey = buildProcessCwdTuple(
-      fgInfo.name,
-      fgInfo.commandLine,
-      fgInfo.cwd,
-      fgInfo.processIdentity,
-    );
-    if (!fgInfo.name || !tupleKey) {
-      log.info(() => `pinSessionToHistory: missing process tuple for ${sessionId}`);
-      return null;
-    }
-
-    return {
-      commandLine: fgInfo.commandLine,
-      dedupeKey: tupleKey,
-      executable: fgInfo.name,
-      fgInfo,
-      foregroundProcessCommandLine: fgInfo.commandLine,
-      foregroundProcessDisplayName: fgInfo.displayName,
-      foregroundProcessIdentity: fgInfo.processIdentity,
-      foregroundProcessName: fgInfo.name,
-      historyMode,
-      surfaceType,
-      workingDirectory: fgInfo.cwd ?? '',
-    };
-  }
-
-  function buildPinnedHistoryLabel(session: Session): string | null {
-    const trimmedName = (session.name || '').trim();
-    return trimmedName && trimmedName !== session.shellType ? trimmedName : null;
-  }
-
-  function buildPinnedHistoryEntryInput(
-    session: Session,
-    label: string | null,
-    target: ResolvedPinnedHistoryTarget,
-  ) {
-    return {
-      shellType: session.shellType,
-      executable: target.executable,
-      commandLine: target.commandLine,
-      workingDirectory: target.workingDirectory,
-      isStarred: true,
-      label,
-      notes: session.notes ?? null,
-      dedupeKey: target.dedupeKey,
-      launchMode: target.historyMode.launchMode,
-      profile: target.historyMode.profile,
-      launchOrigin: resolveSessionLaunchOrigin(session),
-      surfaceType: target.surfaceType,
-      foregroundProcessName: target.foregroundProcessName,
-      foregroundProcessCommandLine: target.foregroundProcessCommandLine,
-      foregroundProcessDisplayName: target.foregroundProcessDisplayName,
-      foregroundProcessIdentity: target.foregroundProcessIdentity,
-    };
-  }
-
-  function canManageAdHocBookmarks(session: Session): boolean {
+  function canManageAdHocBookmarks(session: Session, machineId: string | null): boolean {
     if (!isAdHocSession(session)) {
+      return false;
+    }
+
+    if (machineId !== null && session.appServerControlOnly) {
       return false;
     }
 
@@ -745,19 +851,19 @@ export function createSessionActionHandlers({
     bookmarkId: string,
     target: ResolvedPinnedHistoryTarget,
   ): void {
+    const targetName = target.fgInfo.name ?? target.executable;
     if (previousBookmarkId && previousBookmarkId !== bookmarkId) {
-      log.info(() => `Pinned to history (new tuple): ${target.fgInfo.name} (id=${bookmarkId})`);
+      log.info(() => `Pinned to history (new tuple): ${targetName} (id=${bookmarkId})`);
       return;
     }
     if (previousBookmarkId === bookmarkId) {
       log.info(
-        () =>
-          `Pinned to history (updated existing tuple): ${target.fgInfo.name} (id=${bookmarkId})`,
+        () => `Pinned to history (updated existing tuple): ${targetName} (id=${bookmarkId})`,
       );
       return;
     }
 
-    log.info(() => `Pinned to history: ${target.fgInfo.name} (id=${bookmarkId})`);
+    log.info(() => `Pinned to history: ${targetName} (id=${bookmarkId})`);
   }
 
   async function pinSessionToHistory(sessionId: string): Promise<void> {
@@ -768,19 +874,26 @@ export function createSessionActionHandlers({
     }
 
     const { machineId, session } = sessionRef;
-    if (!canManageAdHocBookmarks(session)) {
+    if (!canManageAdHocBookmarks(session, machineId)) {
       log.info(() => `pinSessionToHistory: skipping ineligible session ${sessionId}`);
       return;
     }
 
-    const label = buildPinnedHistoryLabel(session);
     const previousBookmarkId = session.bookmarkId ?? null;
-    const target = resolvePinnedHistoryTarget(sessionId, session);
-    if (!target) {
+    const resolved = resolvePinnedHistoryTargetForSession(sessionId, session, {
+      buildAppServerControlHistoryDedupeKey,
+      getBookmarkSurfaceType,
+    });
+    if (!resolved.target) {
+      if (resolved.reason) {
+        await showAlert(resolved.reason, { title: 'Bookmark save failed' });
+      }
       return;
     }
+    const target = resolved.target;
 
     try {
+      const label = await resolvePinnedBookmarkLabel(session, machineId, target);
       const input = buildPinnedHistoryEntryInput(session, label, target);
       const id = machineId
         ? (await createRemoteHistoryEntry(machineId, input)).id
