@@ -207,7 +207,10 @@ let appServerControlFastToggle: HTMLButtonElement | null = null;
 let appServerControlPlanSelect: HTMLSelectElement | null = null;
 let appServerControlPermissionSelect: HTMLSelectElement | null = null;
 let appServerControlSettingsSummaryBtn: HTMLButtonElement | null = null;
-let autoSendEnabled = localStorage.getItem('smartinput-autosend') === 'true';
+let autoSendEnabled =
+  typeof localStorage !== 'undefined' && typeof localStorage.getItem === 'function'
+    ? localStorage.getItem('smartinput-autosend') === 'true'
+    : false;
 let keysExpanded = false;
 let isRecording = false;
 let pendingMicPinSessionId: string | null = null;

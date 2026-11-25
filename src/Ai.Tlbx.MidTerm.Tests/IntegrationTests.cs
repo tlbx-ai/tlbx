@@ -228,6 +228,7 @@ public sealed class IntegrationTests : IClassFixture<AuthenticatedAppFixture>, I
     {
         using var scope = _factory.Services.CreateScope();
         var manager = scope.ServiceProvider.GetRequiredService<TtyHostSessionManager>();
+        const string sessionId = "burst-s1";
         using var ws = await ConnectWebSocketAsync("/ws/state");
 
         var initialJson = await ReceiveTextMessageAsync(ws, TimeSpan.FromSeconds(5));
@@ -243,28 +244,50 @@ public sealed class IntegrationTests : IClassFixture<AuthenticatedAppFixture>, I
             "NotifyStateChange",
             BindingFlags.Instance | BindingFlags.Public)!;
 
-        for (var i = 0; i < 20; i++)
+        try
         {
-            notifyStateChange.Invoke(registry, null);
+            for (var i = 0; i < 20; i++)
+            {
+                SeedSession(manager, new SessionInfo
+                {
+                    Id = sessionId,
+                    Name = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"burst-{i}"),
+                    Pid = 100 + i,
+                    HostPid = 101,
+                    ShellType = "Pwsh",
+                    CreatedAt = DateTime.UtcNow,
+                    IsRunning = true
+                }, order: 0);
+                notifyStateChange.Invoke(registry, null);
+            }
+
+            var messages = new List<string>
+            {
+                await ReceiveTextMessageAsync(ws, TimeSpan.FromSeconds(5))
+            };
+
+            while (await TryReceiveTextMessageAsync(ws, TimeSpan.FromMilliseconds(200)) is { } message)
+            {
+                messages.Add(message);
+            }
+
+            Assert.InRange(messages.Count, 1, 3);
+            StateUpdate? lastState = null;
+            foreach (var message in messages)
+            {
+                var state = System.Text.Json.JsonSerializer.Deserialize<StateUpdate>(
+                    message,
+                    AppJsonContext.Default.StateUpdate);
+                Assert.NotNull(state?.Sessions);
+                lastState = state;
+            }
+
+            var latest = Assert.Single(lastState!.Sessions!.Sessions, s => s.Id == sessionId);
+            Assert.Equal("burst-19", latest.Name);
         }
-
-        var messages = new List<string>
+        finally
         {
-            await ReceiveTextMessageAsync(ws, TimeSpan.FromSeconds(5))
-        };
-
-        while (await TryReceiveTextMessageAsync(ws, TimeSpan.FromMilliseconds(150)) is { } message)
-        {
-            messages.Add(message);
-        }
-
-        Assert.InRange(messages.Count, 1, 3);
-        foreach (var message in messages)
-        {
-            var state = System.Text.Json.JsonSerializer.Deserialize<StateUpdate>(
-                message,
-                AppJsonContext.Default.StateUpdate);
-            Assert.NotNull(state?.Sessions);
+            RemoveSeedSession(manager, sessionId);
         }
     }
 

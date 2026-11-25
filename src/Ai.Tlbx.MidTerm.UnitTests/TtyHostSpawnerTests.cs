@@ -51,8 +51,10 @@ public sealed class TtyHostSpawnerTests : IDisposable
         var resources = launched!.DetachForIpc();
         launched.Dispose();
 
+#pragma warning disable IDISP007 // DetachForIpc transfers ownership to the caller
         using var process = resources.Process;
         using var stderr = resources.Error;
+#pragma warning restore IDISP007
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         Assert.Equal("agent-host-stderr", (await stderr.ReadLineAsync(timeout.Token))?.Trim());
         await process.WaitForExitAsync(timeout.Token);

@@ -429,7 +429,7 @@ export function connectStateWebSocket(): void {
   // the list over HTTP when Link has not delivered its initial snapshot.
   const fallback = new AbortController();
   const fallbackTimer =
-    window.__tlbxConnectPreview && !isSharedSessionRoute()
+    typeof window !== 'undefined' && window.__tlbxConnectPreview && !isSharedSessionRoute()
       ? window.setTimeout(() => {
           void getSessions(fallback.signal)
             .then(({ data, response }) => {
