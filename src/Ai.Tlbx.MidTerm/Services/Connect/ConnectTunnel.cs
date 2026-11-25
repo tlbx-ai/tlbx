@@ -37,6 +37,7 @@ internal sealed class ConnectTunnel : IAsyncDisposable
     private readonly Dictionary<string, ConnectPreviewClient> _previews = new(StringComparer.Ordinal);
     private readonly Lock _previewGate = new();
     private readonly Lock _socketGate = new();
+    private bool _binaryFrames;
     private bool _disposed;
 
     public ConnectTunnel(ServerBindingInfo binding, BrowserPreviewOriginService previewOrigin, BrowserPreviewRegistry previewRegistry,
@@ -78,24 +79,50 @@ internal sealed class ConnectTunnel : IAsyncDisposable
 
     public async Task ReceiveFrameAsync(ReadOnlyMemory<byte> frame)
     {
-        if (!_peer.Authenticated && (frame.Length < ConnectFrames.HeaderSize || BinaryPrimitives.ReadUInt32LittleEndian(frame.Span[9..]) > 4096))
+        if (!_peer.Authenticated && (frame.Length < ConnectFrames.HeaderSize || frame.Span[0] != ConnectFrames.JsonFrameVersion || BinaryPrimitives.ReadUInt32LittleEndian(frame.Span[9..]) > 4096))
             throw new InvalidDataException("Unauthenticated Connect frame exceeds the authentication limit.");
-        var complete = _frames.Receive(frame.Span);
-        if (complete is null) return;
-        var message = JsonSerializer.Deserialize(complete, ConnectJsonContext.Default.ConnectEnvelope)
-            ?? throw new InvalidDataException("Empty Connect request.");
+        var completed = _frames.ReceiveFrame(frame.Span);
+        if (completed is null) return;
+        ConnectEnvelope message;
+        ReadOnlyMemory<byte>? rawPayload = null;
+        if (completed.Value.Version == ConnectFrames.BinaryEnvelopeVersion)
+        {
+            if (!_peer.Authenticated)
+                throw new InvalidDataException("Binary Connect frame received before authentication.");
+            var (metadataUtf8, payload) = ConnectFrames.UnpackBinaryEnvelope(completed.Value.Payload);
+            message = JsonSerializer.Deserialize(metadataUtf8.Span, ConnectJsonContext.Default.ConnectEnvelope)
+                ?? throw new InvalidDataException("Empty Connect request.");
+            rawPayload = payload;
+        }
+        else
+        {
+            message = JsonSerializer.Deserialize(completed.Value.Payload, ConnectJsonContext.Default.ConnectEnvelope)
+                ?? throw new InvalidDataException("Empty Connect request.");
+        }
         if (!_peer.Authenticated)
         {
             _peer.AcceptProof(message);
+            _binaryFrames = message.BinaryFrames == true;
             _cookie = _auth.CreateSessionToken();
-            await SendEnvelopeAsync(new ConnectEnvelope { Type = "authOk", BodyEncoding = "gzip", BulkHttp = _sendBulk is null ? null : true }, _lifetime.Token);
+            await SendEnvelopeAsync(new ConnectEnvelope
+            {
+                Type = "authOk",
+                BodyEncoding = "gzip",
+                BulkHttp = _sendBulk is null ? null : true,
+                BinaryFrames = _binaryFrames ? true : null
+            }, _lifetime.Token);
             return;
         }
         if (string.IsNullOrEmpty(message.Id) || message.Id.Length > 100 || message.Id.Any(char.IsControl))
             throw new InvalidDataException("Invalid Connect request identifier.");
+        if (message.Type == "ping")
+        {
+            await SendEnvelopeAsync(new ConnectEnvelope { Type = "pong", Id = message.Id }, _lifetime.Token);
+            return;
+        }
         if (message.Type is "ws-data" or "ws-close")
         {
-            await DispatchSocketAsync(message, _lifetime.Token);
+            await DispatchSocketAsync(message, rawPayload, _lifetime.Token);
             return;
         }
         if (message.Type is not ("http" or "ws-open"))
@@ -105,17 +132,17 @@ internal sealed class ConnectTunnel : IAsyncDisposable
         var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         if (!_requests.TryAdd(message.Id, completion.Task))
             throw new InvalidDataException("Duplicate Connect request identifier.");
-        _ = CompleteRequestAsync(message, completion);
+        _ = CompleteRequestAsync(message, rawPayload, completion);
     }
 
-    private async Task CompleteRequestAsync(ConnectEnvelope message, TaskCompletionSource completion)
+    private async Task CompleteRequestAsync(ConnectEnvelope message, ReadOnlyMemory<byte>? rawPayload, TaskCompletionSource completion)
     {
         var entered = false;
         try
         {
             await _requestSlots.WaitAsync(_lifetime.Token);
             entered = true;
-            if (message.Type == "http") await ForwardHttpAsync(message, _lifetime.Token);
+            if (message.Type == "http") await ForwardHttpAsync(message, rawPayload, _lifetime.Token);
             else await OpenSocketAsync(message, _lifetime.Token);
         }
         catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
@@ -153,14 +180,19 @@ internal sealed class ConnectTunnel : IAsyncDisposable
         }
         : new ConnectEnvelope { Type = "ws-close", Id = message.Id, Code = 1008, Reason = "Too many pending requests." }, _lifetime.Token);
 
-    private async Task ForwardHttpAsync(ConnectEnvelope message, CancellationToken ct)
+    private async Task ForwardHttpAsync(ConnectEnvelope message, ReadOnlyMemory<byte>? rawPayload, CancellationToken ct)
     {
         var (destination, preview) = ResolveDestination(message);
         var method = message.Method?.ToUpperInvariant() ?? "GET";
         if (method is not ("GET" or "HEAD" or "POST" or "PUT" or "PATCH" or "DELETE" or "OPTIONS"))
             throw new InvalidDataException("Unsupported HTTP method.");
         using var request = new HttpRequestMessage(new HttpMethod(method), destination);
-        if (message.Body is not null)
+        if (rawPayload is { Length: > 0 } binaryBody)
+        {
+            if (binaryBody.Length > MaximumBody) throw new InvalidDataException("Connect request body is too large.");
+            request.Content = new ByteArrayContent(binaryBody.ToArray());
+        }
+        else if (message.Body is not null)
         {
             var body = Convert.FromBase64String(message.Body);
             if (body.Length > MaximumBody) throw new InvalidDataException("Connect request body is too large.");
@@ -202,12 +234,23 @@ internal sealed class ConnectTunnel : IAsyncDisposable
         var gzip = message.AcceptBodyEncoding == "gzip" && response.Content.Headers.ContentLength is not < 1024
             && (mediaType?.StartsWith("text/", StringComparison.OrdinalIgnoreCase) == true
                 || mediaType is "application/javascript" or "application/json" or "application/xml" or "application/wasm" or "image/svg+xml");
-        var responseBody = await ReadBoundedBase64Async(source, MaximumBody, response.Content.Headers.ContentLength, gzip, ct);
-        await SendEnvelopeAsync(new ConnectEnvelope
+        var responseBytes = await ReadBoundedBytesAsync(source, MaximumBody, response.Content.Headers.ContentLength, gzip, ct);
+        if (_binaryFrames)
         {
-            Type = "http-result", Id = message.Id, Status = (int)response.StatusCode,
-            Headers = headers, Body = responseBody, BodyEncoding = gzip ? "gzip" : null
-        }, ct);
+            await SendBinaryEnvelopeAsync(new ConnectEnvelope
+            {
+                Type = "http-result", Id = message.Id, Status = (int)response.StatusCode,
+                Headers = headers, BodyEncoding = gzip ? "gzip" : null
+            }, responseBytes, ct);
+        }
+        else
+        {
+            await SendEnvelopeAsync(new ConnectEnvelope
+            {
+                Type = "http-result", Id = message.Id, Status = (int)response.StatusCode,
+                Headers = headers, Body = Convert.ToBase64String(responseBytes), BodyEncoding = gzip ? "gzip" : null
+            }, ct);
+        }
     }
 
     private async Task OpenSocketAsync(ConnectEnvelope message, CancellationToken ct)
@@ -221,7 +264,8 @@ internal sealed class ConnectTunnel : IAsyncDisposable
         var builder = new UriBuilder(destination) { Scheme = "wss" };
         var socket = new ClientWebSocket();
         var gzipSocket = string.Equals(message.AcceptBodyEncoding, "gzip", StringComparison.OrdinalIgnoreCase);
-        var owner = new ConnectWebSocketRelay(socket, message.Id, SendEnvelopeAsync, MaximumBody, gzipOutbound: gzipSocket);
+        var owner = new ConnectWebSocketRelay(socket, message.Id, SendEnvelopeAsync, MaximumBody,
+            gzipOutbound: gzipSocket, sendBinary: _binaryFrames ? SendBinaryEnvelopeAsync : null);
         var registered = false;
         var started = false;
         try
@@ -301,10 +345,10 @@ internal sealed class ConnectTunnel : IAsyncDisposable
         }
     }
 
-    private async Task DispatchSocketAsync(ConnectEnvelope message, CancellationToken ct)
+    private async Task DispatchSocketAsync(ConnectEnvelope message, ReadOnlyMemory<byte>? rawPayload, CancellationToken ct)
     {
         if (!_sockets.TryGetValue(message.Id, out var owner)) return;
-        await owner.DispatchAsync(message, ct);
+        await owner.DispatchAsync(message, ct, rawPayload);
     }
 
     private async Task SendEnvelopeAsync(ConnectEnvelope envelope, CancellationToken ct)
@@ -316,7 +360,17 @@ internal sealed class ConnectTunnel : IAsyncDisposable
             await _sender.SendAsync(bytes, ct);
     }
 
-    private static async Task<string> ReadBoundedBase64Async(Stream source, int limit, long? contentLength, bool gzip, CancellationToken ct)
+    private async Task SendBinaryEnvelopeAsync(ConnectEnvelope envelope, ReadOnlyMemory<byte> payload, CancellationToken ct)
+    {
+        var metaBytes = JsonSerializer.SerializeToUtf8Bytes(envelope, ConnectJsonContext.Default.ConnectEnvelope);
+        var packed = ConnectFrames.PackBinaryEnvelope(metaBytes, payload.Span);
+        if (envelope.Type == "http-result" && packed.Length > ConnectFrameSender.InteractiveMessageSize && _sendBulk is not null && _bulkOpen?.Invoke() == true)
+            await _sender.SendBulkAsync(packed, _sendBulk, ct, ConnectFrames.BinaryEnvelopeVersion);
+        else
+            await _sender.SendAsync(packed, ct, ConnectFrames.BinaryEnvelopeVersion);
+    }
+
+    private static async Task<byte[]> ReadBoundedBytesAsync(Stream source, int limit, long? contentLength, bool gzip, CancellationToken ct)
     {
         if (contentLength > limit) throw new InvalidDataException("Connect response body is too large.");
         var capacity = contentLength is >= 0 ? checked((int)contentLength.Value) : 0;
@@ -337,7 +391,7 @@ internal sealed class ConnectTunnel : IAsyncDisposable
                     else compressor.Write(buffer, 0, read);
                 }
             }
-            return Convert.ToBase64String(target.GetBuffer(), 0, checked((int)target.Length));
+            return target.ToArray();
         }
         finally { ArrayPool<byte>.Shared.Return(buffer, clearArray: true); }
     }

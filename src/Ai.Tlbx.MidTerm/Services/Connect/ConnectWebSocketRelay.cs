@@ -11,6 +11,7 @@ internal sealed class ConnectWebSocketRelay : IAsyncDisposable
     private readonly WebSocket _socket;
     private readonly string _id;
     private readonly Func<ConnectEnvelope, CancellationToken, Task> _send;
+    private readonly Func<ConnectEnvelope, ReadOnlyMemory<byte>, CancellationToken, Task>? _sendBinary;
     private readonly int _maximumBody;
     private readonly bool _gzipOutbound;
     private int _closeNotified;
@@ -19,11 +20,13 @@ internal sealed class ConnectWebSocketRelay : IAsyncDisposable
 
     // This class takes ownership of socket; its caller must not dispose it separately.
     public ConnectWebSocketRelay(WebSocket socket, string id,
-        Func<ConnectEnvelope, CancellationToken, Task> send, int maximumBody, bool gzipOutbound = false)
+        Func<ConnectEnvelope, CancellationToken, Task> send, int maximumBody, bool gzipOutbound = false,
+        Func<ConnectEnvelope, ReadOnlyMemory<byte>, CancellationToken, Task>? sendBinary = null)
     {
         _socket = socket;
         _id = id;
         _send = send;
+        _sendBinary = sendBinary;
         _maximumBody = maximumBody;
         _gzipOutbound = gzipOutbound;
     }
@@ -61,35 +64,46 @@ internal sealed class ConnectWebSocketRelay : IAsyncDisposable
                 var rawLength = checked((int)message.Length);
                 var payloadBuffer = message.GetBuffer();
                 string? bodyEncoding = null;
-                string encodedData;
-                if (_gzipOutbound && rawLength >= CompressionThresholdBytes)
+                ReadOnlyMemory<byte> outboundPayload = payloadBuffer.AsMemory(0, rawLength);
+                MemoryStream? compressed = null;
+                try
                 {
-                    using var compressed = new MemoryStream(rawLength / 2);
-                    using (var gzip = new GZipStream(compressed, CompressionLevel.Fastest, leaveOpen: true))
+                    if (_gzipOutbound && rawLength >= CompressionThresholdBytes)
                     {
-                        gzip.Write(payloadBuffer, 0, rawLength);
+                        compressed = new MemoryStream(rawLength / 2);
+                        using (var gzip = new GZipStream(compressed, CompressionLevel.Fastest, leaveOpen: true))
+                        {
+                            gzip.Write(payloadBuffer, 0, rawLength);
+                        }
+
+                        if (compressed.Length < rawLength)
+                        {
+                            bodyEncoding = "gzip";
+                            outboundPayload = compressed.GetBuffer().AsMemory(0, checked((int)compressed.Length));
+                        }
                     }
 
-                    if (compressed.Length < rawLength)
+                    if (_sendBinary is not null)
                     {
-                        bodyEncoding = "gzip";
-                        encodedData = Convert.ToBase64String(compressed.GetBuffer(), 0, checked((int)compressed.Length));
+                        await _sendBinary(new ConnectEnvelope
+                        {
+                            Type = "ws-data", Id = _id, Binary = result.MessageType == WebSocketMessageType.Binary,
+                            BodyEncoding = bodyEncoding
+                        }, outboundPayload, ct);
                     }
                     else
                     {
-                        encodedData = Convert.ToBase64String(payloadBuffer, 0, rawLength);
+                        await _send(new ConnectEnvelope
+                        {
+                            Type = "ws-data", Id = _id, Binary = result.MessageType == WebSocketMessageType.Binary,
+                            Data = Convert.ToBase64String(outboundPayload.Span), BodyEncoding = bodyEncoding
+                        }, ct);
                     }
                 }
-                else
+                finally
                 {
-                    encodedData = Convert.ToBase64String(payloadBuffer, 0, rawLength);
+                    compressed?.Dispose();
                 }
-
-                await _send(new ConnectEnvelope
-                {
-                    Type = "ws-data", Id = _id, Binary = result.MessageType == WebSocketMessageType.Binary,
-                    Data = encodedData, BodyEncoding = bodyEncoding
-                }, ct);
             }
             if (ct.IsCancellationRequested)
             {
@@ -116,7 +130,7 @@ internal sealed class ConnectWebSocketRelay : IAsyncDisposable
         }
     }
 
-    public async Task DispatchAsync(ConnectEnvelope message, CancellationToken ct)
+    public async Task DispatchAsync(ConnectEnvelope message, CancellationToken ct, ReadOnlyMemory<byte>? rawPayload = null)
     {
         // The companion's stdout reader dispatches incoming peer messages serially.
         if (message.Type == "ws-close")
@@ -127,14 +141,16 @@ internal sealed class ConnectWebSocketRelay : IAsyncDisposable
             await close;
             return;
         }
-        if (_socket.State != WebSocketState.Open || message.Data is null)
+        if (_socket.State != WebSocketState.Open || (rawPayload is null && message.Data is null))
         {
             await NotifyCloseAsync(1006, "Local connection is no longer open.", ct);
             return;
         }
         try
         {
-            var data = Convert.FromBase64String(message.Data);
+            var data = rawPayload is { } binaryPayload
+                ? binaryPayload.ToArray()
+                : Convert.FromBase64String(message.Data!);
             if (string.Equals(message.BodyEncoding, "gzip", StringComparison.OrdinalIgnoreCase))
             {
                 data = DecompressBoundedGzip(data, _maximumBody);
