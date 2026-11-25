@@ -29,7 +29,9 @@ internal sealed class ConnectWebRtcTransport : IAsyncDisposable
     private readonly Task _reader, _stderr;
     private readonly Lock _disposeGate = new();
     private Task? _disposeTask;
-    private int _closed, _failed;
+    private int _closed, _failed, _bulkOpen;
+    private TaskCompletionSource? _bulkFrameSent;
+    public bool BulkOpen => Volatile.Read(ref _bulkOpen) != 0;
 
     internal int WorkerProcessId => _process.Id;
     internal static string[] NativeServerUrls(ConnectIceServer[] servers, bool expanded = false) => ConnectNativePeer.NativeServerUrls(servers, expanded);
@@ -110,6 +112,26 @@ internal sealed class ConnectWebRtcTransport : IAsyncDisposable
         JsonSerializer.SerializeToUtf8Bytes(signal, ConnectJsonContext.Default.ConnectSignal), ct);
     public Task SendAsync(ReadOnlyMemory<byte> frame, CancellationToken ct) => WriteAsync(ConnectWorkerMessage.Frame, frame, ct);
 
+    public async Task SendBulkAsync(ReadOnlyMemory<byte> frame, CancellationToken ct)
+    {
+        var receipt = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        if (Interlocked.CompareExchange(ref _bulkFrameSent, receipt, null) is not null)
+            throw new InvalidOperationException("A Link bulk fragment is already in flight.");
+        try
+        {
+            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct, _lifetime.Token);
+            deadline.CancelAfter(TimeSpan.FromSeconds(30));
+            await WriteAsync(ConnectWorkerMessage.BulkFrame, frame, deadline.Token).ConfigureAwait(false);
+            await receipt.Task.WaitAsync(deadline.Token).ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            Fail();
+            throw;
+        }
+        finally { Volatile.Write(ref _bulkFrameSent, null); }
+    }
+
     private async Task WriteAsync(ConnectWorkerMessage kind, ReadOnlyMemory<byte> payload, CancellationToken ct)
     {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _closed) != 0, this);
@@ -139,6 +161,11 @@ internal sealed class ConnectWebRtcTransport : IAsyncDisposable
                 {
                     case ConnectWorkerMessage.Ready: _ready.TrySetResult(); break;
                     case ConnectWorkerMessage.Open: await _onOpen().ConfigureAwait(false); break;
+                    case ConnectWorkerMessage.BulkOpen: Volatile.Write(ref _bulkOpen, 1); break;
+                    case ConnectWorkerMessage.BulkFrameSent:
+                        if (Volatile.Read(ref _bulkFrameSent)?.TrySetResult() != true)
+                            throw new InvalidDataException("Unexpected Link worker bulk receipt.");
+                        break;
                     case ConnectWorkerMessage.Signal:
                         var signal = JsonSerializer.Deserialize(message.Payload, ConnectJsonContext.Default.ConnectSignal)
                             ?? throw new InvalidDataException("Empty Link worker signal.");

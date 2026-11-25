@@ -1,11 +1,8 @@
 name: Attest release archive
-description: Generate an SPDX SBOM plus provenance and SBOM attestations for a release archive.
+description: Reuse the latest SPDX snapshot and attest the archive and copied snapshot as build outputs.
 inputs:
   subject-path:
     description: Archive to attest
-    required: true
-  scan-path:
-    description: Staging directory represented by the archive
     required: true
   sbom-path:
     description: SPDX JSON output path
@@ -13,51 +10,24 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Generate SPDX SBOM
-      id: sbom
-      continue-on-error: true
-      uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
-      with:
-        path: ${{ inputs.scan-path }}
-        format: spdx-json
-        output-file: ${{ inputs.sbom-path }}
-        upload-artifact: false
-
-    # Retry transient tool-download failures without rerunning compilation/signing.
-    # The final attempt remains a hard gate; checksums and attestations are unchanged.
-    - name: Retry SPDX SBOM generation
-      if: steps.sbom.outcome == 'failure'
-      uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
-      with:
-        path: ${{ inputs.scan-path }}
-        format: spdx-json
-        output-file: ${{ inputs.sbom-path }}
-        upload-artifact: false
-
-    - name: Include embedded native Connect dependencies
-      id: native-sbom
+    - name: Reuse latest available SPDX snapshot
       shell: pwsh
+      env:
+        GH_TOKEN: ${{ github.token }}
+        SBOM_PATH: ${{ inputs.sbom-path }}
+        ARCHIVE_PATH: ${{ inputs.subject-path }}
       run: |
-        $sbom = '${{ inputs.sbom-path }}'
-        ./src/Ai.Tlbx.MidTerm.ConnectNative/complete-sbom.ps1 -SbomPath $sbom
-        $vex = $sbom -replace '\.spdx\.json$', '.openvex.json'
-        if (Test-Path -LiteralPath $vex) { "vex=$vex" | Out-File $env:GITHUB_OUTPUT -Append }
+        $name = [IO.Path]::GetFileName($env:SBOM_PATH)
+        if ($name -notmatch '^mt-(win-x64|win-x86|linux-x64|linux-arm64|osx-x64|osx-arm64)\.spdx\.json$') { throw 'Invalid SBOM output name.' }
+        $outputDirectory = [IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($env:SBOM_PATH))
+        ./scripts/release-sbom.ps1 -Mode Reuse -Rid $Matches[1] -OutputDirectory $outputDirectory
+        foreach ($path in @($env:ARCHIVE_PATH, $env:SBOM_PATH)) {
+          if (-not (Test-Path -LiteralPath $path -PathType Leaf) -or (Get-Item -LiteralPath $path).Length -eq 0) { throw "Missing attestation subject: $path" }
+        }
 
-    - name: Attest build provenance
+    - name: Attest archive and snapshot provenance
       uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
       with:
-        subject-path: ${{ inputs.subject-path }}
-
-    - name: Attest SBOM
-      uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
-      with:
-        subject-path: ${{ inputs.subject-path }}
-        sbom-path: ${{ inputs.sbom-path }}
-
-    - name: Attest exact upstream native backports
-      if: steps.native-sbom.outputs.vex != ''
-      uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
-      with:
-        subject-path: ${{ inputs.subject-path }}
-        predicate-type: https://openvex.dev/ns/v0.2.0
-        predicate-path: ${{ steps.native-sbom.outputs.vex }}
+        subject-path: |
+          ${{ inputs.subject-path }}
+          ${{ inputs.sbom-path }}

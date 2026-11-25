@@ -8,12 +8,12 @@ import {
   type AppServerControlGoalSetRequest,
   type AppServerControlGoalResponse,
   type AppServerControlHistoryWindowResponse,
-  type AppServerControlInterruptRequest,
   type AppServerControlRequestDecisionRequest,
   type AppServerControlTurnRequest,
   type AppServerControlTurnStartResponse,
   type AppServerControlUserInputAnswerRequest,
 } from './types';
+import { NativeHistoryDecoder } from './nativeHistoryDecoder';
 import { AppServerControlHttpError } from './errors';
 import { ReconnectController, createWsUrl } from '../utils';
 import { handleAuthenticatedWebSocketClose } from '../modules/auth/sessionLifetime';
@@ -23,7 +23,6 @@ type AppServerControlWsRequestAction =
   | 'detach'
   | 'history.window.get'
   | 'turn.submit'
-  | 'turn.interrupt'
   | 'runtime.configure'
   | 'runtime.recover'
   | 'thread.goal.set'
@@ -411,7 +410,7 @@ async function ensureConnected(): Promise<void> {
   const generation = ++connectionGeneration;
   connectPromise = new Promise<void>((resolve, reject) => {
     connectReject = reject;
-    const socket = new WebSocket(createWsUrl('/ws/app-server-control'));
+    const socket = new WebSocket(createWsUrl('/ws/app-server-control'), 'tlbx-history-ach1');
     ws = socket;
     connectTimeout = globalThis.setTimeout(() => {
       if (generation !== connectionGeneration || ws !== socket) {
@@ -445,11 +444,25 @@ async function ensureConnected(): Promise<void> {
       resolve();
     };
 
+    const decoder = new NativeHistoryDecoder();
+    let receiveChain = Promise.resolve();
+    socket.binaryType = 'arraybuffer';
     socket.onmessage = (event) => {
       if (generation !== connectionGeneration || ws !== socket) {
         return;
       }
-      handleServerMessage(JSON.parse(event.data as string) as AppServerControlServerMessage);
+      receiveChain = receiveChain
+        .then(async () => {
+          const message =
+            event.data instanceof ArrayBuffer
+              ? await decoder.decode(event.data)
+              : (JSON.parse(event.data as string) as unknown);
+          if (generation === connectionGeneration && ws === socket)
+            handleServerMessage(message as AppServerControlServerMessage);
+        })
+        .catch(() => {
+          socket.close(1002, 'Invalid history packet');
+        });
     };
 
     socket.onerror = (event) => {
@@ -460,6 +473,7 @@ async function ensureConnected(): Promise<void> {
     };
 
     socket.onclose = (event) => {
+      decoder.dispose();
       if (generation !== connectionGeneration || ws !== socket) {
         return;
       }
@@ -648,13 +662,6 @@ export async function submitAppServerControlTurnWs(
   return requestTurnStarted('turn.submit', sessionId, request);
 }
 
-export async function interruptAppServerControlTurnWs(
-  sessionId: string,
-  request: AppServerControlInterruptRequest,
-): Promise<AppServerControlCommandAcceptedResponse> {
-  return requestCommandAccepted('turn.interrupt', sessionId, { interrupt: request });
-}
-
 export async function configureAppServerControlRuntimeWs(
   sessionId: string,
   request: AppServerControlConfigureRequest,
@@ -713,6 +720,17 @@ export async function declineAppServerControlRequestWs(
   return requestCommandAccepted('request.decline', sessionId, {
     requestId,
     requestDecision: request,
+  });
+}
+
+export function selectAppServerControlPermissionOptionWs(
+  sessionId: string,
+  requestId: string,
+  optionId: string,
+): Promise<AppServerControlCommandAcceptedResponse> {
+  return requestCommandAccepted('request.resolve', sessionId, {
+    requestId,
+    requestDecision: { decision: 'select_option', optionId },
   });
 }
 

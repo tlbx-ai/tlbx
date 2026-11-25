@@ -78,8 +78,12 @@ public sealed partial class SessionAppServerControlHistoryService
             retainedEvent.Sequence = ++log.NextSequence;
             log.EventBacklog.Add(retainedEvent);
             TrimEventBacklog(log.EventBacklog);
+            if (!retainedEvent.IsReplay && HasOutput(retainedEvent) &&
+                (log.State.Session.LastActivityAt is not { } previous || retainedEvent.CreatedAt > previous))
+                log.State.Session.LastActivityAt = retainedEvent.CreatedAt;
+            var textDeltaCandidate = CaptureAppendCandidate(log.State, retainedEvent);
             ApplyEvent(log.State, retainedEvent);
-            var delta = BuildDelta(log.SessionId, log.NextSequence, log.State, retainedEvent);
+            var delta = BuildDelta(log.SessionId, log.NextSequence, log.State, retainedEvent, textDeltaCandidate);
             PersistScreenLogDelta(log, delta);
             log.PersistenceDirty = true;
 
@@ -509,6 +513,9 @@ public sealed partial class SessionAppServerControlHistoryService
             log.EventBacklog.Add(retainedEvent);
             TrimEventBacklog(log.EventBacklog);
             log.NextSequence = Math.Max(log.NextSequence, retainedEvent.Sequence);
+            if (!retainedEvent.IsReplay && HasOutput(retainedEvent) &&
+                (log.State.Session.LastActivityAt is not { } previous || retainedEvent.CreatedAt > previous))
+                log.State.Session.LastActivityAt = retainedEvent.CreatedAt;
             ApplyEvent(log.State, retainedEvent);
         }
 
@@ -875,19 +882,18 @@ public sealed partial class SessionAppServerControlHistoryService
         };
     }
 
-    private static SessionAppServerControlHeatSnapshot BuildHeatSnapshot(AppServerControlConversationState state)
-    {
-        if (!ShouldSurfaceWorkingHeat(state))
-        {
-            return SessionAppServerControlHeatSnapshot.Cold;
-        }
+    private static bool HasOutput(AppServerControlProviderEvent e) =>
+        !string.IsNullOrWhiteSpace(e.ContentDelta?.Delta) ||
+        !string.IsNullOrWhiteSpace(e.PlanDelta?.Delta) ||
+        !string.IsNullOrWhiteSpace(e.PlanCompleted?.PlanMarkdown) ||
+        !string.IsNullOrWhiteSpace(e.DiffUpdated?.UnifiedDiff) ||
+        e.Item is not null || e.RequestOpened is not null || e.UserInputRequested is not null;
 
-        return new SessionAppServerControlHeatSnapshot
-        {
-            CurrentHeat = 1,
-            LastActivityAt = state.Session.LastEventAt ?? state.CurrentTurn.StartedAt
-        };
-    }
+    private static SessionAppServerControlHeatSnapshot BuildHeatSnapshot(AppServerControlConversationState state) => new()
+    {
+        LastActivityAt = state.Session.LastActivityAt,
+        CurrentHeat = TerminalHeat.FromTextOutput(state.Session.LastActivityAt, DateTimeOffset.UtcNow)
+    };
 
     private static void TrimEventBacklog(List<AppServerControlProviderEvent> eventBacklog)
     {
@@ -1064,6 +1070,21 @@ public sealed partial class SessionAppServerControlHistoryService
             SetHistoryEntry(target, CloneHistoryEntry(entry));
         }
 
+        foreach (var textDelta in source.HistoryTextDeltas)
+        {
+            if (target.HistoryEntries.TryGetValue(textDelta.EntryId, out var existing) &&
+                existing.Body.Length == textDelta.ExpectedBaseLength)
+            {
+                existing.Body += textDelta.AppendBody;
+                existing.Status = textDelta.Status;
+                existing.Streaming = textDelta.Streaming;
+                existing.UpdatedAt = textDelta.UpdatedAt;
+                if (!string.IsNullOrWhiteSpace(textDelta.Title)) existing.Title = textDelta.Title;
+                if (!string.IsNullOrWhiteSpace(textDelta.ItemType)) existing.ItemType = textDelta.ItemType;
+                SetHistoryEntry(target, existing);
+            }
+        }
+
         target.NextHistoryOrder = target.HistoryEntries.Count == 0
             ? 0
             : target.HistoryOrder.Keys[target.HistoryOrder.Count - 1].Order + 1;
@@ -1103,53 +1124,75 @@ public sealed partial class SessionAppServerControlHistoryService
         target.Notices.AddRange(noticesById.Values.OrderByDescending(static notice => notice.CreatedAt));
     }
 
-    private static bool ShouldSurfaceWorkingHeat(AppServerControlConversationState state)
+    private readonly record struct AppendDeltaCandidate(string EntryId, string PreviousBody);
+
+    private static AppendDeltaCandidate? CaptureAppendCandidate(
+        AppServerControlConversationState state,
+        AppServerControlProviderEvent appServerControlEvent)
     {
-        if (state.OpenRequestIds.Count > 0)
+        if (!string.Equals(appServerControlEvent.Type, "content.delta", StringComparison.Ordinal) ||
+            appServerControlEvent.ContentDelta is not { Replace: false } contentDelta ||
+            string.IsNullOrEmpty(contentDelta.Delta))
         {
-            return false;
+            return null;
         }
 
-        if (IsWorkingTurnState(state.CurrentTurn.State))
+        var historyKind = HistoryKindFromStream(contentDelta.StreamKind);
+        if (historyKind is not ("assistant" or "reasoning" or "plan"))
         {
-            return true;
+            return null;
         }
 
-        return string.IsNullOrWhiteSpace(state.CurrentTurn.State) &&
-               IsWorkingSessionState(state.Session.State);
-    }
-
-    private static bool IsWorkingTurnState(string? state)
-    {
-        return state?.Trim().ToLowerInvariant() switch
+        var entryId = ResolveHistoryEntryIdForStream(state, appServerControlEvent, historyKind, contentDelta.StreamKind);
+        if (!state.HistoryEntries.TryGetValue(entryId, out var existing) || string.IsNullOrEmpty(existing.Body))
         {
-            "running" => true,
-            "in_progress" => true,
-            "started" => true,
-            _ => false
-        };
-    }
+            return null;
+        }
 
-    private static bool IsWorkingSessionState(string? state)
-    {
-        return state?.Trim().ToLowerInvariant() switch
-        {
-            "starting" => true,
-            "running" => true,
-            _ => false
-        };
+        return new AppendDeltaCandidate(entryId, existing.Body);
     }
 
     private AppServerControlHistoryPatch BuildDelta(
         string sessionId,
         long latestSequence,
         AppServerControlConversationState state,
-        AppServerControlProviderEvent appServerControlEvent)
+        AppServerControlProviderEvent appServerControlEvent,
+        AppendDeltaCandidate? appendCandidate = null)
     {
         var historyIds = CollectTouchedHistoryIds(state, appServerControlEvent);
         var itemIds = CollectTouchedItemIds(state, appServerControlEvent);
         var requestIds = CollectTouchedRequestIds(appServerControlEvent);
         var noticeIds = CollectTouchedNoticeIds(appServerControlEvent);
+
+        var textDeltas = new List<AppServerControlHistoryTextDelta>();
+        string? deltaHandledEntryId = null;
+        if (appendCandidate is { } candidate &&
+            historyIds.Count == 1 &&
+            historyIds.Contains(candidate.EntryId) &&
+            state.HistoryEntries.TryGetValue(candidate.EntryId, out var updatedEntry) &&
+            updatedEntry.Body.Length > candidate.PreviousBody.Length &&
+            updatedEntry.Body.StartsWith(candidate.PreviousBody, StringComparison.Ordinal))
+        {
+            deltaHandledEntryId = candidate.EntryId;
+            textDeltas.Add(new AppServerControlHistoryTextDelta
+            {
+                EntryId = updatedEntry.EntryId,
+                Order = updatedEntry.Order,
+                Kind = updatedEntry.Kind,
+                TurnId = updatedEntry.TurnId,
+                ItemId = updatedEntry.ItemId,
+                Status = updatedEntry.Status,
+                ItemType = updatedEntry.ItemType,
+                Title = updatedEntry.Title,
+                ExpectedBaseLength = candidate.PreviousBody.Length,
+                AppendBody = updatedEntry.Body[candidate.PreviousBody.Length..],
+                Streaming = updatedEntry.Streaming,
+                UpdatedAt = updatedEntry.UpdatedAt
+            });
+        }
+
+        var includeCommands = appServerControlEvent.AgentMetadataUpdated?.AvailableCommands is not null;
+        var includeQuickSettingsOptions = appServerControlEvent.QuickSettingsUpdated is not null;
 
         return new AppServerControlHistoryPatch
         {
@@ -1158,17 +1201,19 @@ public sealed partial class SessionAppServerControlHistoryService
             GeneratedAt = state.Session.LastEventAt ?? appServerControlEvent.CreatedAt,
             LatestSequence = latestSequence,
             HistoryCount = state.HistoryEntries.Count,
-            Session = CloneSessionSummary(state.Session),
+            Session = CloneSessionSummaryForPatch(state.Session, includeCommands),
             Thread = CloneThreadSummary(state.Thread),
             CurrentTurn = CloneTurnSummary(state.CurrentTurn),
-            QuickSettings = CloneQuickSettingsSummary(state.QuickSettings),
-            Streams = CloneStreamsSummary(state.Streams),
+            QuickSettings = CloneQuickSettingsSummaryForPatch(state.QuickSettings, includeQuickSettingsOptions),
+            Streams = new AppServerControlStreamsSummary { StreamsOmitted = true },
             HistoryUpserts = historyIds
+                .Where(id => !string.Equals(id, deltaHandledEntryId, StringComparison.Ordinal))
                 .Select(id => state.HistoryEntries.TryGetValue(id, out var entry) ? CloneHistoryEntry(sessionId, entry) : null)
                 .Where(static entry => entry is not null)
                 .Select(static entry => entry!)
                 .OrderBy(entry => entry.Order)
                 .ToList(),
+            HistoryTextDeltas = textDeltas,
             ItemUpserts = itemIds
                 .Select(id => state.Items.TryGetValue(id, out var item) ? CloneItemSummary(item) : null)
                 .Where(static item => item is not null)
@@ -1792,6 +1837,9 @@ public sealed partial class SessionAppServerControlHistoryService
                 HumanizeRequestType(appServerControlEvent.RequestOpened.RequestType));
             request.State = "open";
             request.Detail = PreferMeaningfulText(request.Detail, appServerControlEvent.RequestOpened.Detail);
+            request.ApprovalPurpose = appServerControlEvent.RequestOpened.ApprovalPurpose;
+            request.ApprovalTool = appServerControlEvent.RequestOpened.ApprovalTool;
+            request.PermissionOptions = appServerControlEvent.RequestOpened.PermissionOptions;
         }
 
         if (appServerControlEvent.RequestResolved is not null)
@@ -1800,7 +1848,7 @@ public sealed partial class SessionAppServerControlHistoryService
             request.KindLabel = PreferNonEmpty(request.KindLabel, HumanizeRequestType(request.Kind));
             request.State = "resolved";
             request.Decision = appServerControlEvent.RequestResolved.Decision;
-            if (request.Kind == "mcp_tool_approval")
+            if (request.Kind == "mcp_tool_approval" || request.ApprovalTool is not null)
                 request.Detail = AppServerControlProviderEventCompaction.CompactRequestDetail(request.Detail, request.Kind, pending: false);
         }
 
@@ -1877,6 +1925,7 @@ public sealed partial class SessionAppServerControlHistoryService
     {
         return new AppServerControlProviderEvent
         {
+            IsReplay = source.IsReplay,
             Sequence = source.Sequence,
             EventId = source.EventId,
             SessionId = source.SessionId,
@@ -1980,7 +2029,10 @@ public sealed partial class SessionAppServerControlHistoryService
             {
                 RequestType = source.RequestOpened.RequestType,
                 RequestTypeLabel = source.RequestOpened.RequestTypeLabel,
-                Detail = source.RequestOpened.Detail
+                Detail = source.RequestOpened.Detail,
+                ApprovalPurpose = source.RequestOpened.ApprovalPurpose,
+                ApprovalTool = source.RequestOpened.ApprovalTool,
+                PermissionOptions = source.RequestOpened.PermissionOptions
             },
             RequestResolved = source.RequestResolved is null ? null : new AppServerControlProviderRequestResolvedPayload
             {
@@ -2023,6 +2075,7 @@ public sealed partial class SessionAppServerControlHistoryService
             QuickSettings = CloneQuickSettingsSummary(source.QuickSettings),
             Streams = CloneStreamsSummary(source.Streams),
             HistoryUpserts = source.HistoryUpserts.Select(entry => CloneHistoryEntry(entry)).ToList(),
+            HistoryTextDeltas = source.HistoryTextDeltas.Select(CloneHistoryTextDelta).ToList(),
             HistoryRemovals = [.. source.HistoryRemovals],
             ItemUpserts = source.ItemUpserts.Select(CloneItemSummary).ToList(),
             ItemRemovals = [.. source.ItemRemovals],
@@ -2060,6 +2113,36 @@ public sealed partial class SessionAppServerControlHistoryService
         };
     }
 
+    private static AppServerControlHistoryTextDelta CloneHistoryTextDelta(AppServerControlHistoryTextDelta source) => new()
+    {
+        EntryId = source.EntryId,
+        Order = source.Order,
+        Kind = source.Kind,
+        TurnId = source.TurnId,
+        ItemId = source.ItemId,
+        Status = source.Status,
+        ItemType = source.ItemType,
+        Title = source.Title,
+        ExpectedBaseLength = source.ExpectedBaseLength,
+        AppendBody = source.AppendBody,
+        Streaming = source.Streaming,
+        UpdatedAt = source.UpdatedAt
+    };
+
+    private static AppServerControlSessionSummary CloneSessionSummaryForPatch(AppServerControlSessionSummary source, bool includeCommands) => new()
+    {
+        AgentName = source.AgentName,
+        Usage = source.Usage?.Clone(),
+        AvailableCommands = includeCommands ? AppServerControlCommand.CloneMany(source.AvailableCommands) : [],
+        AvailableCommandsOmitted = !includeCommands,
+        State = source.State,
+        StateLabel = source.StateLabel,
+        Reason = source.Reason,
+        LastError = source.LastError,
+        LastActivityAt = source.LastActivityAt,
+        LastEventAt = source.LastEventAt
+    };
+
     private static AppServerControlSessionSummary CloneSessionSummary(AppServerControlSessionSummary source)
     {
         return new AppServerControlSessionSummary
@@ -2067,10 +2150,12 @@ public sealed partial class SessionAppServerControlHistoryService
             AgentName = source.AgentName,
             Usage = source.Usage?.Clone(),
             AvailableCommands = AppServerControlCommand.CloneMany(source.AvailableCommands),
+            AvailableCommandsOmitted = source.AvailableCommandsOmitted,
             State = source.State,
             StateLabel = source.StateLabel,
             Reason = source.Reason,
             LastError = source.LastError,
+            LastActivityAt = source.LastActivityAt,
             LastEventAt = source.LastEventAt
         };
     }
@@ -2079,11 +2164,15 @@ public sealed partial class SessionAppServerControlHistoryService
     {
         target.AgentName = source.AgentName;
         target.Usage = source.Usage?.Clone();
-        target.AvailableCommands = AppServerControlCommand.CloneMany(source.AvailableCommands);
+        if (!source.AvailableCommandsOmitted)
+        {
+            target.AvailableCommands = AppServerControlCommand.CloneMany(source.AvailableCommands);
+        }
         target.State = source.State;
         target.StateLabel = source.StateLabel;
         target.Reason = source.Reason;
         target.LastError = source.LastError;
+        target.LastActivityAt = source.LastActivityAt;
         target.LastEventAt = source.LastEventAt;
     }
 
@@ -2131,6 +2220,20 @@ public sealed partial class SessionAppServerControlHistoryService
         target.CompletedAt = source.CompletedAt;
     }
 
+    private static AppServerControlQuickSettingsSummary CloneQuickSettingsSummaryForPatch(AppServerControlQuickSettingsSummary source, bool includeOptions) => new()
+    {
+        Model = AppServerControlQuickSettings.NormalizeOptionalValue(source.Model),
+        Effort = AppServerControlQuickSettings.NormalizeOptionalValue(source.Effort),
+        PlanMode = AppServerControlQuickSettings.NormalizePlanMode(source.PlanMode),
+        PermissionMode = AppServerControlQuickSettings.NormalizePermissionMode(source.PermissionMode),
+        FastMode = AppServerControlQuickSettings.NormalizeFastMode(source.FastMode),
+        ModelOptions = includeOptions ? AppServerControlQuickSettings.CloneOptions(source.ModelOptions) : [],
+        EffortOptions = includeOptions ? AppServerControlQuickSettings.CloneOptions(source.EffortOptions) : [],
+        AcknowledgedFields = [.. source.AcknowledgedFields],
+        ConfigOptions = includeOptions ? AppServerControlQuickSettings.CloneConfigOptions(source.ConfigOptions) : [],
+        OptionsOmitted = !includeOptions
+    };
+
     private static AppServerControlQuickSettingsSummary CloneQuickSettingsSummary(AppServerControlQuickSettingsSummary source)
     {
         return new AppServerControlQuickSettingsSummary
@@ -2143,7 +2246,8 @@ public sealed partial class SessionAppServerControlHistoryService
             ModelOptions = AppServerControlQuickSettings.CloneOptions(source.ModelOptions),
             EffortOptions = AppServerControlQuickSettings.CloneOptions(source.EffortOptions),
             AcknowledgedFields = [.. source.AcknowledgedFields],
-            ConfigOptions = AppServerControlQuickSettings.CloneConfigOptions(source.ConfigOptions)
+            ConfigOptions = AppServerControlQuickSettings.CloneConfigOptions(source.ConfigOptions),
+            OptionsOmitted = source.OptionsOmitted
         };
     }
 
@@ -2154,10 +2258,13 @@ public sealed partial class SessionAppServerControlHistoryService
         target.PlanMode = AppServerControlQuickSettings.NormalizePlanMode(source.PlanMode);
         target.PermissionMode = AppServerControlQuickSettings.NormalizePermissionMode(source.PermissionMode);
         target.FastMode = AppServerControlQuickSettings.NormalizeFastMode(source.FastMode);
-        target.ModelOptions = AppServerControlQuickSettings.CloneOptions(source.ModelOptions);
-        target.EffortOptions = AppServerControlQuickSettings.CloneOptions(source.EffortOptions);
+        if (!source.OptionsOmitted)
+        {
+            target.ModelOptions = AppServerControlQuickSettings.CloneOptions(source.ModelOptions);
+            target.EffortOptions = AppServerControlQuickSettings.CloneOptions(source.EffortOptions);
+            target.ConfigOptions = AppServerControlQuickSettings.CloneConfigOptions(source.ConfigOptions);
+        }
         target.AcknowledgedFields = [.. source.AcknowledgedFields];
-        target.ConfigOptions = AppServerControlQuickSettings.CloneConfigOptions(source.ConfigOptions);
     }
 
     private static AppServerControlStreamsSummary CloneStreamsSummary(AppServerControlStreamsSummary source)
@@ -2170,12 +2277,18 @@ public sealed partial class SessionAppServerControlHistoryService
             PlanText = source.PlanText,
             CommandOutput = source.CommandOutput,
             FileChangeOutput = source.FileChangeOutput,
-            UnifiedDiff = source.UnifiedDiff
+            UnifiedDiff = source.UnifiedDiff,
+            StreamsOmitted = source.StreamsOmitted
         };
     }
 
     private static void CopyStreamsSummary(AppServerControlStreamsSummary target, AppServerControlStreamsSummary source)
     {
+        if (source.StreamsOmitted)
+        {
+            return;
+        }
+
         target.AssistantText = source.AssistantText;
         target.ReasoningText = source.ReasoningText;
         target.ReasoningSummaryText = source.ReasoningSummaryText;
@@ -2228,6 +2341,7 @@ public sealed partial class SessionAppServerControlHistoryService
     private static int EstimateHistoryEntryHeightPx(AppServerControlHistoryItem entry, int? viewportWidth = null)
     {
         ArgumentNullException.ThrowIfNull(entry);
+        if (entry.ToolPresentation?.Mcp is not null) return viewportWidth <= 520 ? 76 : 56;
 
         var effectiveViewportWidth = Math.Clamp(viewportWidth ?? 960, 240, 2400);
         var horizontalChrome = ResolveHistoryHorizontalChromePx(entry.Kind);
@@ -2319,6 +2433,9 @@ public sealed partial class SessionAppServerControlHistoryService
             KindLabel = source.KindLabel,
             State = source.State,
             Detail = source.Detail,
+            ApprovalPurpose = source.ApprovalPurpose,
+            ApprovalTool = source.ApprovalTool,
+            PermissionOptions = source.PermissionOptions,
             Decision = source.Decision,
             Questions = source.Questions.Select(CloneQuestion).ToList(),
             Answers = source.Answers.Select(CloneAnsweredQuestion).ToList(),
@@ -2859,9 +2976,12 @@ public sealed partial class SessionAppServerControlHistoryService
     private static string BuildRequestBody(AppServerControlRequestSummary request)
     {
         var sections = new List<string>();
-        if (!string.IsNullOrWhiteSpace(request.Detail))
+        var description = request.ApprovalTool is null
+            ? request.ApprovalPurpose ?? request.Detail
+            : PreferNonEmpty(request.ApprovalPurpose, request.ApprovalTool);
+        if (!string.IsNullOrWhiteSpace(description))
         {
-            sections.Add(request.Detail.Trim());
+            sections.Add(description.Trim());
         }
 
         if (request.Questions.Count > 0)

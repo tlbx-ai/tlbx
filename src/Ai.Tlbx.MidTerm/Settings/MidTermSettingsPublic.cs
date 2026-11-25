@@ -6,7 +6,7 @@ namespace Ai.Tlbx.MidTerm.Settings;
 public sealed partial class MidTermSettingsPublic
 {
     public const int DefaultScrollbackLines = 10000;
-    public const int DefaultScrollbackBytes = 2 * 1024 * 1024;
+    public const int DefaultScrollbackBytes = 8 * 1024 * 1024;
     public const int DefaultBackgroundKenBurnsZoomPercent = 150;
     public const int DefaultBackgroundKenBurnsSpeedPxPerSecond = 12;
 
@@ -23,6 +23,10 @@ public sealed partial class MidTermSettingsPublic
     public bool ShowAgentMessageTimestamps { get; set; } = false;
     public bool ShowAgentTechnicalDetails { get; set; } = false;
     public int ToolCallOutputLines { get; set; } = 5;
+    public int AgentImagePreviewWidth { get; set; } = 520;
+    public int AgentChatFontScale { get; set; } = 100;
+    public int? AgentChatPanelTransparency { get; set; }
+    public int AgentChatColumnWidth { get; set; } = 54;
 
     // Terminal Appearance
     public int FontSize { get; set; } = 14;
@@ -73,7 +77,7 @@ public sealed partial class MidTermSettingsPublic
     public bool MobileDenseTerminalMode { get; set; } = false;
     public bool KeepSystemAwakeWithActiveSessions { get; set; } = false;
     public string RuntimePriorityClass { get; set; } = "aboveNormal";
-    public TerminalResumeModeSetting ResumeMode { get; set; } = TerminalResumeModeSetting.FullReplay;
+    public TerminalResumeModeSetting ResumeMode { get; set; } = TerminalResumeModeSetting.QuickResume;
     public bool TryResumeNonAiAgentProcesses { get; set; } = false;
     public bool PreserveTerminalCursorControl { get; set; } = true;
     public string InputMode { get; set; } = "keyboard";

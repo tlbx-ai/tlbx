@@ -535,7 +535,10 @@ public sealed class MtAgentHostCodexIntegrationTests
                 count: 96);
             var userInputRequest = Assert.Single(questionWindow.Requests, request => request.Kind == "interview" && request.State == "open");
             Assert.Equal("choice", Assert.Single(userInputRequest.Questions).Id);
-            Assert.Equal(custom, userInputRequest.Questions[0].AllowCustomAnswer);
+            // Codex returns string answers; native choices remain available alongside custom text.
+            Assert.True(userInputRequest.Questions[0].AllowCustomAnswer);
+            Assert.Equal(secret ? [] : new[] { "Safe", "Fast" },
+                userInputRequest.Questions[0].Options.Select(option => option.Label), StringComparer.Ordinal);
             Assert.Equal(secret, userInputRequest.Questions[0].IsSecret);
             if (cancel)
             {
@@ -691,7 +694,7 @@ public sealed class MtAgentHostCodexIntegrationTests
                 static launch => launch.Arguments.Length > 0 &&
                                  !string.IsNullOrWhiteSpace(launch.ThreadStartCwd));
 
-            Assert.Equal(["--enable", "remote_compaction_v2", "app-server"], capture.Arguments);
+            Assert.Equal(["--enable", "remote_compaction_v2", "--enable", "default_mode_request_user_input", "app-server"], capture.Arguments);
             Assert.Equal(fakeCodex.Root, capture.ProcessWorkingDirectory);
             Assert.Contains("initialize", capture.Methods, StringComparer.Ordinal);
             Assert.Contains("initialized", capture.Methods, StringComparer.Ordinal);
@@ -880,7 +883,7 @@ public sealed class MtAgentHostCodexIntegrationTests
                 static launch => launch.Arguments.Length > 0 &&
                                  !string.IsNullOrWhiteSpace(launch.ThreadStartCwd));
 
-            Assert.Equal(["app-server"], capture.Arguments);
+            Assert.Equal(["--enable", "default_mode_request_user_input", "app-server"], capture.Arguments);
         }
         finally
         {

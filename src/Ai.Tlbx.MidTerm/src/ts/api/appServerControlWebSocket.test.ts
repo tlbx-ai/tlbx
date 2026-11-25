@@ -244,7 +244,7 @@ describe('appServerControlWebSocket', () => {
       }),
     );
 
-    expect(onHistoryWindow).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(onHistoryWindow).toHaveBeenCalledTimes(1));
     expect(onHistoryWindow.mock.calls[0]?.[0]?.historyWindowStart).toBe(5);
     expect(onHistoryWindow.mock.calls[0]?.[0]?.windowRevision).toBe('rev-current');
   });

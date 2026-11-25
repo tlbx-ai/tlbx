@@ -38,6 +38,8 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
     private const string HostModeEnvironmentVariable = "MIDTERM_APP_SERVER_CONTROL_HOST_MODE";
     private static readonly TimeSpan CommandTimeout = TimeSpan.FromSeconds(10);
     private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
+    public event Action<string>? TextActivity;
+
     private readonly ConcurrentDictionary<string, HostRuntimeState> _states = new(StringComparer.Ordinal);
     private readonly SettingsService _settingsService;
     private readonly AcpAgentCatalogService _acpAgentCatalog;
@@ -47,6 +49,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
     private readonly string _mode;
     private readonly RedirectedProcessLauncher _launcher;
     private readonly SessionPathAllowlistService? _pathAllowlist;
+    private readonly SessionControlStateService? _sessionControlState;
 
     internal IEnumerable<KeyValuePair<int, string>> GetProcessContextRoots() =>
         _states.Values.Where(state => state.HostPid > 0)
@@ -71,8 +74,9 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         MidTermInstanceIdentity? instanceIdentity = null,
         string? mode = null,
         AcpAgentCatalogService? acpAgentCatalog = null,
-        SessionPathAllowlistService? pathAllowlist = null)
-        : this(settingsService, instanceIdentity, mode, null, acpAgentCatalog, pathAllowlist)
+        SessionPathAllowlistService? pathAllowlist = null,
+        SessionControlStateService? sessionControlState = null)
+        : this(settingsService, instanceIdentity, mode, null, acpAgentCatalog, pathAllowlist, sessionControlState)
     {
     }
 
@@ -82,9 +86,11 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         string? mode,
         RedirectedProcessLauncher? launcher,
         AcpAgentCatalogService? acpAgentCatalog = null,
-        SessionPathAllowlistService? pathAllowlist = null)
+        SessionPathAllowlistService? pathAllowlist = null,
+        SessionControlStateService? sessionControlState = null)
     {
         _settingsService = settingsService;
+        _sessionControlState = sessionControlState;
         _pathAllowlist = pathAllowlist;
         _acpAgentCatalog = acpAgentCatalog ?? new AcpAgentCatalogService(settingsService);
         _instanceIdentity = instanceIdentity ?? MidTermInstanceIdentity.Load(
@@ -147,7 +153,8 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
 
     public bool OwnsSession(string sessionId)
     {
-        return _states.TryGetValue(sessionId, out var state) &&
+        return _states.TryGetValue(sessionId, out var state) && state.ProviderReady &&
+               state.ReaderTask is { IsCompleted: false } &&
                state.Input is not null &&
                state.Output is not null &&
                state.Status is not HostRuntimeStatus.None and not HostRuntimeStatus.Stopped;
@@ -239,6 +246,10 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
             ct).ConfigureAwait(false);
     }
 
+    public Task<bool> ResumeAsync(string sessionId, string profile, SessionInfoDto session,
+        string threadId, Action prepareReplacement, CancellationToken ct) =>
+        EnsureAttachedAsync(sessionId, profile, session, threadId, allowSpawn: true, ct, prepareReplacement);
+
     public bool MayHaveRecoverableHost(string sessionId)
     {
         if (OwnsSession(sessionId))
@@ -276,7 +287,8 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         SessionInfoDto session,
         string? resumeThreadIdOverride,
         bool allowSpawn,
-        CancellationToken ct)
+        CancellationToken ct,
+        Action? prepareReplacement = null)
     {
         var workingDirectory = session.CurrentDirectory;
         if (!IsEnabledFor(profile) ||
@@ -289,13 +301,41 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
 
         var state = _states.GetOrAdd(sessionId, static id => new HostRuntimeState(id));
         await state.Gate.WaitAsync(ct).ConfigureAwait(false);
+        if (prepareReplacement is not null)
+        {
+            try
+            {
+                if (state.ProviderReady)
+                {
+                    var current = await SendCommandAsync(state, id => new AppServerControlHostCommandEnvelope
+                    {
+                        CommandId = id, SessionId = sessionId, Type = "history.window.get",
+                        HistoryWindow = new() { Count = 1 }
+                    }, ct).ConfigureAwait(false);
+                    if (current.HistoryWindow?.CurrentTurn.State?.ToLowerInvariant() is
+                        "running" or "in_progress" or "started" or "submitted")
+                        throw new InvalidOperationException("Interrupt the active turn before resuming another conversation.");
+                }
+                prepareReplacement();
+                await DisposeOwnedStateAsync(state, terminateHost: true).ConfigureAwait(false);
+                state.LastActivityNotificationAt = null;
+            }
+            catch
+            {
+                state.Gate.Release();
+                throw;
+            }
+        }
         try
         {
             state.Profile = profile;
             state.WorkingDirectory = workingDirectory;
             var attachPoint = SelectAttachPoint(profile, session);
 
-            if (state.Input is not null && state.Output is not null)
+            // An IPC hello is not a completed native provider attach. In particular,
+            // another waiter must not accept a transport whose attach just failed.
+            if (state.ProviderReady && state.ReaderTask is { IsCompleted: false } &&
+                state.Input is not null && state.Output is not null)
             {
                 return true;
             }
@@ -326,7 +366,8 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
                 out var environmentOverrides,
                 out var pathPrependEntries);
 
-            if (!await TryConnectExistingHostAsync(state, profile, workingDirectory, ct).ConfigureAwait(false))
+            var reconnected = await TryConnectExistingHostAsync(state, profile, workingDirectory, ct).ConfigureAwait(false);
+            if (!reconnected)
             {
                 if (!allowSpawn)
                 {
@@ -348,7 +389,9 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
                     if (!_launcher(
                             launch.FileName,
                             BuildIpcLaunchArguments(launch.Arguments, sessionId, _instanceIdentity.InstanceId, _instanceIdentity.OwnerToken),
-                            workingDirectory,
+                            // Bootstrap the trusted host independently of the selected workspace.
+                            // The provider receives its workspace through runtime.attach below.
+                            AppContext.BaseDirectory,
                             environmentOverrides,
                             pathPrependEntries,
                             settings.RunAsUser,
@@ -419,6 +462,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
                 CommandId = commandId, SessionId = sessionId, Type = "runtime.attach", AttachRuntime = request
             };
             AppServerControlHostCommandResultEnvelope attachResult;
+            bool newThread;
             for (var attempt = 0; ; attempt++)
             {
                 var request = CreateAttach();
@@ -435,6 +479,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
                     request.McpServer = _mcpServerFactory.Invoke(sessionId, state.HostPid);
                     if (request.McpServer is not null) request.McpServer.ScopeIdentity = prepared.McpScopeIdentity;
                 }
+                newThread = !reconnected && attachPoint is null && string.IsNullOrWhiteSpace(request.ResumeThreadId);
                 try
                 {
                     attachResult = await SendCommandAsync(state, id => AttachCommand(id, request), ct).ConfigureAwait(false);
@@ -449,16 +494,35 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
                     throw new InvalidOperationException("TLBX_MCP_SCOPE_CHANGED: The canonical runtime changed again during MCP registration.");
             }
 
-            state.Status = attachResult.Status == "accepted" ? HostRuntimeStatus.Ready : HostRuntimeStatus.Error;
+            if (attachResult.Status == "accepted")
+            {
+                state.LastAttachError = null;
+                await RefreshCachedHistoryWindowAsync(state, ct).ConfigureAwait(false);
+                if (newThread)
+                    await RestorePreferencesAsync(state, profile, _settingsService.ReadAppServerControlProviderPreferences(profile), ct).ConfigureAwait(false);
+                else if (session.AppServerControlOnly)
+                    await RestoreSessionPermissionAsync(state, profile, ct).ConfigureAwait(false);
+            }
+            state.ProviderReady = attachResult.Status == "accepted";
+            state.Status = state.ProviderReady ? HostRuntimeStatus.Ready : HostRuntimeStatus.Error;
             state.LastError = attachResult.Status == "accepted" ? null : attachResult.Message;
             if (attachResult.Status == "accepted")
             {
                 state.TransportKey = attachPoint?.TransportKind ?? "mtagenthost-ipc";
                 state.TransportLabel = DescribeTransportLabel(_mode, profile, attachPoint);
-                await RefreshCachedHistoryWindowAsync(state, ct).ConfigureAwait(false);
                 _ownershipRegistry.Upsert(sessionId, state.HostPid, profile, workingDirectory);
             }
-            return attachResult.Status == "accepted";
+            return state.ProviderReady;
+        }
+        catch (Exception ex)
+        {
+            // Keep cleanup and the failure visible under the same gate as attach.
+            // Removing the state after releasing the gate lets a concurrent caller
+            // mistake the failed pipe for a ready provider, or retain an orphan state.
+            await RecordAttachFailureUnderGateAsync(state, profile, ex.Message).ConfigureAwait(false);
+            Log.Warn(() => $"App Server Controller host attach failed for {sessionId}. {ex.Message}");
+            if (ex is OperationCanceledException && ct.IsCancellationRequested) throw;
+            return false;
         }
         finally
         {
@@ -559,7 +623,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         }
     }
 
-    public async Task SendComposerTurnAsync(
+    public async Task<AppServerControlTurnStartResponse> SendComposerTurnAsync(
         string sessionId,
         AppServerControlTurnRequest request,
         CancellationToken ct = default)
@@ -586,7 +650,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
                 throw new InvalidOperationException("Active Agent Controller turn has no steering identity.");
             }
 
-            await SendCommandAsync(state, id => new AppServerControlHostCommandEnvelope
+            var sent = await SendCommandAsync(state, id => new AppServerControlHostCommandEnvelope
             {
                 CommandId = id,
                 SessionId = sessionId,
@@ -600,6 +664,13 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
                 } : null
             }, ct).ConfigureAwait(false);
             state.Status = HostRuntimeStatus.Running;
+            return sent.TurnStarted ?? new AppServerControlTurnStartResponse
+            {
+                SessionId = sessionId, Provider = state.Profile ?? string.Empty,
+                ThreadId = current.HistoryWindow!.Thread.ThreadId ?? string.Empty,
+                TurnId = sent.Accepted?.TurnId ?? turn.TurnId,
+                QuickSettings = current.HistoryWindow.QuickSettings
+            };
         }
         finally
         {
@@ -653,9 +724,97 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
             {
                 CommandId = commandId, SessionId = sessionId, Type = "runtime.configure", Configure = request
             }, ct).ConfigureAwait(false);
-            return result.Configured ?? throw new InvalidOperationException("Runtime did not acknowledge configuration.");
+            var configured = result.Configured ?? throw new InvalidOperationException("Runtime did not acknowledge configuration.");
+            if (state.Profile is { } provider)
+                RememberProviderPreferences(provider, request, configured);
+            if (configured.ThreadStatus is "applied" or "acknowledged" &&
+                request.Settings.ContainsKey("permissionMode") && !configured.UnconfirmedFields.Contains("permissionMode"))
+            {
+                _sessionControlState?.SetAppServerControlResumePermission(sessionId, null);
+            }
+            return configured;
         }
         finally { state.Gate.Release(); }
+    }
+
+    private async Task RestoreSessionPermissionAsync(HostRuntimeState state, string profile, CancellationToken ct)
+    {
+        var snapshot = _sessionControlState?.GetAppServerControlResumePermission(state.SessionId);
+        if (snapshot is null || snapshot.ThreadId != state.CachedHistoryWindow?.Thread.ThreadId ||
+            AppServerControlQuickSettings.NormalizePermissionMode(snapshot.Mode) != snapshot.Mode)
+            return;
+
+        if (state.CachedHistoryWindow!.QuickSettings.PermissionMode != snapshot.Mode)
+        {
+            await RestorePreferencesAsync(state, profile, new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                ["permissionMode"] = snapshot.Mode
+            }, ct).ConfigureAwait(false);
+        }
+
+        if (state.CachedHistoryWindow?.QuickSettings.PermissionMode == snapshot.Mode)
+            _sessionControlState?.SetAppServerControlResumePermission(state.SessionId, null);
+    }
+
+    private async Task RestorePreferencesAsync(HostRuntimeState state, string provider,
+        IReadOnlyDictionary<string, string?> preferences, CancellationToken ct)
+    {
+        var history = state.CachedHistoryWindow;
+        if (preferences.Count == 0 || history is null || string.IsNullOrWhiteSpace(history.Thread.ThreadId) || history.Thread.ThreadId == state.SessionId)
+            return;
+
+        var request = new AppServerControlConfigureRequest
+        {
+            ExpectedThreadId = history.Thread.ThreadId,
+            Settings = preferences.ToDictionary(pair => pair.Key,
+                pair => JsonSerializer.SerializeToElement(pair.Value, AppServerControlHostJsonContext.Default.String),
+                StringComparer.Ordinal)
+        };
+        try
+        {
+            await SendCommandAsync(state, id => new AppServerControlHostCommandEnvelope
+            {
+                CommandId = id, SessionId = state.SessionId, Type = "runtime.configure", Configure = request
+            }, ct).ConfigureAwait(false);
+            await RefreshCachedHistoryWindowAsync(state, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or TimeoutException)
+        {
+            Log.Warn(() => $"Could not restore Agent Controller preferences for {provider}: {ex.Message}");
+        }
+    }
+
+    private void RememberProviderPreferences(string provider, AppServerControlConfigureRequest request,
+        AppServerControlConfigureResponse response)
+    {
+        var settings = response.ThreadStatus switch
+        {
+            "applied" => response.EffectiveSettings,
+            "acknowledged" => response.ConfirmedSettings,
+            _ => null
+        };
+        if (settings is null) return;
+
+        var patch = new Dictionary<string, string?>(StringComparer.Ordinal);
+        foreach (var field in new[] { "model", "effort", "permissionMode" })
+        {
+            if (!request.Settings.ContainsKey(field) || response.UnconfirmedFields.Contains(field))
+                continue;
+            if (settings.TryGetValue(field, out var value) && value.ValueKind is JsonValueKind.String or JsonValueKind.Null)
+                patch[field] = value.GetString();
+            else if (field == "permissionMode" && provider == CodexMode &&
+                     settings.TryGetValue("approvalPolicy", out var approval) &&
+                     settings.TryGetValue("sandboxPolicy", out var sandbox) && sandbox.ValueKind == JsonValueKind.Object &&
+                     sandbox.TryGetProperty("type", out var type))
+            {
+                if (approval.GetString() == "never" && type.GetString() == "dangerFullAccess")
+                    patch[field] = "auto";
+                else if (approval.GetString() == "on-request" && type.GetString() == "workspaceWrite")
+                    patch[field] = "manual";
+            }
+        }
+        if (patch.Count > 0)
+            _settingsService.SaveAppServerControlProviderPreferences(provider, patch);
     }
 
     public async Task<AppServerControlCommandAcceptedResponse> SteerTurnAsync(
@@ -744,7 +903,8 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
                     ResolveRequest = new AppServerControlRequestResolutionCommand
                     {
                         RequestId = requestId,
-                        Decision = request.Decision
+                        Decision = request.Decision,
+                        OptionId = request.OptionId
                     }
                 },
                 ct).ConfigureAwait(false);
@@ -839,22 +999,34 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
 
     public async Task RecordAttachFailureAsync(string sessionId, string profile, string error, CancellationToken ct)
     {
-        await DetachAsync(sessionId, ct).ConfigureAwait(false);
-        _states.TryAdd(sessionId, new HostRuntimeState(sessionId)
+        var state = _states.GetOrAdd(sessionId, static id => new HostRuntimeState(id));
+        await state.Gate.WaitAsync(ct).ConfigureAwait(false);
+        try
         {
-            Profile = profile,
-            Status = HostRuntimeStatus.Error,
-            LastError = AppServerControlHistoryTextSanitizer.Sanitize(error)
-        });
+            await RecordAttachFailureUnderGateAsync(state, profile, error).ConfigureAwait(false);
+        }
+        finally
+        {
+            state.Gate.Release();
+        }
+    }
+
+    private async Task RecordAttachFailureUnderGateAsync(HostRuntimeState state, string profile, string error)
+    {
+        await DisposeOwnedStateAsync(state, terminateHost: true).ConfigureAwait(false);
+        state.Profile = profile;
+        state.Status = HostRuntimeStatus.Error;
+        state.LastAttachError = AppServerControlHistoryTextSanitizer.Sanitize(error);
+        state.LastError = state.LastAttachError;
     }
 
     public bool TryGetRuntimeSummary(string sessionId, out AppServerControlRuntimeSummary summary)
     {
         summary = default!;
         if (!_states.TryGetValue(sessionId, out var state) ||
-            state.Status == HostRuntimeStatus.None ||
-            state.Status == HostRuntimeStatus.Stopped ||
-            (state.Status != HostRuntimeStatus.Error && (state.Input is null || state.Output is null)))
+            (state.LastAttachError is null &&
+             (state.Status is HostRuntimeStatus.None or HostRuntimeStatus.Stopped ||
+              (state.Status != HostRuntimeStatus.Error && (state.Input is null || state.Output is null)))))
         {
             return false;
         }
@@ -868,7 +1040,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
             TransportLabel = state.TransportLabel,
             Status = ToStatusValue(state.Status),
             StatusLabel = ToStatusLabel(state.Status),
-            LastError = state.LastError ?? cachedHistory?.Session.LastError,
+            LastError = state.LastAttachError ?? state.LastError ?? cachedHistory?.Session.LastError,
             LastEventAt = cachedHistory?.Session.LastEventAt,
             AssistantText = cachedHistory?.Streams.AssistantText,
             UnifiedDiff = cachedHistory?.Streams.UnifiedDiff,
@@ -882,17 +1054,36 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
     {
         if (_states.TryGetValue(sessionId, out var state))
         {
-            return state.CachedHistoryWindow?.HistoryCount > 0 || OwnsSession(sessionId);
+            return (state.ProviderReady && state.CachedHistoryWindow?.HistoryCount > 0) || OwnsSession(sessionId);
         }
 
         return _ownershipRegistry.GetSessions().Any(record => string.Equals(record.SessionId, sessionId, StringComparison.Ordinal)) ||
                AppServerControlHostEndpointDiscovery.FindEndpointPid(_instanceIdentity.InstanceId, sessionId).HasValue;
     }
 
+    public DateTimeOffset? GetLastActivityAt(string sessionId)
+    {
+        if (!_states.TryGetValue(sessionId, out var state) || !state.ProviderReady) return null;
+        lock (state.HistoryCacheSync) return state.CachedHistoryWindow?.Session.LastActivityAt;
+    }
+
+    internal (string? ThreadId, string? PermissionMode) GetProviderResumeStateForUpdate(string sessionId)
+    {
+        if (_states.TryGetValue(sessionId, out var state) && state.ProviderReady &&
+            state.CachedHistoryWindow is { } history &&
+            !string.IsNullOrWhiteSpace(history.Thread.ThreadId) && history.Thread.ThreadId != sessionId)
+        {
+            return (history.Thread.ThreadId, history.QuickSettings.PermissionMode);
+        }
+
+        var pending = _sessionControlState?.GetAppServerControlResumePermission(sessionId);
+        return (pending?.ThreadId, pending?.Mode);
+    }
+
     public bool TryGetCachedHistoryWindow(string sessionId, out AppServerControlHistoryWindowResponse historyWindow)
     {
         historyWindow = default!;
-        if (!_states.TryGetValue(sessionId, out var state))
+        if (!_states.TryGetValue(sessionId, out var state) || !state.ProviderReady)
         {
             return false;
         }
@@ -908,17 +1099,20 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         int? startIndex = null,
         int? count = null,
         int? viewportWidth = null,
+        bool updateCache = true,
         CancellationToken ct = default)
     {
         var state = GetRequiredState(sessionId);
-        var result = await ReadHostStateAsync(sessionId, "history.window.get", new()
+        long generation;
+        lock (state.HistoryCacheSync) generation = state.ConversationGeneration;
+        var result = await ReadHostStateAsync(sessionId, "history.window.binary.get", new()
         {
             StartIndex = startIndex, Count = count, ViewportWidth = viewportWidth
         }, ct).ConfigureAwait(false);
-        if (result.HistoryWindow is { } window)
+        if (updateCache && result.HistoryWindow is { } window)
         {
             RegisterHistoryPaths(_pathAllowlist, sessionId, window.History);
-            UpdateCachedHistoryWindow(state, window);
+            UpdateCachedHistoryWindow(state, window, generation);
         }
         // The response is owned by this read; only the runtime cache needs a copy.
         return result.HistoryWindow;
@@ -943,7 +1137,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
             AppServerControlHostJsonContext.Default.AppServerControlHostHello)
             ?? throw new InvalidOperationException("Agent Controller host hello was empty.");
         ValidateHello(hello);
-        if (!hello.Capabilities.Contains(type == "usage.read" ? "usage.read" : "history.window.read", StringComparer.Ordinal))
+        if (!hello.Capabilities.Contains(type == "usage.read" ? "usage.read" : "history.window.binary.read", StringComparer.Ordinal))
             throw new InvalidOperationException("Update mtagenthost to enable this independent session read.");
         var command = new AppServerControlHostCommandEnvelope
         {
@@ -960,7 +1154,24 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         var payload = JsonSerializer.Serialize(command, AppServerControlHostJsonContext.Default.AppServerControlHostCommandEnvelope);
         await connection.Writer.WriteLineAsync(payload.AsMemory(), ct).ConfigureAwait(false);
         await connection.Writer.FlushAsync(ct).ConfigureAwait(false);
-        var result = JsonSerializer.Deserialize(await ReadLineWithTimeoutAsync(connection.Reader, ct).ConfigureAwait(false),
+        AppServerControlHostCommandResultEnvelope result;
+        if (type == "history.window.binary.get")
+        {
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeout.CancelAfter(TimeSpan.FromSeconds(15));
+            var header = new byte[4];
+            await connection.Writer.BaseStream.ReadExactlyAsync(header, timeout.Token).ConfigureAwait(false);
+            var length = System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(header);
+            if (length is < 4 or > 64 * 1024 * 1024) throw new InvalidDataException("Invalid native history frame length.");
+            var bytes = System.Buffers.ArrayPool<byte>.Shared.Rent(length);
+            try
+            {
+                await connection.Writer.BaseStream.ReadExactlyAsync(bytes.AsMemory(0, length), timeout.Token).ConfigureAwait(false);
+                result = NativeHistoryCodec.Decode(bytes.AsSpan(0, length), AppServerControlHostJsonContext.Default.AppServerControlHostCommandResultEnvelope);
+            }
+            finally { System.Buffers.ArrayPool<byte>.Shared.Return(bytes, clearArray: true); }
+        }
+        else result = JsonSerializer.Deserialize(await ReadLineWithTimeoutAsync(connection.Reader, ct).ConfigureAwait(false),
             AppServerControlHostJsonContext.Default.AppServerControlHostCommandResultEnvelope)
             ?? throw new InvalidOperationException("Agent Controller read response was empty.");
         if (result.CommandId != command.CommandId || result.SessionId != sessionId || result.Status != "accepted")
@@ -1414,8 +1625,9 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         RefreshRuntimeStatusFromHistory(state);
     }
 
-    private static void ApplyHistoryPatchToState(HostRuntimeState state, AppServerControlHistoryPatch patch)
+    private void ApplyHistoryPatchToState(HostRuntimeState state, AppServerControlHistoryPatch patch)
     {
+        var notifyActivity = false;
         lock (state.HistoryCacheSync)
         {
             if (state.CachedHistoryWindow is not null &&
@@ -1424,16 +1636,27 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
                 return;
             }
 
+            var previousActivity = state.CachedHistoryWindow?.Session.LastActivityAt;
             state.CachedHistoryWindow = ApplyCachedHistoryPatch(state.CachedHistoryWindow, patch);
+            if (patch.Session.LastActivityAt is { } activityAt &&
+                (previousActivity is null || activityAt > previousActivity) &&
+                (state.LastActivityNotificationAt is not { } last || activityAt - last >= TimeSpan.FromMilliseconds(250)))
+            {
+                state.LastActivityNotificationAt = activityAt;
+                notifyActivity = true;
+            }
             RefreshRuntimeStatusFromHistory(state);
         }
+        if (notifyActivity) TextActivity?.Invoke(state.SessionId);
         FanOutHistoryPatch(state, patch);
     }
 
-    private static void UpdateCachedHistoryWindow(HostRuntimeState state, AppServerControlHistoryWindowResponse historyWindow)
+    private static void UpdateCachedHistoryWindow(HostRuntimeState state, AppServerControlHistoryWindowResponse historyWindow, long? expectedGeneration = null)
     {
         lock (state.HistoryCacheSync)
         {
+            if (expectedGeneration is { } generation && state.ConversationGeneration != generation)
+                throw new InvalidOperationException("The conversation changed while loading history.");
             state.CachedHistoryWindow = AcceptCachedHistoryWindow(state.CachedHistoryWindow, historyWindow);
             RefreshRuntimeStatusFromHistory(state);
         }
@@ -1452,6 +1675,27 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         AppServerControlHistoryWindowResponse? current, AppServerControlHistoryPatch patch)
     {
         if (current is not null && patch.LatestSequence < current.LatestSequence) return current;
+        var mergedSession = CloneSessionSummary(patch.Session);
+        if (mergedSession.AvailableCommandsOmitted && current is not null)
+        {
+            mergedSession.AvailableCommands = AppServerControlCommand.CloneMany(current.Session.AvailableCommands);
+            mergedSession.AvailableCommandsOmitted = false;
+        }
+
+        var mergedQuickSettings = CloneQuickSettings(patch.QuickSettings);
+        if (mergedQuickSettings.OptionsOmitted && current is not null)
+        {
+            mergedQuickSettings.ModelOptions = AppServerControlQuickSettings.CloneOptions(current.QuickSettings.ModelOptions);
+            mergedQuickSettings.EffortOptions = AppServerControlQuickSettings.CloneOptions(current.QuickSettings.EffortOptions);
+            mergedQuickSettings.ConfigOptions = AppServerControlQuickSettings.CloneConfigOptions(current.QuickSettings.ConfigOptions);
+            mergedQuickSettings.OptionsOmitted = false;
+        }
+
+        var mergedStreams = patch.Streams.StreamsOmitted && current is not null
+            ? CloneStreams(current.Streams)
+            : CloneStreams(patch.Streams);
+        mergedStreams.StreamsOmitted = false;
+
         var next = new AppServerControlHistoryWindowResponse
         {
             SessionId = patch.SessionId,
@@ -1460,11 +1704,11 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
             LatestSequence = patch.LatestSequence,
             HistoryCount = Math.Max(0, patch.HistoryCount),
             HistoryWindowStart = current?.HistoryWindowStart ?? 0,
-            Session = CloneSessionSummary(patch.Session),
+            Session = mergedSession,
             Thread = CloneThreadSummary(patch.Thread),
             CurrentTurn = CloneTurnSummary(patch.CurrentTurn),
-            QuickSettings = CloneQuickSettings(patch.QuickSettings),
-            Streams = CloneStreams(patch.Streams),
+            QuickSettings = mergedQuickSettings,
+            Streams = mergedStreams,
             History = MergeCachedHistory(current, patch)
         };
         next.HistoryWindowStart = Math.Clamp(next.HistoryWindowStart, 0, next.HistoryCount);
@@ -1488,10 +1732,29 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         {
             if (retainedIds.Contains(entry.EntryId)) upserts[entry.EntryId] = entry;
         }
+        var textDeltas = new Dictionary<string, AppServerControlHistoryTextDelta>(StringComparer.Ordinal);
+        foreach (var td in patch.HistoryTextDeltas)
+        {
+            if (retainedIds.Contains(td.EntryId)) textDeltas[td.EntryId] = td;
+        }
         // Only the fetched kernel belongs to this cache. Off-window live history stays in the fanout.
         return current.History
             .Where(entry => !removals.Contains(entry.EntryId) || upserts.ContainsKey(entry.EntryId))
-            .Select(entry => CloneHistoryEntry(upserts.GetValueOrDefault(entry.EntryId) ?? entry))
+            .Select(entry =>
+            {
+                var cloned = CloneHistoryEntry(upserts.GetValueOrDefault(entry.EntryId) ?? entry);
+                if (textDeltas.TryGetValue(cloned.EntryId, out var td) &&
+                    cloned.Body.Length == td.ExpectedBaseLength)
+                {
+                    cloned.Body += td.AppendBody;
+                    cloned.Status = td.Status;
+                    cloned.Streaming = td.Streaming;
+                    cloned.UpdatedAt = td.UpdatedAt;
+                    if (!string.IsNullOrWhiteSpace(td.Title)) cloned.Title = td.Title;
+                    if (!string.IsNullOrWhiteSpace(td.ItemType)) cloned.ItemType = td.ItemType;
+                }
+                return cloned;
+            })
             .OrderBy(entry => entry.Order).ToList();
     }
 
@@ -1643,6 +1906,21 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
             QuickSettings = CloneQuickSettings(source.QuickSettings),
             Streams = CloneStreams(source.Streams),
             HistoryUpserts = source.HistoryUpserts.Select(CloneHistoryEntry).ToList(),
+            HistoryTextDeltas = source.HistoryTextDeltas.Select(static td => new AppServerControlHistoryTextDelta
+            {
+                EntryId = td.EntryId,
+                Order = td.Order,
+                Kind = td.Kind,
+                TurnId = td.TurnId,
+                ItemId = td.ItemId,
+                Status = td.Status,
+                ItemType = td.ItemType,
+                Title = td.Title,
+                ExpectedBaseLength = td.ExpectedBaseLength,
+                AppendBody = td.AppendBody,
+                Streaming = td.Streaming,
+                UpdatedAt = td.UpdatedAt
+            }).ToList(),
             HistoryRemovals = [.. source.HistoryRemovals],
             ItemUpserts = source.ItemUpserts.Select(CloneItemSummary).ToList(),
             ItemRemovals = [.. source.ItemRemovals],
@@ -1706,6 +1984,9 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
             KindLabel = source.KindLabel,
             State = source.State,
             Detail = source.Detail,
+            ApprovalPurpose = source.ApprovalPurpose,
+            ApprovalTool = source.ApprovalTool,
+            PermissionOptions = source.PermissionOptions,
             Decision = source.Decision,
             Questions = source.Questions.Select(CloneQuestion).ToList(),
             Answers = source.Answers.Select(CloneAnsweredQuestion).ToList(),
@@ -1732,10 +2013,12 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
             AgentName = source.AgentName,
             Usage = source.Usage?.Clone(),
             AvailableCommands = AppServerControlCommand.CloneMany(source.AvailableCommands),
+            AvailableCommandsOmitted = source.AvailableCommandsOmitted,
             State = source.State,
             StateLabel = source.StateLabel,
             Reason = source.Reason,
             LastError = source.LastError,
+            LastActivityAt = source.LastActivityAt,
             LastEventAt = source.LastEventAt
         };
     }
@@ -1777,7 +2060,8 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
             ModelOptions = AppServerControlQuickSettings.CloneOptions(source.ModelOptions),
             EffortOptions = AppServerControlQuickSettings.CloneOptions(source.EffortOptions),
             AcknowledgedFields = [.. source.AcknowledgedFields],
-            ConfigOptions = AppServerControlQuickSettings.CloneConfigOptions(source.ConfigOptions)
+            ConfigOptions = AppServerControlQuickSettings.CloneConfigOptions(source.ConfigOptions),
+            OptionsOmitted = source.OptionsOmitted
         };
     }
 
@@ -1791,7 +2075,8 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
             PlanText = source.PlanText,
             CommandOutput = source.CommandOutput,
             FileChangeOutput = source.FileChangeOutput,
-            UnifiedDiff = source.UnifiedDiff
+            UnifiedDiff = source.UnifiedDiff,
+            StreamsOmitted = source.StreamsOmitted
         };
     }
 
@@ -2246,6 +2531,11 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
             throw new InvalidOperationException($"App Server Controller host runtime is not attached: missing state for {sessionId}.");
         }
 
+        if (!state.ProviderReady)
+        {
+            throw new InvalidOperationException(state.LastAttachError ?? state.LastError ?? "Agent Controller native provider is still initializing.");
+        }
+
         if (state.Input is null)
         {
             throw new InvalidOperationException(
@@ -2323,6 +2613,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
 
     private static async Task DisposeStateAsync(HostRuntimeState state, bool terminateHost)
     {
+        state.ProviderReady = false;
         foreach (var pending in state.PendingCommands.Values)
         {
             pending.TrySetException(new InvalidOperationException("App Server Controller host runtime is shutting down."));
@@ -2330,7 +2621,11 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
 
         state.PendingCommands.Clear();
         CompleteHistorySubscribers(state);
-        state.CachedHistoryWindow = null;
+        lock (state.HistoryCacheSync)
+        {
+            state.ConversationGeneration++;
+            state.CachedHistoryWindow = null;
+        }
 
         try
         {
@@ -2415,6 +2710,8 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
             SessionId = sessionId;
         }
 
+        private volatile bool _providerReady;
+        public bool ProviderReady { get => _providerReady; set => _providerReady = value; }
         public string SessionId { get; }
         public SemaphoreSlim Gate { get; } = new(1, 1);
         public ConcurrentDictionary<string, TaskCompletionSource<AppServerControlHostCommandResultEnvelope>> PendingCommands { get; } = new(StringComparer.Ordinal);
@@ -2423,6 +2720,8 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         public string TransportKey { get; set; } = string.Empty;
         public string TransportLabel { get; set; } = string.Empty;
         public string? LastError { get; set; }
+        // Keep the last rejected attach reason while a queued retry is initializing.
+        public string? LastAttachError { get; set; }
         public HostRuntimeStatus Status { get; set; }
         public int HostPid { get; set; }
         public string? McpScopeIdentity { get; set; }
@@ -2435,8 +2734,10 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         public Task? ReaderTask { get; set; }
         public Task? ErrorTask { get; set; }
         public Lock HistoryCacheSync { get; } = new();
+        public long ConversationGeneration { get; set; }
         public AppServerControlHistoryWindowResponse? CachedHistoryWindow { get; set; }
         public Lock HistorySubscribersSync { get; } = new();
+        public DateTimeOffset? LastActivityNotificationAt { get; set; }
         public List<AppServerControlHistoryPatchSubscriber> HistoryPatchSubscribers { get; } = [];
 
         public void AttachOwnedConnection(HostTransportConnection connection)
@@ -2456,6 +2757,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
 
         public void DisposeConnection()
         {
+            ProviderReady = false;
             var connection = Connection;
             Connection = null;
             Input = null;

@@ -379,4 +379,70 @@ describe('canonical history patch summary arrays', () => {
     expect(state.snapshot!.thread.goal!.goal).toBeNull();
     expect(state.snapshot!.quickSettings.acknowledgedFields).toEqual(['permissionMode']);
   });
+
+  it('applies historyTextDeltas incrementally and preserves omitted commands, options, and streams', () => {
+    const state = createState();
+    const snapshot = state.snapshot!;
+    snapshot.session.availableCommands = [{ name: 'plan', description: 'Plan work' }];
+    snapshot.quickSettings.modelOptions = [{ value: 'model-a', label: 'Model A' }];
+    snapshot.streams.reasoningText = 'retained reasoning';
+    const entry = snapshot.history[0]!;
+    entry.body = 'Hello';
+
+    const delta = createDelta(snapshot);
+    delta.session = { ...snapshot.session, availableCommands: [], availableCommandsOmitted: true };
+    delta.quickSettings = {
+      ...snapshot.quickSettings,
+      modelOptions: [],
+      effortOptions: [],
+      configOptions: [],
+      optionsOmitted: true,
+    };
+    delta.streams = {
+      assistantText: '',
+      reasoningText: '',
+      reasoningSummaryText: '',
+      planText: '',
+      commandOutput: '',
+      fileChangeOutput: '',
+      unifiedDiff: '',
+      streamsOmitted: true,
+    };
+    delta.historyTextDeltas = [
+      {
+        entryId: entry.entryId,
+        order: entry.order,
+        kind: entry.kind,
+        status: 'streaming',
+        expectedBaseLength: 5,
+        appendBody: ' world',
+        streaming: true,
+        updatedAt: later,
+      },
+    ];
+
+    const needsRefresh = applyCanonicalAppServerControlDelta(state, delta);
+    expect(needsRefresh).toBe(false);
+    expect(snapshot.history[0]!.body).toBe('Hello world');
+    expect(snapshot.session.availableCommands).toEqual([
+      { name: 'plan', description: 'Plan work' },
+    ]);
+    expect(snapshot.quickSettings.modelOptions).toEqual([{ value: 'model-a', label: 'Model A' }]);
+    expect(snapshot.streams.reasoningText).toBe('retained reasoning');
+
+    const mismatch = createDelta(snapshot);
+    mismatch.historyTextDeltas = [
+      {
+        entryId: entry.entryId,
+        order: entry.order,
+        kind: entry.kind,
+        status: 'streaming',
+        expectedBaseLength: 999,
+        appendBody: '!',
+        streaming: true,
+        updatedAt: later,
+      },
+    ];
+    expect(applyCanonicalAppServerControlDelta(state, mismatch)).toBe(true);
+  });
 });

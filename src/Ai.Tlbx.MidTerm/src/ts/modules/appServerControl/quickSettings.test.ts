@@ -680,6 +680,30 @@ describe('runtime quick-settings acknowledgements', () => {
     });
     expect(getAppServerControlQuickSettingsDraft(id).model).toBeNull();
   });
+  it('switches Antigravity permissions using provider readback and leaves prompt mode to agy', async () => {
+    removeAppServerControlQuickSettingsSessionState(id);
+    seed('antigravity', false);
+    for (const permissionMode of ['auto', 'manual']) {
+      api.mockResolvedValueOnce(receipt({
+        turnId: null,
+        turnStatus: 'notRequested',
+        threadScope: 'subsequentResponses',
+        effectiveSettings: { permissionMode, planMode: 'off' },
+      }));
+      await configureAppServerControlQuickSettings(id, { permissionMode });
+      expect(api).toHaveBeenLastCalledWith(id, {
+        expectedThreadId: 'thread-A',
+        expectedTurnId: null,
+        settings: { permissionMode },
+      });
+      expect(getAppServerControlQuickSettingsEffective(id).permissionMode).toBe(permissionMode);
+      expect(getAppServerControlQuickSettingsDraft(id).permissionMode).toBe(permissionMode);
+    }
+    const turn = createAppServerControlTurnRequestWithQuickSettings(id, 'next prompt');
+    expect(turn).not.toHaveProperty('permissionMode');
+    expect(turn).not.toHaveProperty('planMode');
+  });
+
   it('restores Claude acknowledged defaults after reload without inventing effective inference settings', () => {
     seed('claude');
     const before = getAppServerControlQuickSettingsEffective(id);

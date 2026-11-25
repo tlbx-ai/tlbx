@@ -8,8 +8,11 @@ import {
   finalizeToolGroup,
 } from './chat';
 import { processToolRequest } from './voiceTools';
+import { createLogger } from './logging';
 import { $voiceAvailable } from '../stores';
 import type { VoiceToolName } from '../types';
+
+const log = createLogger('voice');
 
 let ws: WebSocket | null = null;
 let starting = false;
@@ -280,6 +283,11 @@ export function bindVoiceEvents(): void {
 }
 
 export async function initVoiceControls(): Promise<void> {
-  await refreshVoiceAvailability();
-  await populateMicDropdownPassive();
+  try {
+    await refreshVoiceAvailability();
+    await populateMicDropdownPassive();
+  } catch (error) {
+    log.warn(() => `Voice controls initialization failed: ${String(error)}`);
+    setVoiceStatus('Voice controls unavailable');
+  }
 }

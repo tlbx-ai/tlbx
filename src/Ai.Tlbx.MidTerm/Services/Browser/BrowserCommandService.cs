@@ -30,6 +30,36 @@ public sealed class BrowserCommandService
 
     public int ConnectedClientCount => _clients.Count;
 
+    internal async Task<BrowserWsResult> FlushStorageBeforeTargetChangeAsync(
+        string sessionId, string? previewName, CancellationToken cancellationToken)
+    {
+        var status = GetStatus(_webPreviewService?.GetPreviewSession(sessionId, previewName)?.Url,
+            sessionId, previewName);
+        if (!status.Connected) return new BrowserWsResult { Success = true };
+        // A claim can invalidate an old attachment's ownership generation before
+        // the replacement document attaches. Only a currently authorized bridge
+        // may be asked to flush; explicit claims flush before that invalidation.
+        if (status.DefaultClient is null)
+            return status.StatusMessage?.StartsWith("Multiple", StringComparison.Ordinal) == true
+                ? new BrowserWsResult { Error = status.StatusMessage }
+                : new BrowserWsResult { Success = true };
+        return await ExecuteCommandAsync(new BrowserCommandRequest
+        {
+            Command = "flushstorage", SessionId = sessionId, PreviewName = previewName,
+            PreviewId = status.DefaultClient.PreviewId, Timeout = 7
+        }, cancellationToken).ConfigureAwait(false);
+    }
+
+    internal void AttachStorageForCurrentClient(string connectionId, WebPreview.WebPreviewStorageService? storage, string? token)
+    {
+        if (storage is null || token is null) return;
+        lock (_clientGate)
+        {
+            if (_clients.TryGetValue(connectionId, out var client))
+                storage.Attach(token, client.PreviewId, client.BrowserId);
+        }
+    }
+
     public bool TryRegisterClient(
         string connectionId,
         string? sessionId,
@@ -41,7 +71,11 @@ public sealed class BrowserCommandService
         bool hasFocus = false,
         bool isTopLevel = false,
         long? targetRevision = null,
-        long? ownershipGeneration = null)
+        long? ownershipGeneration = null,
+        bool? panelVisible = null,
+        bool? documentVisible = null,
+        string? documentVisibilityState = null,
+        string? documentId = null)
     {
         var replacedConnectionIds = Array.Empty<string>();
         lock (_clientGate)
@@ -66,11 +100,15 @@ public sealed class BrowserCommandService
                 PreviewName = string.IsNullOrWhiteSpace(previewName) ? null : previewName,
                 PreviewId = string.IsNullOrWhiteSpace(previewId) ? null : previewId,
                 BrowserId = string.IsNullOrWhiteSpace(browserId) ? null : browserId,
-                IsVisible = isVisible,
+                IsVisible = EffectiveVisibility(isVisible, panelVisible, ResolveDocumentVisible(documentVisible, documentVisibilityState)),
+                IsPanelVisible = panelVisible,
+                IsDocumentVisible = ResolveDocumentVisible(documentVisible, documentVisibilityState),
+                DocumentVisibilityState = documentVisibilityState,
                 HasFocus = hasFocus,
                 IsTopLevel = isTopLevel,
                 TargetRevision = targetRevision,
                 OwnershipGeneration = ownershipGeneration,
+                DocumentId = documentId is { Length: > 0 and <= 64 } ? documentId : null,
                 Listener = listener,
                 ConnectedAtUtc = DateTimeOffset.UtcNow
             };
@@ -138,7 +176,6 @@ public sealed class BrowserCommandService
         for (var i = 0; i < request.Commands.Count; i++)
         {
             var command = request.Commands[i];
-            var stepStartedAt = DateTimeOffset.UtcNow;
             var stepClock = System.Diagnostics.Stopwatch.StartNew();
             BrowserWsResult step;
             if ((_previewOwnerService is not null && !_previewOwnerService.IsCurrent(request.SessionId, request.PreviewName, owner, generation ?? 0))
@@ -153,23 +190,12 @@ public sealed class BrowserCommandService
                     deadline.Token.ThrowIfCancellationRequested();
                     step = await ExecuteCommandAsync(new BrowserCommandRequest
                     {
-                        Command = command.Command, Selector = command.Selector, Value = command.Value,
+                        Command = command.Command, Selector = command.Selector, Frame = command.Frame, Value = command.Value,
                         MaxDepth = command.MaxDepth, TextOnly = command.TextOnly, Timeout = command.Timeout,
                         DeltaX = command.DeltaX, DeltaY = command.DeltaY, Steps = command.Steps, FullPage = command.FullPage,
-                        SessionId = request.SessionId, PreviewName = request.PreviewName
+                        SessionId = request.SessionId, PreviewName = request.PreviewName,
+                        WaitForNavigation = command.WaitForNavigation
                     }, deadline.Token).ConfigureAwait(false);
-                    if (step.Success && (command.WaitForNavigation || command.Command is "navigate" or "reload"))
-                    {
-                        var status = await WaitForControllableAsync(
-                            _webPreviewService?.GetPreviewSession(request.SessionId, request.PreviewName)?.Url,
-                            request.SessionId, request.PreviewName,
-                            timeout: TimeSpan.FromSeconds(command.Timeout ?? 15),
-                            requireClientConnectedAfterUtc: stepStartedAt,
-                            cancellationToken: deadline.Token,
-                            requiredTargetRevision: revision).ConfigureAwait(false);
-                        if (!status.Controllable)
-                            step = new BrowserWsResult { Error = "Navigation was dispatched, but the new document did not become controllable. Remaining steps were not run; do not replay the action." };
-                    }
                 }
                 catch (OperationCanceledException) when (!ct.IsCancellationRequested)
                 {
@@ -179,7 +205,7 @@ public sealed class BrowserCommandService
             result.Results.Add(new BrowserBatchStepResult
             {
                 Index = i, Command = command.Command, Success = step.Success, Result = step.Result,
-                Error = step.Error, MatchCount = step.MatchCount, DurationMs = stepClock.Elapsed.TotalMilliseconds
+                Error = step.Error, MatchCount = step.MatchCount, Capture = step.Capture, DurationMs = stepClock.Elapsed.TotalMilliseconds
             });
             if (!step.Success)
             {
@@ -200,6 +226,9 @@ public sealed class BrowserCommandService
         BrowserClient? expectedClient = null,
         long? expectedGeneration = null)
     {
+        if (request.Frame is not null && (string.IsNullOrWhiteSpace(request.Frame) || request.WaitForNavigation
+            || request.Timeout > 15 || request.Command is not ("query" or "exec" or "attrs" or "css" or "click" or "fill")))
+            return new BrowserWsResult { Error = "A cooperative frame supports query/exec/attrs/css/click/fill only, with no navigation wait and at most a 15-second deadline." };
         var (client, error) = await ResolveClientWithAttachGraceAsync(request, deadline, ct).ConfigureAwait(false);
         if (client is null)
         {
@@ -230,7 +259,7 @@ public sealed class BrowserCommandService
         {
             Id = id,
             Command = request.Command,
-            Selector = request.Selector,
+            Selector = request.Selector, Frame = request.Frame,
             Value = request.Value,
             MaxDepth = request.MaxDepth,
             TextOnly = request.TextOnly,
@@ -275,6 +304,13 @@ public sealed class BrowserCommandService
                     && !_previewOwnerService.IsCurrent(client.SessionId, client.PreviewName, client.BrowserId, generation))
                 || !IsCurrentTarget(client))
                 return new BrowserWsResult { Error = "Preview ownership or target changed while the command was in flight. Its outcome is unknown; inspect the current preview before retrying an action." };
+            if ((request.Command is "navigate" or "reload" || request.WaitForNavigation)
+                && (result.Success || result.Error == BridgeDisconnectedError))
+            {
+                var settled = await WaitForNavigationAsync(request, client, generation, result, cts.Token).ConfigureAwait(false);
+                BrowserLog.Result(request.Command, settled.Success, settled.Result ?? settled.Error ?? "");
+                return settled;
+            }
             // Waiting for a selector is read-only. A document navigation can close its
             // bridge after dispatch; continue on the same owner/target within one deadline.
             // Never retry a dispatched action or arbitrary JavaScript.
@@ -290,7 +326,9 @@ public sealed class BrowserCommandService
             return new BrowserWsResult
             {
                 Success = false,
-                Error = request.Command == "wait" && request.Value is "attached" or "visible" or "hidden" or "detached"
+                Error = request.Command is "navigate" or "reload" || request.WaitForNavigation
+                    ? "Navigation was dispatched, but the expected document did not become ready before the deadline. Its outcome is unknown; inspect state before retrying. The mutation was not repeated."
+                    : request.Command == "wait" && request.Value is "attached" or "visible" or "hidden" or "detached"
                     ? string.Create(CultureInfo.InvariantCulture, $"Command timed out after {timeoutSeconds} seconds, waiting for {request.Value}: {request.Selector}")
                     : string.Create(CultureInfo.InvariantCulture, $"Command timed out after {timeoutSeconds} seconds.")
             };
@@ -302,15 +340,95 @@ public sealed class BrowserCommandService
         }
     }
 
+    private async Task<BrowserWsResult> WaitForNavigationAsync(BrowserCommandRequest request,
+        BrowserClient previous, long generation, BrowserWsResult acknowledgement, CancellationToken ct)
+    {
+        // The mutation was dispatched exactly once. Only readiness reads may be
+        // retried across document detach/attach. Socket reconnect alone is no proof.
+        var allowSameDocument = acknowledgement.Success && request.Command != "reload"
+            && (request.Command != "navigate" || acknowledgement.NavigationKind is "same-document" or "same-document-current");
+        while (true)
+        {
+            ct.ThrowIfCancellationRequested();
+            var changed = Volatile.Read(ref _clientChanged).Task;
+            if ((_previewOwnerService is not null
+                    && !_previewOwnerService.IsCurrent(previous.SessionId, previous.PreviewName, previous.BrowserId, generation))
+                || !IsCurrentTarget(previous))
+                return new BrowserWsResult { Error = "Preview ownership or target changed after navigation dispatch. Inspect state; the mutation was not repeated." };
+
+            if (TryResolveClient(new BrowserCommandRequest
+            {
+                Command = "ready", SessionId = previous.SessionId, PreviewName = previous.PreviewName,
+                PreviewId = request.PreviewId
+            }, out var candidate, out _)
+                && candidate.BrowserId == previous.BrowserId && candidate.TargetRevision == previous.TargetRevision)
+            {
+                var nextDocument = candidate.DocumentId is not null && candidate.DocumentId != previous.DocumentId
+                    && candidate.ConnectionId != previous.ConnectionId;
+                var sameDocument = allowSameDocument && previous.DocumentId is not null
+                    && acknowledgement.DocumentId == previous.DocumentId && candidate.DocumentId == previous.DocumentId
+                    && ((request.Command == "navigate" && acknowledgement.NavigationKind == "same-document-current")
+                        || (acknowledgement.NavigationVersionBefore is { } before
+                            && Volatile.Read(ref candidate.NavigationVersion) > before));
+                if (nextDocument || sameDocument)
+                {
+                    var ready = await ExecuteCommandOnceAsync(new BrowserCommandRequest
+                    {
+                        Command = "ready", SessionId = previous.SessionId, PreviewName = previous.PreviewName,
+                        PreviewId = candidate.PreviewId, Timeout = request.Timeout
+                    }, DateTime.UtcNow, ct).ConfigureAwait(false);
+                    if (ready.Success && ready.DocumentId != candidate.DocumentId)
+                        return new BrowserWsResult { Error = "Document readiness identity was missing or inconsistent. Inspect state; the mutation was not repeated." };
+                    if (ready.Success && ready.DocumentId == candidate.DocumentId
+                        && _clients.TryGetValue(candidate.ConnectionId, out var current) && ReferenceEquals(current, candidate)
+                        && IsCurrentTarget(candidate)
+                        && (_previewOwnerService is null || _previewOwnerService.IsCurrent(candidate.SessionId, candidate.PreviewName, candidate.BrowserId, generation)))
+                        return new BrowserWsResult
+                        {
+                            Success = true, Result = acknowledgement.Result ?? "navigation ready",
+                            MatchCount = acknowledgement.MatchCount, DocumentId = candidate.DocumentId,
+                            SessionId = candidate.SessionId, PreviewName = candidate.PreviewName, PreviewId = candidate.PreviewId
+                        };
+                    if (!ready.Success && ready.Error != BridgeDisconnectedError)
+                        return new BrowserWsResult { Error = "Navigation was dispatched, but readiness failed: " + ready.Error
+                            + " Inspect state before retrying; the mutation was not repeated." };
+                    // Re-evaluate immediately after a read raced a replacement.
+                    continue;
+                }
+            }
+            await changed.WaitAsync(ct).ConfigureAwait(false);
+        }
+    }
+
     public void UpdateClientState(string connectionId, BrowserWsResult state)
     {
         if (_clients.TryGetValue(connectionId, out var client))
         {
-            client.IsVisible = state.Visible;
-            client.HasFocus = state.Focus;
-            client.IsTopLevel = state.TopLevel;
+            lock (client)
+            {
+                if (client.DocumentId is not null && state.DocumentId != client.DocumentId) return;
+                if (state.NavigationVersion is >= 0) Interlocked.Exchange(ref client.NavigationVersion, Math.Max(Volatile.Read(ref client.NavigationVersion), state.NavigationVersion.Value));
+                client.IsPanelVisible = state.PanelVisible;
+                client.IsDocumentVisible = ResolveDocumentVisible(state.DocumentVisible, state.DocumentVisibilityState);
+                client.DocumentVisibilityState = state.DocumentVisibilityState;
+                client.IsVisible = EffectiveVisibility(state.Visible, client.IsPanelVisible, client.IsDocumentVisible);
+                client.HasFocus = state.Focus;
+                client.IsTopLevel = state.TopLevel;
+            }
             SignalClientChanged();
         }
+    }
+
+    private static bool? ResolveDocumentVisible(bool? visible, string? state) =>
+        string.IsNullOrEmpty(state) ? visible : state == "visible" ? visible ?? true : false;
+
+    private static bool EffectiveVisibility(bool reported, bool? panel, bool? document)
+    {
+        if (panel == false || document == false) return false;
+        if (panel == true && document == true) return true;
+        // Existing live bridges may not have reloaded after the web update.
+        // Keep their reported value, with the missing dimensions explicitly unknown.
+        return reported;
     }
 
     public void ReceiveResult(BrowserWsResult result, string? connectionId = null)
@@ -398,7 +516,9 @@ public sealed class BrowserCommandService
             lines.Add($"{clientLabel} preview name: {client.PreviewName ?? "(default)"}");
             lines.Add($"{clientLabel} session: {client.SessionId ?? "(none)"}");
             lines.Add($"{clientLabel} browser: {client.BrowserId ?? "(none)"}");
-            lines.Add($"{clientLabel} visible: {(client.IsVisible ? "yes" : "no")}");
+            lines.Add($"{clientLabel} visible: {(client.IsVisible ? "yes" : "no")}{(client.IsPanelVisible is null || client.IsDocumentVisible is null ? " (legacy report; effective visibility unverified)" : " (effective)")}");
+            lines.Add($"{clientLabel} panel visible: {VisibilityText(client.IsPanelVisible)}");
+            lines.Add($"{clientLabel} document visible: {VisibilityText(client.IsDocumentVisible)} ({client.DocumentVisibilityState ?? "unknown"})");
             lines.Add($"{clientLabel} focused: {(client.HasFocus ? "yes" : "no")}");
             lines.Add($"{clientLabel} top level: {(client.IsTopLevel ? "yes" : "no")}");
         }
@@ -429,7 +549,7 @@ public sealed class BrowserCommandService
 
         if (status.Controllable && status.DefaultClient?.IsVisible == false)
         {
-            lines.Add("hint: The selected preview bridge is controllable, but it is attached from a hidden frame. It remains available across session switches; a suspended or closed owning browser cannot execute commands.");
+            lines.Add("hint: The selected preview bridge is controllable but not effectively visible. Check panel and document visibility separately. DOM commands remain available; hidden documents may throttle media and scheduling. A suspended or closed browser cannot execute commands.");
         }
 
         if (status.State == "waiting" && !string.IsNullOrWhiteSpace(status.OwnerBrowserId) && !status.OwnerConnected)
@@ -539,6 +659,10 @@ public sealed class BrowserCommandService
         };
     }
 
+    internal string? GetDocumentId(string sessionId, string? previewName) => TryResolveClient(
+        new BrowserCommandRequest { Command = "status", SessionId = sessionId, PreviewName = previewName },
+        out var client, out _) ? client.DocumentId : null;
+
     public async Task<BrowserStatusResponse> WaitForControllableAsync(
         string? targetUrl,
         string? sessionId = null,
@@ -550,6 +674,8 @@ public sealed class BrowserCommandService
         TimeSpan? timeout = null,
         TimeSpan? pollInterval = null,
         long? requiredTargetRevision = null,
+        bool requirePanelVisibleClient = false,
+        string? previousDocumentId = null,
         CancellationToken cancellationToken = default)
     {
         var effectiveTimeout = timeout ?? TimeSpan.FromSeconds(8);
@@ -559,6 +685,7 @@ public sealed class BrowserCommandService
 
         while (true)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var changed = Volatile.Read(ref _clientChanged).Task;
             var connectedUiClientCount = connectedUiClientCountProvider?.Invoke() ?? 0;
             var snapshot = GetStatusSnapshot(
@@ -574,9 +701,13 @@ public sealed class BrowserCommandService
                     && connectedAt >= requireClientConnectedAfterUtc.Value);
             var hasVisibleClient = !requireVisibleClient
                 || latest.DefaultClient?.IsVisible == true;
+            var hasPanelVisibleClient = !requirePanelVisibleClient
+                || (latest.DefaultClient?.IsPanelVisible ?? latest.DefaultClient?.IsVisible) == true;
 
             var hasRevision = requiredTargetRevision is null || latest.DefaultClient?.TargetRevision == requiredTargetRevision;
-            if (latest.Controllable && hasFreshClient && hasVisibleClient && hasRevision)
+            var hasNewDocument = previousDocumentId is null
+                || (latest.DefaultClient?.DocumentId is { Length: > 0 } documentId && documentId != previousDocumentId);
+            if (latest.Controllable && hasFreshClient && hasVisibleClient && hasPanelVisibleClient && hasRevision && hasNewDocument)
             {
                 return latest;
             }
@@ -590,7 +721,7 @@ public sealed class BrowserCommandService
                     HasUiClient = latest.HasUiClient, IsScoped = latest.IsScoped,
                     TargetUrl = targetUrl, OwnerBrowserId = latest.OwnerBrowserId,
                     OwnerConnected = latest.OwnerConnected, DefaultClient = latest.DefaultClient,
-                    StatusMessage = "The exact preview revision did not become ready before the deadline. Retry mt_open or reconnect its owner.",
+                    StatusMessage = "The expected preview document/revision did not become ready before the deadline. Inspect state before retrying; reconnect its owner if needed.",
                     ConnectedUiClientCount = connectedUiClientCount
                 };
             }
@@ -1037,51 +1168,68 @@ public sealed class BrowserCommandService
 
     private static BrowserClientInfo CreateClientInfo(BrowserClient client, string? mainBrowserId)
     {
-        return new BrowserClientInfo
+        lock (client)
         {
-            SessionId = client.SessionId,
-            PreviewName = client.PreviewName,
-            PreviewId = client.PreviewId,
-            BrowserId = client.BrowserId,
-            ConnectedAtUtc = client.ConnectedAtUtc,
-            IsMainBrowser = !string.IsNullOrWhiteSpace(mainBrowserId)
-                && BrowserIdentity.AreSameBrowser(client.BrowserId, mainBrowserId),
-            IsVisible = client.IsVisible,
-            HasFocus = client.HasFocus,
-            IsTopLevel = client.IsTopLevel,
-            TargetRevision = client.TargetRevision
-        };
+            return new BrowserClientInfo
+            {
+                DocumentId = client.DocumentId,
+                SessionId = client.SessionId,
+                PreviewName = client.PreviewName,
+                PreviewId = client.PreviewId,
+                BrowserId = client.BrowserId,
+                ConnectedAtUtc = client.ConnectedAtUtc,
+                IsMainBrowser = !string.IsNullOrWhiteSpace(mainBrowserId)
+                    && BrowserIdentity.AreSameBrowser(client.BrowserId, mainBrowserId),
+                IsVisible = client.IsVisible,
+                IsPanelVisible = client.IsPanelVisible,
+                IsDocumentVisible = client.IsDocumentVisible,
+                DocumentVisibilityState = client.DocumentVisibilityState,
+                HasFocus = client.HasFocus,
+                IsTopLevel = client.IsTopLevel,
+                TargetRevision = client.TargetRevision
+            };
+        }
     }
+
+    private static string VisibilityText(bool? visible) => visible is null ? "unknown" : visible.Value ? "yes" : "no";
 
     private static int GetInteractiveScore(BrowserClient client)
     {
-        var score = 0;
-        if (client.HasFocus)
+        lock (client)
         {
-            score += 4;
-        }
+            var score = 0;
+            if (client.HasFocus)
+            {
+                score += 4;
+            }
 
-        if (client.IsVisible)
-        {
-            score += 2;
-        }
+            if (client.IsVisible)
+            {
+                score += 2;
+            }
 
-        if (client.IsTopLevel)
-        {
-            score += 1;
-        }
+            if (client.IsTopLevel)
+            {
+                score += 1;
+            }
 
-        return score;
+            return score;
+        }
     }
 
     private sealed class BrowserClient
     {
+        public string? DocumentId { get; init; }
+        public long NavigationVersion;
         public string ConnectionId { get; init; } = "";
         public string? SessionId { get; init; }
         public string? PreviewName { get; init; }
         public string? PreviewId { get; init; }
         public string? BrowserId { get; init; }
         public bool IsVisible { get; set; }
+        public bool? IsPanelVisible { get; set; }
+        public bool? IsDocumentVisible { get; set; }
+        public string? DocumentVisibilityState { get; set; }
         public bool HasFocus { get; set; }
         public bool IsTopLevel { get; set; }
         public long? TargetRevision { get; init; }

@@ -108,7 +108,10 @@ public sealed class StateWebSocketHandler
                 "true",
                 StringComparison.OrdinalIgnoreCase);
 
-        using var ws = await context.WebSockets.AcceptWebSocketAsync();
+        using var ws = await context.WebSockets.AcceptWebSocketAsync(new WebSocketAcceptContext
+        {
+            DangerousEnableCompression = true
+        });
         using var authLease = isShareConnection
             ? null
             : _authService.TrackWebSocketAuthentication(authentication, ws);
@@ -125,6 +128,7 @@ public sealed class StateWebSocketHandler
         long? lastStateSendAtMs = null;
         Task? stateSendTask = null;
         var stateDeliveryActive = 1;
+        byte[]? lastSentStateBytes = null;
         var connectionToken = new object();
         var browserId = BuildBrowserConnectionId(context.Request);
         var browserLabel = BrowserIdentity.GetDeviceLabel(context.Request);
@@ -187,7 +191,32 @@ public sealed class StateWebSocketHandler
                 return;
             }
 
-            await SendJsonAsync(state, AppJsonContext.Default.StateUpdate);
+            if (ws.State != WebSocketState.Open) return;
+            var acquired = false;
+            try
+            {
+                await sendLock.WaitAsync(stateSendToken);
+                acquired = true;
+                if (ws.State != WebSocketState.Open) return;
+                var bytes = JsonSerializer.SerializeToUtf8Bytes(state, AppJsonContext.Default.StateUpdate);
+                if (lastSentStateBytes is not null && lastSentStateBytes.AsSpan().SequenceEqual(bytes))
+                {
+                    return;
+                }
+                await ws.SendAsync(bytes, WebSocketMessageType.Text, true, stateSendToken);
+                lastSentStateBytes = bytes;
+            }
+            catch (WebSocketException) { }
+            catch (ObjectDisposedException) { }
+            catch (OperationCanceledException) { }
+            catch (Exception ex)
+            {
+                Log.Verbose(() => $"[StateWS] SendStateAsync failed: {ex.GetType().Name}: {ex.Message}");
+            }
+            finally
+            {
+                if (acquired) sendLock.Release();
+            }
         }
 
         SessionListDto GetSessionListDto()
@@ -247,7 +276,7 @@ public sealed class StateWebSocketHandler
                     // A fast socket can otherwise serialize every notification in a
                     // burst. Bound metadata work to one frame without delaying input
                     // or explicit command replies, which have their own send paths.
-                    const int stateFrameIntervalMs = 16;
+                    const int stateFrameIntervalMs = 100;
                     if (lastStateSendAtMs is { } lastSent)
                     {
                         var remaining = stateFrameIntervalMs - (Environment.TickCount64 - lastSent);
@@ -394,11 +423,17 @@ public sealed class StateWebSocketHandler
                     }
                     if (Volatile.Read(ref stateDeliveryActive) == 0) continue;
                     var snapshot = _telemetry.GetSnapshot(sessionId);
+                    var lastTextOutputAt = snapshot.LastTextOutputAt;
+                    var agentHeat = _appServerControlRuntime.GetHeatSnapshot(sessionId);
+                    if (agentHeat.IsDedicatedSession) lastTextOutputAt = null;
+                    var activityAt = agentHeat.LastActivityAt;
+                    if (activityAt is not null && (lastTextOutputAt is null || activityAt > lastTextOutputAt))
+                        lastTextOutputAt = activityAt;
                     await SendJsonAsync(new TerminalTextActivityMessage
                     {
                         SessionId = sessionId,
-                        LastTextOutputAt = snapshot.LastTextOutputAt,
-                        TextActivityAgeMs = snapshot.LastTextOutputAt is { } at ? Math.Max(0, (DateTimeOffset.UtcNow - at).TotalMilliseconds) : null
+                        LastTextOutputAt = lastTextOutputAt,
+                        TextActivityAgeMs = lastTextOutputAt is { } at ? Math.Max(0, (DateTimeOffset.UtcNow - at).TotalMilliseconds) : null
                     }, AppJsonContext.Default.TerminalTextActivityMessage);
                 }
             }
@@ -419,6 +454,7 @@ public sealed class StateWebSocketHandler
         }
 
         _telemetry.TextActivity += OnTextActivity;
+        _appServerControlRuntime.TextActivity += OnTextActivity;
         var sessionListenerId = _sessionManager.AddStateListener(OnStateChange);
         var updateListenerId = _updateService.AddUpdateListener(OnUpdateAvailable);
         _sessionLayoutStateService.OnChanged += OnLayoutChanged;
@@ -527,11 +563,13 @@ public sealed class StateWebSocketHandler
             _ = SendJsonAsync(instruction, AppJsonContext.Default.BrowserUiInstruction);
         }
 
-        void OnMobileDevice(string? sessionId, string? previewName, string action, string? profile)
+        void OnMobileDevice(string requestId, string? sessionId, string? previewName, string action, string? profile, long targetRevision)
         {
             var instruction = new Models.Browser.BrowserUiInstruction
             {
                 Command = "mobile-device",
+                RequestId = requestId,
+                TargetRevision = targetRevision,
                 SessionId = sessionId,
                 PreviewName = previewName,
                 DeviceAction = action,
@@ -666,6 +704,7 @@ public sealed class StateWebSocketHandler
         finally
         {
             _telemetry.TextActivity -= OnTextActivity;
+            _appServerControlRuntime.TextActivity -= OnTextActivity;
             stateSendCts.Cancel();
             Task? pendingTextTask;
             lock (textSendGate) { pendingTextTask = textSendTask; pendingTextSessions.Clear(); }

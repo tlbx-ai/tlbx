@@ -1,6 +1,5 @@
 import { estimateHistoryEntryHeight } from './historyContent';
 import type {
-  HistoryIndexRange,
   HistoryScrollMetrics,
   HistoryScrollMode,
   HistoryVirtualWindow,
@@ -11,10 +10,11 @@ import { DEFAULT_APP_SERVER_CONTROL_HISTORY_VIRTUALIZER_CONFIG } from './history
 import {
   buildVirtualizerWindowKey,
   computeVirtualWindow as computeVirtualizerWindow,
-  computeVisibleRange as computeVirtualizerVisibleRange,
 } from '../../utils/virtualizer';
 
-const AUTO_SCROLL_BOTTOM_THRESHOLD_PX = 64;
+// Only browser rounding counts as the end. A wide "near bottom" zone pulls
+// readers back down when wheel momentum briefly reverses after scrolling up.
+const AUTO_SCROLL_BOTTOM_THRESHOLD_PX = 1;
 export const HISTORY_VIRTUALIZE_AFTER = 50;
 export const APP_SERVER_CONTROL_HISTORY_OVERSCAN_ITEMS =
   DEFAULT_APP_SERVER_CONTROL_HISTORY_VIRTUALIZER_CONFIG.overscanItems;
@@ -64,7 +64,7 @@ export function resolveHistoryScrollMode(args: {
     args.previous !== null &&
     Number.isFinite(args.previous.scrollTop) &&
     Number.isFinite(args.current.scrollTop) &&
-    args.current.scrollTop < args.previous.scrollTop - 1;
+    args.current.scrollTop < args.previous.scrollTop;
 
   if (args.userInitiated) {
     if (userScrolledUp) {
@@ -74,7 +74,14 @@ export function resolveHistoryScrollMode(args: {
     return nearBottom ? 'follow' : 'browse';
   }
 
-  if (args.previousMode === 'follow' && userScrolledUp) {
+  // Reflow/clamping is not a request to leave follow mode. Native browsing
+  // without a wheel event (for example focus navigation) can still detach it.
+  if (
+    args.previousMode === 'follow' &&
+    userScrolledUp &&
+    args.previous?.scrollHeight === args.current.scrollHeight &&
+    args.previous.clientHeight === args.current.clientHeight
+  ) {
     return 'browse';
   }
 
@@ -113,7 +120,14 @@ export function computeHistoryVirtualWindow(
   clientWidth = typeof window === 'undefined' ? 960 : window.innerWidth,
   resolveEntryHeight?: HistoryHeightResolver,
 ): HistoryVirtualWindow {
-  if (entries.length <= HISTORY_VIRTUALIZE_AFTER) {
+  const resolveHeight =
+    resolveEntryHeight ??
+    ((entry: AppServerControlHistoryEntry) => estimateHistoryEntryHeight(entry, clientWidth));
+  const smallWindowFits =
+    entries.length <= HISTORY_VIRTUALIZE_AFTER &&
+    entries.reduce((height, entry, index) => height + resolveHeight(entry, index), 0) <=
+      clientHeight * 4;
+  if (smallWindowFits) {
     return {
       start: 0,
       end: entries.length,
@@ -122,14 +136,12 @@ export function computeHistoryVirtualWindow(
     };
   }
 
-  const resolveHeight =
-    resolveEntryHeight ??
-    ((entry: AppServerControlHistoryEntry) => estimateHistoryEntryHeight(entry, clientWidth));
   return computeVirtualizerWindow({
     items: entries,
     scrollTop,
     clientHeight,
     overscanItems: APP_SERVER_CONTROL_HISTORY_OVERSCAN_ITEMS,
+    overscanPx: Math.max(0, clientHeight),
     resolveItemSize: (entry, index) => resolveHeight(entry, index),
   });
 }
@@ -140,17 +152,36 @@ export function computeHistoryVisibleRange(
   clientHeight: number,
   clientWidth = typeof window === 'undefined' ? 960 : window.innerWidth,
   resolveEntryHeight?: HistoryHeightResolver,
-): HistoryIndexRange {
+): HistoryVirtualWindow {
   const resolveHeight =
     resolveEntryHeight ??
     ((entry: AppServerControlHistoryEntry) => estimateHistoryEntryHeight(entry, clientWidth));
-  return computeVirtualizerVisibleRange({
+  return computeVirtualizerWindow({
     items: entries,
     scrollTop,
     clientHeight,
     overscanItems: 0,
     resolveItemSize: (entry, index) => resolveHeight(entry, index),
   });
+}
+
+/** A replaced kernel has a new pixel origin; its old scrollTop is not a row address. */
+export function resolveHistoryRenderScrollTop(
+  entries: readonly AppServerControlHistoryEntry[],
+  scrollTop: number,
+  anchor: { entryId: string; topOffsetPx: number } | null | undefined,
+  resolveHeight: HistoryHeightResolver,
+  paddingTop = 0,
+): number {
+  if (!anchor) return scrollTop;
+  const index = entries.findIndex((entry) => entry.id === anchor.entryId);
+  if (index < 0) return scrollTop;
+  let prefix = paddingTop;
+  for (let i = 0; i < index; i++) {
+    const entry = entries[i];
+    if (entry) prefix += resolveHeight(entry, i);
+  }
+  return Math.max(0, prefix - anchor.topOffsetPx);
 }
 
 export function buildHistoryVirtualWindowKey(window: HistoryVirtualWindow): string {

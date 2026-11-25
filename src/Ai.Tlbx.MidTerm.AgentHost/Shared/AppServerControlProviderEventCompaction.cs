@@ -12,7 +12,7 @@ public static class AppServerControlProviderEventCompaction
     private const int MaxCommandTextChars = 2048;
     private const int MaxToolItemDetailChars = 4096;
     private const int MaxRequestDetailChars = 2048;
-    private const int MaxPendingMcpRequestDetailChars = 64 * 1024;
+    private const int MaxPendingApprovalDetailChars = 64 * 1024;
     private const int MaxRuntimeDetailChars = 4096;
     private const int MaxPlanMarkdownChars = 16384;
 
@@ -22,6 +22,7 @@ public static class AppServerControlProviderEventCompaction
 
         return new AppServerControlProviderEvent
         {
+            IsReplay = source.IsReplay,
             Sequence = source.Sequence,
             EventId = source.EventId,
             SessionId = source.SessionId,
@@ -122,7 +123,12 @@ public static class AppServerControlProviderEventCompaction
             {
                 RequestType = source.RequestOpened.RequestType,
                 RequestTypeLabel = source.RequestOpened.RequestTypeLabel,
-                Detail = CompactRequestDetail(source.RequestOpened.Detail, source.RequestOpened.RequestType, pending: true)
+                Detail = source.RequestOpened.ApprovalTool is null
+                    ? CompactRequestDetail(source.RequestOpened.Detail, source.RequestOpened.RequestType, pending: true)
+                    : CompactTextMiddle(source.RequestOpened.Detail, MaxPendingApprovalDetailChars),
+                ApprovalPurpose = source.RequestOpened.ApprovalPurpose is { } purpose ? CompactTextMiddle(purpose, 512) : null,
+                ApprovalTool = source.RequestOpened.ApprovalTool is null ? null : CompactTextMiddle(source.RequestOpened.ApprovalTool, 160),
+                PermissionOptions = source.RequestOpened.PermissionOptions
             },
             RequestResolved = source.RequestResolved is null ? null : new AppServerControlProviderRequestResolvedPayload
             {
@@ -200,7 +206,7 @@ public static class AppServerControlProviderEventCompaction
     }
 
     public static string CompactRequestDetail(string? detail, string requestType, bool pending) =>
-        CompactTextMiddle(detail, pending && requestType == "mcp_tool_approval" ? MaxPendingMcpRequestDetailChars : MaxRequestDetailChars);
+        CompactTextMiddle(detail, pending && requestType == "mcp_tool_approval" ? MaxPendingApprovalDetailChars : MaxRequestDetailChars);
 
     private static string CompactTextMiddle(string? value, int maxChars)
     {

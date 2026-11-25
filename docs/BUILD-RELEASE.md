@@ -1,5 +1,19 @@
 # Build and release verification
 
+Build storage has explicit lifetimes. `.cache/` holds reusable native downloads,
+toolchains, binary packages and the current scanner database; `.dev/` holds current
+working/runtime state; `.artifacts/` holds disposable outputs and diagnostics.
+Normal native preparation, dev startup and release checks migrate the known old
+mixed native caches without copying them. Cache conflicts fail rather than
+overwrite data. Native rebuilds use `scripts/build-connect-native.ps1`: it restores
+the frozen recipe's exact working paths only while the rebuild owns the storage
+lock, parks reusable data afterward even on failure, and removes successful scratch
+builds. The pinned recipe, prebuilt hashes and normal offline preparation remain
+unchanged. Audit/rebuild runs keep the latest successful output and two failures
+on subsequent use. Local dev startup/rebuild/shutdown prunes old generations while
+keeping the newest two, recent builds and generations referenced by live processes.
+Cleanup never kills processes, follows directory links or cleans another checkout.
+
 Unit, integration, installer, protocol and build-system behavioral tests run only
 through **Tests (on demand)** (`build-system-verify.yml`, `workflow_dispatch`).
 They are never triggered by pushes, pull requests, builds, tags or publication.
@@ -9,14 +23,19 @@ Select a branch/tag in GitHub, or run:
 gh workflow run build-system-verify.yml --repo tlbx-ai/tlbx --ref <candidate-ref> -f suite=all
 ```
 
-Before a major or main release, remind Johannes to run this workflow for the exact
-candidate and inspect its result. Release scripts display the same reminder;
-they do not dispatch tests. Local build and release entry points also never run
+After every successful dev publication, ask Johannes whether to run this workflow
+for the exact tag, including security audits and fresh SBOM snapshots. Ask again
+before every main promotion for its frozen candidate and wait for a run/skip
+decision. An explicit skip permits promotion; a requested run must finish and be
+reviewed. Do not repeat the question for an unchanged candidate after a decision.
+Release scripts print the question; they never dispatch automatically. Local build and release entry points also never run
 test suites: `-TestCategories` selects validation scope only. Run
 `scripts/run-release-tests.ps1 -TestCategories ...` separately when a test run is
 explicitly requested, or dispatch Tests (on demand).
-Automatic PR/release checks retain compiler/analyzers, typecheck, lint, security
-audits, frozen native artifact verification, signing, SBOMs and package integrity.
+Automatic PR/release checks retain compiler/analyzers, typecheck, lint, locked
+restore, frozen native hashes, signing and package/build-provenance integrity.
+Dependency vulnerability scans, registry audits and fresh SBOM generation run
+only in Tests (on demand), suite=all or security. CodeQL remains a PR check.
 The Windows package job installs pinned SDK11 and restores locked dependencies
 directly, without transferring the large all-RID NuGet cache; SDK10+11 baseline compatibility
 is retained in security auditing and the six-platform on-demand suite.
@@ -85,14 +104,14 @@ rejects reuse of a published version.
 | `server` | Server compiler and analyzers, warnings as errors | Server C# and REST APIs |
 | `runtime` | Compiler/analyzers for server, TtyHost and AgentHost | PTY, AgentHost, shared code, IPC and protocol changes; add frontend for browser protocol changes |
 | `installers` | Published package signature/hash integrity; installer behavior runs on demand | Install/uninstall, startup, certificates and updater changes |
-| `dependencies` | Server npm/NuGet audit, lock/signature checks and Claude bridge build | Server dependencies and lockfiles |
+| `dependencies` | Locked dependency inputs in builds; vulnerability audits run on demand | Server dependencies and lockfiles |
 | `build` | Runtime compiler/analyzers; Native AOT publication and package integrity remain mandatory in CI | Build/release scripts, packaging, SDK and native dependency changes |
 | `all` | All validation above, without test-suite dispatch | Broad changes, uncertain impact; required for stable releases |
 
 Use `all` by itself. Otherwise pass one category or a PowerShell array such as
 `-TestCategories frontend,server`. Frontend packaging always runs; its one fresh
-install is reused by the selected checks and audit. Hosted server dependency audits,
-package signing, SBOM/provenance and platform builds remain release gates.
+install is reused by the selected checks. Package signing, immutable native inputs,
+archive and copied-SBOM provenance, and platform builds remain release gates.
 
 The frontend and marketing typechecks use TypeScript 7 through the
 `typescript-compiler` npm alias. Their `typescript` dependency supplies the
@@ -122,8 +141,9 @@ checks are part of Tests (on demand). Removed tests remain in Git history.
 Use `dotnet test --project <path>`; targeted runs use `--filter-class` and
 `--report-trx`, rather than VSTest filters or loggers.
 
-Dependency advisories block **security regressions**, compared with the last
-published release in the same channel. `audit-supply-chain.ps1` queries current
+The manual audit fails on **security regressions**, compared with the last
+published release in the same channel. An exact tagged candidate uses an older
+release as baseline, never itself or a newer release. `audit-supply-chain.ps1` queries current
 advisory data for the candidate and baseline locked graphs. Existing findings,
 including newly reported advisories affecting unchanged dependencies, are reported
 without blocking. Newly introduced vulnerable packages/advisories, greater severity,
@@ -141,8 +161,8 @@ releases run offline `prepare.ps1 -RuntimeIdentifier <RID>` through
 `ConnectNative.targets`: verify the recipe/index hashes, then stage the unchanged
 bundle, manifest, SPDX source graph and backport VEX into `bin/<RID>`. Missing,
 stale or tampered artifacts fail; no compiler or vcpkg fallback is permitted.
-The existing per-RID `audit.ps1` CVE gate still runs before embedding; only artifact
-preparation is offline.
+The per-RID `audit.ps1` CVE scans run only in the manual security workflow.
+Ordinary embedding verifies frozen hashes without downloading a scanner database.
 Dependency recipe changes require an explicit `build.ps1` refresh and check-in of
 the matching frozen artifacts and index. macOS inner libraries are signed before
 freezing. Normal releases still compile the .NET NativeAOT executables and sign/
@@ -157,7 +177,7 @@ For an explicit refresh on the RID's native toolchain host, after changing the r
 ```powershell
 $rid = 'win-x64'
 $native = 'src/Ai.Tlbx.MidTerm.ConnectNative'
-& "$native/build.ps1" -RuntimeIdentifier $rid
+& ./scripts/build-connect-native.ps1 -RuntimeIdentifier $rid
 New-Item -ItemType Directory -Force "$native/prebuilt/$rid" | Out-Null
 'bundle.zip','manifest.json','native-dependencies.spdx.json','native-backports.vex.json' |
     ForEach-Object { Copy-Item "$native/bin/$rid/$_" "$native/prebuilt/$rid/$_" -Force }
@@ -248,15 +268,15 @@ Do not re-prepare a merged/closed PR or reuse a retired task branch name.
 
 Live milestones and the PR URL are flushed to stderr and appended to
 `.git/tlbx-release-progress.log`, independent of buffered build output. Dev and
-stable releases remain draft until shared frontend lint/build and supply-chain
+stable releases remain draft until shared frontend lint/build
 checks succeed and at least one complete platform archive with its matching SPDX SBOM
 passes the publication gate. Each platform build may fail independently, including
 signing or Apple notarization, without blocking other complete packages. Every
 included package still passes signing, checksums and attestations before upload.
 Empty, unknown, duplicate or incomplete archive/SBOM pairs block publication;
 zero usable platforms also blocks it. Missing platforms are listed in the release
-notes and workflow summary. SBOM generation retries once; a second failure
-excludes that platform. Installers, the npm launcher and the built-in updater
+notes and workflow summary. Builds copy the latest available platform SPDX
+snapshot without regenerating it. A missing/invalid snapshot excludes that platform. Installers, the npm launcher and the built-in updater
 select a published release containing their platform's archive.
 
 Release uploads retry the same signed archive/SBOM pair at most three times,
@@ -300,10 +320,32 @@ CodeQL `analyze` languages. PR checks run without path filters, so documentation
 and synchronization PRs cannot wait forever for an untriggered required job.
 The broad .NET server/host suite runs locally on demand via
 `./scripts/run-dotnet-test-suite.ps1 -Configuration Release -WarnAsError`; it is not
-a PR or release CI job. Compilation, lint, audits and package integrity
-checks remain in CI.
+a PR or release CI job. Compilation, lint and package integrity checks remain
+automatic; vulnerability audits and SBOM generation are on demand.
 No mandatory second-person approval is configured. GitHub still enforces
 required checks, an up-to-date branch and resolved review conversations.
+
+
+## SBOM snapshots
+
+Tests (on demand), `suite=all` or `security`, audits the selected source ref and
+the five standard-platform native dependency graphs. It separately downloads each RID's newest
+public package, verifies its archive signature, hashes and provenance, and
+rescans it with Syft. Native SBOM inputs come from that package's exact tag.
+Snapshots identify the scanned tag/commit/archive digest and retain their real
+creation date. Thus a pre-promotion audit checks the candidate dependencies,
+while its package snapshot describes the last published binary.
+
+Per-RID `sbom-snapshot-<rid>` artifacts are retained for 90 days. Standard releases
+reuse the newest snapshot from a successful manual Tests run; published SPDX
+assets seed reuse and preserve snapshots after artifact expiry. A reused snapshot
+may predate changed code or dependencies. It is not a fresh inventory or security
+scan of the new archive. The release summary exposes its source and creation date.
+The ordinary workflow verifies both expected files exist, then attests archive and copied-SPDX file digests together as build outputs,
+without issuing a false fresh archive/SBOM inventory predicate. Older releases'
+exact archive/SBOM attestations remain verifiable for historical downloads. The mirror
+checks a copied SPDX digest in the unique archive proof, avoiding the CLI limit on
+attestations returned for a shared snapshot digest.
 
 ## Mobile and tooling
 
@@ -311,8 +353,9 @@ Android/iOS already load the UI from the configured tlbx server. A server releas
 does not build or publish their apps. Mobile verification selects each platform
 independently on source changes, with both checked on a manual or weekly run.
 Store publication remains manual through the dedicated `app-v...` workflows.
-Android dependency auditing belongs to Android verification/releases. Screenshot
-automation and npm-launcher checks run in the tooling workflow, also weekly.
+Server, Android and tooling dependency auditing belongs to Tests (on demand).
+The tooling test selection retains npm-launcher contracts; ordinary mobile builds
+and lint remain independent.
 `all` means all **server release** clusters, not an Xcode requirement on Windows.
 
 ## Reusing host binaries
@@ -322,7 +365,7 @@ ConPTY from `v<pty>` in tlbx-ai/tlbx. The complete archive must pass GitHub prov
 verification for `release.yml`. Its runtime-input metadata must match RID, runtime
 version, configuration, exact SDK and canonical source/dependency/build inputs;
 binary checksums are checked before copying. New archives are signed and attested
-again with freshly generated SBOMs. Reused macOS host signatures are preserved.
+again with the latest available SBOM snapshots. Reused macOS host signatures are preserved.
 
 Full runtime and stable releases build hosts afresh. Missing baseline assets or
 old/mismatched metadata fall back to a regular build; failed provenance or checksum

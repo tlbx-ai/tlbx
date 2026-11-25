@@ -7,7 +7,43 @@ Keep the existing fallback functional and its protocol checks in place during th
 transition. Both interfaces use the same C# services; preferring MCP does not
 claim that every parity acceptance scenario below has already passed.
 
+## HTTP preview diagnostics
+
+HTTP preview proxy logs are published after body processing finishes or fails.
+`statusCode` and `durationMs` describe the downstream processing result and total
+middleware time, including transformation/body copy; `upstreamStatusCode` and
+`upstreamDurationMs` retain the upstream response and time through its headers.
+`outcome` distinguishes completed, failed, cancelled, incomplete and upstream-only
+fallback attempts. A failure before headers is classified as 500 (client abort:
+499); `responseStarted: false` means this is diagnostic, not a delivered status.
+After headers, the sent status remains unchanged and an interrupted body has an
+error/outcome even when that status is 200. Streaming stays unbuffered; ongoing
+streams appear only when processing ends. Completion does not prove client receipt.
+WebSocket log semantics are unchanged.
+
+## Browser capability diagnosis
+
+Native `browser_capabilities` returns one compact owner/status snapshot in
+`structuredContent`, native tool/recovery names and a best-effort passive `page`
+observation (two-second deadline). Text content is only a summary. `previewId`
+retains exact scope; probe failure leaves owner diagnosis intact. Storage/IDB
+values describe getter access only; they do not verify transactions or durability.
+Media states sample at most eight existing elements; unpaused/ready does not
+prove decoded playback. WebGL reports constructor presence only, without creating
+a context. No database, permission, playback or network probe runs. Page globals
+may be replaced by site code, so these observations are not browser attestation.
+The separate CLI capability projection retains its CLI command names and format.
+
 ## Transports and identity
+
+Reload/navigation success waits for a ready replacement document, not merely an
+acknowledgement from the old frame. Document identity survives a socket reconnect;
+that reconnect cannot satisfy reload. Fragment navigation and observed history
+transitions can satisfy same-document navigation, followed by a DOM-ready probe.
+`waitForNavigation` on batch actions uses the same barrier; subsequent steps do
+not run after an uncertain timeout. Mutations are never replayed. Readiness means
+DOM readiness, not completion of arbitrary application/network work. Bridges
+without document identity must attach a current bridge before readiness succeeds.
 
 `POST /api/mcp` exposes stateless Streamable HTTP using the pinned official C#
 SDK. `mt mcp --stdio` provides the native provider adapter. Both require existing
@@ -120,6 +156,21 @@ and browser automation. Fixed API tools invoke the existing registered C# route
 handlers with the authenticated caller context. JSON arguments preserve literal
 Unicode, newlines and binary/base64 payloads without shell quoting.
 
+### Native adapter freshness
+
+Native `context_get` reports both `serverVersion` and `adapterVersion`, plus
+`adapterRefreshRequired`. Authenticated MCP response headers identify live server
+version/instance changes; the adapter signals `notifications/tools/list_changed`
+and relays upstream tool-list notifications. Clients must honor that notification
+or explicitly refresh tool discovery to see new schemas. Detection is request-driven,
+with no background polling or replay of an interrupted operation.
+
+Workflows containing only server tools execute on the live server. Workflows with
+caller-local file/process/artifact helpers or native update recovery keep the local
+executor and OS identity. Updating those helpers requires restarting the native MCP
+connection when idle; discovery refresh alone cannot replace a running adapter.
+Already running older adapters do not acquire this fix retroactively.
+
 ### Short calls and parallel workflows
 
 Omit unused optional arguments, including explicit null/default values. MCP
@@ -165,6 +216,18 @@ when calling browser tools. Conflicting wrapped browser targets are rejected;
 explicit non-browser targets remain explicit.
 Literal fill values include empty strings (clear the field) and whitespace;
 direct and batch calls preserve them without treating them as missing arguments.
+`browser_query`, `browser_evaluate`, `browser_attributes`, `browser_css`,
+`browser_click` and `browser_fill` accept optional `frame`, a CSS selector matching
+exactly one immediate iframe. The selector/value/code then targets that child's
+document through its injected cooperative bridge. Static proxied `src`/`srcdoc`
+and runtime `srcdoc` property/setAttribute assignments are instrumented; arbitrary
+uninstrumented frames, script-blocking sandboxes/CSP, runtime HTML-string parsing,
+deeper frame paths and child screenshots are unsupported. No parent preview
+identity, token or cookies are sent over this channel; existing proxy resource URL
+authorization is unchanged. Requests bind the exact window, a fresh nonce and child
+document ID, with a maximum 15-second deadline and bounded results. Navigation,
+removal or connection loss cancels pending replies. A write may already have run;
+timeouts/cancellation never authorize replay and cannot stop arbitrary JavaScript.
 Individual browser waits, queries and evaluations use the shared CLI timer range;
 for example, `timeout: 300` is supported. Omitted timeouts use the shared service
 defaults (selector waits retain 15 seconds). Browser batches retain their existing
@@ -183,12 +246,60 @@ bytes; snapshots can also become resources. Resource reads are caller-scoped and
 chunked at 4 MiB. Generated copies expire after one hour and are bounded to 128
 captures/512 MiB, except one newest larger original retained in full. Workspace
 copies requested through `saveToWorkspace` survive cache eviction.
+
+`browser_screenshot` accepts an optional CSS `selector` for a detail capture at
+one output pixel per CSS pixel, including canvas content. It clips the document
+to that element's bounding box without scrolling or changing the viewport.
+The selector must match exactly one rendered element with nonzero area; missing,
+hidden and ambiguous targets fail. Offscreen rendered elements are supported.
+`selector` and `fullPage:true` are mutually exclusive. Without a selector, viewport
+and full-page capture retain their existing behavior. This uses the same DOM/SVG
+renderer and its fidelity limits, rather than a browser compositor capture.
+Screenshot `capture` metadata accompanies inline images, original resources and
+batch steps. `pixelCoverage` is `partial` when unreadable frames or renderer
+degradations are detected, otherwise `unverified`; successful PNG export does not
+prove complete pixels. `media` counts intersecting parent light-DOM surfaces,
+not media inside nested frames or shadow trees. `unreadableFrames` and
+`warningCodes` expose unavailable frame/canvas content; video frames and poster
+fallbacks remain unverified. Renderer warnings are bounded and may be truncated.
+
 Large captures use the private resource cache by default, without an extra
 workspace copy. A failed explicit workspace save reports an error while keeping
 the original resource available; use that resource instead of recapturing.
 HTML snapshots above 65,536 characters return compact metadata and the complete
 original resource instead of inline HTML (`inlineSnapshotAvailable: false`).
 Use `artifact_save` for the full UTF-8 file; no partial HTML is presented as complete.
+
+External JavaScript maps direct `import.meta.url` / `import.meta['url']` reads
+of the original native value to the final HTTP(S) script URI. Its private helper
+is hoisted for cyclic module evaluation; later mutations keep their values and
+write targets. Aliased/destructured or dynamic-property reads are not rewritten.
+Without the document adapter, modules retain native metadata. Script `src`
+getters keep native receivers and identity, exposing the requested upstream URL
+(not an inferred redirect destination). Nested Response/XHR/script getters
+compose only through their own capability and registered inner origin.
+HTTP forwarding preserves browser-controlled Fetch Mode/Dest for nested document
+loads while still suppressing Fetch Site/User context.
+
+Browser selectors accept explicit open-shadow paths, e.g.
+`#settings-host >>> button[aria-label="Save"]`. Each segment is ordinary CSS in
+its own root; `>>>` enters only the matched hosts' open `shadowRoot`s. Quoted,
+escaped, bracketed and functional-pseudo text retains native CSS interpretation.
+Plain selectors never search shadow trees automatically. Comma lists belong to
+their segment. Paths are bounded to 32 segments and 4,000 root queries; exceeding
+the traversal bound fails explicitly. Closed and absent roots both yield no
+reachable matches; closed roots are never instrumented or bypassed.
+Query, click, fill, attrs, CSS, forms, submit, scroll/wheel, wait, outline roots and
+selected screenshots share this resolver. Existing control visibility and
+ambiguity checks still apply, including the shadow host's visibility/disabled
+state. A screenshot selector must match exactly one visible element and cannot
+be combined with `fullPage`.
+Outline traverses open roots, marks hosts with `open-shadow-root`, and emits
+unique `>>>` paths. Its depth/node/output limits still apply and omissions are
+reported as truncation. HTML queries and full snapshots serialize reachable open
+roots as inert `<template shadowrootmode="open">` children; bounded queries may
+truncate them, while full snapshots retain the complete available DOM. This is
+DOM serialization, not a computed accessibility tree or closed-root capture.
 Resource handles do not survive a web-server restart. Abrupt termination may leave private
 temporary files; normal disposal removes the generated cache.
 `artifact_read` and `artifacts_list` provide the same owner-checked access through
@@ -338,6 +449,13 @@ preview without changing the original preview. Viewport sizing reported exact
 800x600 dimensions; a viewport wider than the dock is visually clipped and is a
 viewer follow-up. Chrome blocked detach popups; MCP reported that failure and
 kept docked control. Optional extension mobile execution remains unverified.
+
+`browser_mobile` awaits the exact owning UI and extension response, bound to the
+named preview's target revision. `status` returns actual device state or
+`available:false` with a diagnostic; dispatch acceptance never proves emulation.
+Action errors and ownership/revision changes fail explicitly; inspect before retrying.
+`screenshot` returns native MCP PNG/resource content (`saveToWorkspace` is optional).
+It never uploads/pastes into a terminal. Screenshot paste remains an explicit local UI action.
 
 Actual state clearing exposed a shared CLI/MCP bug: clearing preview storage
 advanced the target revision without replacing the document, invalidating its

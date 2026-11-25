@@ -650,6 +650,36 @@ public sealed class SettingsService
         }
     }
 
+    internal Dictionary<string, string?> ReadAppServerControlProviderPreferences(string provider)
+    {
+        lock (_lock)
+        {
+            return Load().AppServerControlProviderPreferences.TryGetValue(provider, out var preferences)
+                ? new(preferences, StringComparer.Ordinal) : new(StringComparer.Ordinal);
+        }
+    }
+
+    internal void SaveAppServerControlProviderPreferences(string provider, Dictionary<string, string?> patch)
+    {
+        lock (_lock)
+        {
+            var settings = Load();
+            var preferences = ReadAppServerControlProviderPreferences(provider);
+            if (patch.All(pair => preferences.TryGetValue(pair.Key, out var value) && value == pair.Value))
+                return;
+            foreach (var (field, value) in patch)
+                preferences[field] = value;
+            settings.AppServerControlProviderPreferences[provider] = preferences;
+            if (provider == "codex" && patch.TryGetValue("model", out var model))
+                settings.CodexDefaultAppServerControlModel = model ?? string.Empty;
+            try { Save(settings); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                Log.Warn(() => $"Could not save Agent Controller preferences for {provider}: {ex.Message}");
+            }
+        }
+    }
+
     public void Save(MidTermSettings settings)
     {
         lock (_lock)

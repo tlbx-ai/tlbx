@@ -14,7 +14,7 @@ public sealed partial class AcpAgentCatalogService(SettingsService settingsServi
     [
         new("grok", "Grok Build", "grok", ["agent", "stdio"]),
         new("opencode", "OpenCode", "opencode", [], RuntimeKind: "opencode-http"),
-        new("antigravity", "Google Antigravity", "agy_acp_server", []),
+        new("antigravity", "Google Antigravity", "agy", ["acp"]),
         new("gemini", "Gemini CLI", "gemini", ["--acp"]),
         new("copilot", "GitHub Copilot CLI", "copilot", ["--acp"])
     ];

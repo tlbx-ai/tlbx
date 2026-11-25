@@ -322,13 +322,10 @@ public static class Program
             return;
         }
 
-        var pid = Environment.ProcessId;
-        var tmuxPath = OperatingSystem.IsWindows()
-            ? string.Create(CultureInfo.InvariantCulture, $@"\\.\pipe\midterm-tmux-{pid},{pid},0")
-            : string.Create(CultureInfo.InvariantCulture, $"/tmp/midterm-tmux-{pid},{pid},0");
-
-        env["TMUX"] = tmuxPath;
-        env["TMUX_PANE"] = string.Create(CultureInfo.InvariantCulture, $"%{config.PaneIndex ?? 0}");
+        // Explicit tmux commands still address this pane through the tlbx shim.
+        // TMUX/TMUX_PANE would falsely identify this native terminal as a multiplexer
+        // and disable image support in applications that cannot discover that shim.
+        env["MT_TMUX_PANE"] = string.Create(CultureInfo.InvariantCulture, $"%{config.PaneIndex ?? 0}");
         env["MT_PORT"] = config.MtPort.Value.ToString(CultureInfo.InvariantCulture);
         // Avoid dual-stack localhost delays: Codex allows only one second for its tmux probe.
         // Carry the endpoint per terminal so parallel tlbx instances cannot redirect this host.
@@ -1528,7 +1525,7 @@ internal sealed class TerminalInputReadinessDetector
 
 internal sealed class TerminalSession : IDisposable
 {
-    internal const int DefaultBufferCapacity = 2 * 1024 * 1024; // 2MB fixed buffer
+    internal const int DefaultBufferCapacity = 8 * 1024 * 1024; // 8 MiB retained output
 
     private sealed class InputTraceState
     {

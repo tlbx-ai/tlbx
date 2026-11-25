@@ -24,7 +24,7 @@ public static partial class WebPreviewEndpoints
             previewRegistry,
             previewOwnerService,
             browserUiBridge);
-        MapTargetEndpoints(app, webPreviewService, sessionManager);
+        MapTargetEndpoints(app, webPreviewService, sessionManager, browserCommandService);
         MapCookieEndpoints(app, webPreviewService);
         MapActionEndpoints(app, webPreviewService, sessionManager, browserCommandService);
         MapProxyLogEndpoints(app, webPreviewService);
@@ -69,7 +69,7 @@ public static partial class WebPreviewEndpoints
         });
     }
 
-    private static void MapTargetEndpoints(WebApplication app, WebPreviewService service, TtyHostSessionManager sessionManager)
+    private static void MapTargetEndpoints(WebApplication app, WebPreviewService service, TtyHostSessionManager sessionManager, BrowserCommandService browserCommandService)
     {
         app.MapGet("/api/webpreview/target", (string sessionId, string? previewName) =>
         {
@@ -77,13 +77,17 @@ public static partial class WebPreviewEndpoints
             return Results.Json(response, AppJsonContext.Default.WebPreviewTargetResponse);
         });
 
-        app.MapPut("/api/webpreview/target", (WebPreviewTargetRequest request) =>
+        app.MapPut("/api/webpreview/target", async (WebPreviewTargetRequest request, CancellationToken cancellationToken) =>
         {
             if (string.IsNullOrWhiteSpace(request.SessionId))
             {
                 return Results.BadRequest("sessionId required");
             }
 
+            var flushed = await browserCommandService.FlushStorageBeforeTargetChangeAsync(
+                request.SessionId, request.PreviewName, cancellationToken).ConfigureAwait(false);
+            if (!flushed.Success)
+                return Results.Text(flushed.Error ?? "Storage flush failed; target unchanged.", statusCode: StatusCodes.Status409Conflict);
             if (!service.SetTarget(request.SessionId, request.PreviewName, request.Url))
             {
                 return Results.BadRequest("Invalid URL. Must be http://, https://, or a local file:/// URL, and cannot point to a preview route on this server.");
@@ -183,7 +187,7 @@ public static partial class WebPreviewEndpoints
             {
                 try
                 {
-                    await browserCommandService.ExecuteCommandAsync(
+                    var result = await browserCommandService.ExecuteCommandAsync(
                         new BrowserCommandRequest
                         {
                             Command = "reload",
@@ -192,6 +196,8 @@ public static partial class WebPreviewEndpoints
                             PreviewName = request.PreviewName
                         },
                         cancellationToken);
+                    if (!result.Success)
+                        return Results.Text(result.Error ?? "Preview reload failed.", statusCode: StatusCodes.Status409Conflict);
                 }
                 catch (OperationCanceledException)
                 {
@@ -312,30 +318,34 @@ public static partial class WebPreviewEndpoints
             return "proxylog summary\nentries: 0\nerrors: 0\n";
         }
 
-        var statusBuckets = entries
+        // Retry/fallback attempts are retained for diagnosis, but are not
+        // independent downstream responses.
+        var responses = entries.Where(entry => entry.Outcome != "upstream-attempt").ToArray();
+        var statusBuckets = responses
             .GroupBy(entry => entry.StatusCode)
             .OrderBy(group => group.Key)
             .Select(group => string.Create(CultureInfo.InvariantCulture, $"{group.Key}:{group.Count()}"));
-        var failures = entries
+        var allFailures = responses
             .Where(entry => entry.StatusCode >= 400 || !string.IsNullOrWhiteSpace(entry.Error))
             .OrderByDescending(entry => entry.Timestamp)
-            .Take(8)
             .ToArray();
+        var failures = allFailures.Take(8).ToArray();
         var websocketEntries = entries
             .Where(entry => string.Equals(entry.Method, "WS-UPGRADE", StringComparison.OrdinalIgnoreCase))
             .ToArray();
-        var slowest = entries
+        var slowest = responses
             .OrderByDescending(entry => entry.DurationMs)
             .Take(5)
             .ToArray();
-        var redirected = entries.Count(entry => entry.StatusCode is >= 300 and <= 399);
+        var redirected = responses.Count(entry => entry.StatusCode is 301 or 302 or 303 or 307 or 308);
         var withCookies = entries.Count(entry => !string.IsNullOrWhiteSpace(entry.RequestCookies));
 
         var lines = new List<string>
         {
             "proxylog summary",
             string.Create(CultureInfo.InvariantCulture, $"entries: {entries.Count}"),
-            string.Create(CultureInfo.InvariantCulture, $"errors: {failures.Length}"),
+            string.Create(CultureInfo.InvariantCulture, $"errors: {allFailures.Length}"),
+            string.Create(CultureInfo.InvariantCulture, $"upstream-only attempts: {entries.Count - responses.Length}"),
             $"status: {string.Join(" ", statusBuckets)}",
             string.Create(CultureInfo.InvariantCulture, $"websocket: {websocketEntries.Length} total, {websocketEntries.Count(entry => entry.StatusCode == 101)} connected, {websocketEntries.Count(entry => entry.StatusCode >= 400)} failed"),
             string.Create(CultureInfo.InvariantCulture, $"redirects: {redirected}"),
@@ -349,7 +359,9 @@ public static partial class WebPreviewEndpoints
             foreach (var failure in failures)
             {
                 var error = string.IsNullOrWhiteSpace(failure.Error) ? "" : $" error={TrimForSummary(failure.Error, 80)}";
-                lines.Add(string.Create(CultureInfo.InvariantCulture, $"  {failure.StatusCode} {failure.Type} {TrimForSummary(failure.UpstreamUrl, 120)}{error}"));
+                var upstream = failure.UpstreamStatusCode is int upstreamStatus ? string.Create(CultureInfo.InvariantCulture, $" upstream={upstreamStatus}") : "";
+                var outcome = failure.Outcome is null ? "" : $" outcome={failure.Outcome}";
+                lines.Add(string.Create(CultureInfo.InvariantCulture, $"  {failure.StatusCode} {failure.Type}{upstream}{outcome} {TrimForSummary(failure.UpstreamUrl, 120)}{error}"));
             }
         }
 

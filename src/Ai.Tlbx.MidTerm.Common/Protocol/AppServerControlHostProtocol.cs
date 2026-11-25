@@ -92,6 +92,7 @@ public sealed class AppServerControlHistoryPatch
     public AppServerControlQuickSettingsSummary QuickSettings { get; set; } = new();
     public AppServerControlStreamsSummary Streams { get; set; } = new();
     public List<AppServerControlHistoryItem> HistoryUpserts { get; set; } = [];
+    public List<AppServerControlHistoryTextDelta> HistoryTextDeltas { get; set; } = [];
     public List<string> HistoryRemovals { get; set; } = [];
     public List<AppServerControlItemSummary> ItemUpserts { get; set; } = [];
     public List<string> ItemRemovals { get; set; } = [];
@@ -100,16 +101,34 @@ public sealed class AppServerControlHistoryPatch
     public List<AppServerControlRuntimeNotice> NoticeUpserts { get; set; } = [];
 }
 
+public sealed class AppServerControlHistoryTextDelta
+{
+    public string EntryId { get; set; } = string.Empty;
+    public long Order { get; set; }
+    public string Kind { get; set; } = string.Empty;
+    public string? TurnId { get; set; }
+    public string? ItemId { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public string? ItemType { get; set; }
+    public string? Title { get; set; }
+    public int ExpectedBaseLength { get; set; }
+    public string AppendBody { get; set; } = string.Empty;
+    public bool Streaming { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
 public sealed class AppServerControlSessionSummary
 {
     public string? AgentName { get; set; }
     public AppServerControlUsageSummary? Usage { get; set; }
     public List<AppServerControlCommand> AvailableCommands { get; set; } = [];
+    public bool AvailableCommandsOmitted { get; set; }
     public string State { get; set; } = string.Empty;
     public string StateLabel { get; set; } = string.Empty;
     public string? Reason { get; set; }
     public string? LastError { get; set; }
     public DateTimeOffset? LastEventAt { get; set; }
+    public DateTimeOffset? LastActivityAt { get; set; }
 }
 
 public sealed class AppServerControlUsageSummary
@@ -189,6 +208,7 @@ public static class AppServerControlQuickSettings
     public const string PlanModeOn = "on";
     public const string PermissionModeManual = "manual";
     public const string PermissionModeAuto = "auto";
+    public const string PermissionModeFullAccess = "full-access";
     public const string FastModeOff = "off";
     public const string FastModeOn = "on";
 
@@ -201,9 +221,12 @@ public static class AppServerControlQuickSettings
 
     public static string NormalizePermissionMode(string? value)
     {
-        return string.Equals(value?.Trim(), PermissionModeAuto, StringComparison.OrdinalIgnoreCase)
-            ? PermissionModeAuto
-            : PermissionModeManual;
+        return value?.Trim().ToLowerInvariant() switch
+        {
+            PermissionModeAuto => PermissionModeAuto,
+            PermissionModeFullAccess => PermissionModeFullAccess,
+            _ => PermissionModeManual
+        };
     }
 
     public static string NormalizeFastMode(string? value)
@@ -311,6 +334,7 @@ public sealed class AppServerControlQuickSettingsSummary
     public List<AppServerControlQuickSettingsOption> ModelOptions { get; set; } = [];
     public List<AppServerControlQuickSettingsOption> EffortOptions { get; set; } = [];
     public List<JsonElement> ConfigOptions { get; set; } = [];
+    public bool OptionsOmitted { get; set; }
 }
 
 public sealed class AppServerControlStreamsSummary
@@ -322,6 +346,7 @@ public sealed class AppServerControlStreamsSummary
     public string CommandOutput { get; set; } = string.Empty;
     public string FileChangeOutput { get; set; } = string.Empty;
     public string UnifiedDiff { get; set; } = string.Empty;
+    public bool StreamsOmitted { get; set; }
 }
 
 public sealed class AppServerControlToolPresentation
@@ -329,6 +354,7 @@ public sealed class AppServerControlToolPresentation
     public string Category { get; set; } = "other";
     public string Label { get; set; } = "Used tool";
     public string? ToolName { get; set; }
+    public AppServerControlMcpToolPresentation? Mcp { get; set; }
     public string? Subject { get; set; }
     public string? Outcome { get; set; }
     public string? Evidence { get; set; }
@@ -338,6 +364,14 @@ public sealed class AppServerControlToolPresentation
     public int TotalLineCount { get; set; }
     public int OmittedLineCount { get; set; }
     public List<string> Paths { get; set; } = [];
+}
+
+public sealed class AppServerControlMcpToolPresentation
+{
+    public string? ServerName { get; set; }
+    public string? ServerAddress { get; set; }
+    public string? Parameters { get; set; }
+    public bool ParametersTruncated { get; set; }
 }
 
 public static class AppServerControlToolPresentationProtocol
@@ -364,6 +398,7 @@ public static class AppServerControlToolPresentationProtocol
             Category = Bound(source.Category, MaxCategoryChars) ?? "other",
             Label = Bound(source.Label, MaxLabelChars) ?? "Used tool",
             ToolName = Bound(source.ToolName, MaxToolNameChars),
+            Mcp = CloneMcp(source.Mcp),
             Subject = Bound(source.Subject, MaxSubjectChars),
             Outcome = Bound(source.Outcome, MaxOutcomeChars),
             Evidence = Bound(source.Evidence, MaxEvidenceChars),
@@ -383,6 +418,15 @@ public static class AppServerControlToolPresentationProtocol
         }
         return clone;
     }
+
+    public static AppServerControlMcpToolPresentation? CloneMcp(AppServerControlMcpToolPresentation? source) =>
+        source is null ? null : new()
+        {
+            ServerName = Bound(source.ServerName, 160),
+            ServerAddress = Bound(source.ServerAddress, 2_048),
+            Parameters = Bound(source.Parameters, 32_768),
+            ParametersTruncated = source.ParametersTruncated || source.Parameters?.Length > 32_768
+        };
 
     private static string? Bound(string? value, int maxChars)
     {
@@ -458,6 +502,13 @@ public sealed class AppServerControlItemSummary
     public DateTimeOffset UpdatedAt { get; set; }
 }
 
+public sealed class AppServerControlPermissionOption
+{
+    public string OptionId { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+    public string? Kind { get; set; }
+}
+
 public sealed class AppServerControlRequestSummary
 {
     public string RequestId { get; set; } = string.Empty;
@@ -466,6 +517,9 @@ public sealed class AppServerControlRequestSummary
     public string KindLabel { get; set; } = string.Empty;
     public string State { get; set; } = string.Empty;
     public string? Detail { get; set; }
+    public string? ApprovalPurpose { get; set; }
+    public string? ApprovalTool { get; set; }
+    public List<AppServerControlPermissionOption>? PermissionOptions { get; set; }
     public string? Decision { get; set; }
     public List<AppServerControlQuestion> Questions { get; set; } = [];
     public List<AppServerControlAnsweredQuestion> Answers { get; set; } = [];
@@ -578,6 +632,7 @@ public sealed class AppServerControlSteerRequest
 public sealed class AppServerControlRequestDecisionRequest
 {
     public string Decision { get; set; } = "accept";
+    public string? OptionId { get; set; }
 }
 
 public sealed class AppServerControlUserInputAnswerRequest
@@ -715,6 +770,7 @@ public sealed class AppServerControlAttachRuntimeRequest
 public sealed class AppServerControlMcpServer
 {
     public string? ScopeIdentity { get; set; }
+    public string? DisplayAddress { get; set; }
     public string Command { get; set; } = string.Empty;
     public List<string> Arguments { get; set; } = [];
     public Dictionary<string, string> EnvironmentVariables { get; set; } = new(StringComparer.Ordinal);
@@ -754,6 +810,7 @@ public sealed class AppServerControlRequestResolutionCommand
 {
     public string RequestId { get; set; } = string.Empty;
     public string Decision { get; set; } = "accept";
+    public string? OptionId { get; set; }
 }
 
 public sealed class AppServerControlUserInputResolutionCommand

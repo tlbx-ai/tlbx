@@ -135,7 +135,11 @@ public sealed class BrowserPreviewOperations(
 
         return ui.SerializeTargetOperationAsync(sessionId, previewName, async () =>
         {
+            var flushed = await commands.FlushStorageBeforeTargetChangeAsync(sessionId, previewName, cancellationToken).ConfigureAwait(false);
+            if (!flushed.Success)
+                return new BrowserPreviewOperationResult(false, 409, flushed.Error ?? "Storage flush failed; target unchanged.");
             var started = DateTimeOffset.UtcNow;
+            var previousDocumentId = commands.GetDocumentId(sessionId, previewName) ?? "";
             if (!previews.SetTarget(sessionId, previewName, url))
                 return new BrowserPreviewOperationResult(false, 400,
                     "Invalid URL. Must be http://, https://, or a local file:/// URL, and cannot point to this server.");
@@ -147,12 +151,13 @@ public sealed class BrowserPreviewOperations(
                 return new BrowserPreviewOperationResult(false, 409, opened.Error + "\n");
 
             var status = await commands.WaitForControllableAsync(url, sessionId, previewName,
-                requireClientConnectedAfterUtc: started, requireVisibleClient: activateSession,
+                requireClientConnectedAfterUtc: started, requirePanelVisibleClient: activateSession,
                 connectedUiClientCountProvider: () => ui.ConnectedBrowserCount,
-                cancellationToken: cancellationToken, requiredTargetRevision: revision).ConfigureAwait(false);
+                cancellationToken: cancellationToken, requiredTargetRevision: revision,
+                previousDocumentId: previousDocumentId).ConfigureAwait(false);
             var text = commands.GetStatusText(url, sessionId, previewName, connectedUiClientCount: ui.ConnectedBrowserCount);
             var ready = status.Controllable && owners.GetGeneration(sessionId, previewName) == opened.OwnershipGeneration
-                && (!activateSession || status.DefaultClient?.IsVisible == true);
+                && (!activateSession || (status.DefaultClient?.IsPanelVisible ?? status.DefaultClient?.IsVisible) == true);
             if (ready)
             {
                 var probe = await commands.ExecuteCommandAsync(new BrowserCommandRequest
@@ -161,6 +166,10 @@ public sealed class BrowserPreviewOperations(
                     PreviewId = status.DefaultClient?.PreviewId, Timeout = 15
                 }, cancellationToken).ConfigureAwait(false);
                 if (!probe.Success) return new BrowserPreviewOperationResult(false, 409, probe.Error + "\n");
+                if (probe.DocumentId != status.DefaultClient?.DocumentId
+                    || commands.GetDocumentId(sessionId, previewName) != probe.DocumentId)
+                    return new BrowserPreviewOperationResult(false, 409,
+                        "The preview document changed during readiness. Inspect state before retrying open.\n");
                 if (owners.GetGeneration(sessionId, previewName) != opened.OwnershipGeneration
                     || previews.GetPreviewSession(sessionId, previewName)?.TargetRevision != revision)
                     return new BrowserPreviewOperationResult(false, 409,

@@ -15,6 +15,18 @@ export function resizeSmartInputTextarea(
   textarea: HTMLTextAreaElement,
   options: ResizeSmartInputTextareaOptions = {},
 ): void {
+  const mobileDock =
+    typeof textarea.closest === 'function'
+      ? textarea.closest<HTMLElement>('.adaptive-footer-dock[data-device="mobile"]')
+      : null;
+  if (mobileDock?.dataset.composerExpanded === 'true') {
+    // The expanded grid tracks the visible viewport, including OSK changes.
+    // An inline height measured before it shrinks would outlive that layout.
+    textarea.style.removeProperty('height');
+    textarea.style.removeProperty('min-height');
+    textarea.style.removeProperty('overflow-y');
+    return;
+  }
   const expandedMinHeight = resolveExpandedComposerTextareaMinHeight(textarea);
   const preserveScrollTop = Number.isFinite(options.preserveScrollTop ?? Number.NaN)
     ? Math.max(0, options.preserveScrollTop ?? 0)
@@ -34,12 +46,15 @@ export function resizeSmartInputTextarea(
   const borderTop = Number.parseFloat(computedStyle.borderTopWidth) || 0;
   const borderBottom = Number.parseFloat(computedStyle.borderBottomWidth) || 0;
   const minHeight = Math.max(Number.parseFloat(computedStyle.minHeight) || 0, expandedMinHeight);
-  const maxHeight =
+  const compactLineLimit =
     effectiveLineHeight * MAX_VISIBLE_TEXTAREA_LINES +
     paddingTop +
     paddingBottom +
     borderTop +
     borderBottom;
+  const maxHeight = mobileDock
+    ? Number.parseFloat(computedStyle.maxHeight) || compactLineLimit
+    : compactLineLimit;
   const contentHeight = textarea.scrollHeight + borderTop + borderBottom;
   const nextHeight = Math.max(minHeight, Math.min(contentHeight, maxHeight));
 

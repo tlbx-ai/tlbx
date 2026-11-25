@@ -91,6 +91,7 @@ let previewTabSelectHandler: ((previewName: string) => void) | null = null;
 let previewTabCloseHandler: ((previewName: string) => void) | null = null;
 let activeFrameKey: string | null = null;
 const previewFrames = new Map<string, HTMLIFrameElement>();
+const visibilityRefreshRevision = new WeakMap<HTMLIFrameElement, number>();
 const responsiveFrameByFrame = new Map<string, boolean>();
 let statusRefreshTimer: number | null = null;
 let screenshotInFlight = false;
@@ -99,14 +100,6 @@ type PreviewReloadMode = 'soft' | 'force' | 'hard';
 /** Get the URL currently loaded in the iframe. */
 export function getLoadedUrl(): string | null {
   return loadedUrl;
-}
-
-function createForceReloadToken(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID();
-  }
-
-  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
 /** Register a callback for preview tab selection. */
@@ -589,13 +582,17 @@ function findPreviewIframeByWindow(source: MessageEventSource | null): HTMLIFram
 }
 
 function refreshPreviewBridgeVisibility(frame: HTMLIFrameElement, visible: boolean): void {
+  const revision = (visibilityRefreshRevision.get(frame) ?? 0) + 1;
+  visibilityRefreshRevision.set(frame, revision);
   const postRefresh = (): void => {
+    if (!frame.isConnected || visibilityRefreshRevision.get(frame) !== revision) return;
     try {
       frame.contentWindow?.postMessage(
         {
           type: 'mt-refresh-browser-state',
           force: true,
           visible,
+          panelVisible: visible,
           context: frame.name ? (JSON.parse(frame.name) as unknown) : null,
         },
         '*',
@@ -905,14 +902,14 @@ export async function loadBackgroundPreview(
   currentTargetRevision: number,
 ): Promise<void> {
   if (!iframeHost) throw new Error('The tlbx preview host is unavailable. Reload the UI.');
-  if ($activeSessionId.get() === sessionId) {
+  if (isStillActivePreviewSession(sessionId, previewName)) {
     await loadPreview();
     return;
   }
 
   const previewClient = await ensureDockedPreviewClient(sessionId, previewName);
   if (!previewClient) throw new Error('Failed to register the browser preview. Reload the UI.');
-  if ($activeSessionId.get() === sessionId) {
+  if (isStillActivePreviewSession(sessionId, previewName)) {
     await loadPreview();
     return;
   }
@@ -941,29 +938,16 @@ async function handleRefresh(mode: PreviewReloadMode = 'force'): Promise<void> {
     await clearWebPreviewBrowserStateAsync();
   }
 
-  const currentUrl = getActiveUrl() ?? $webPreviewUrl.get();
-  if (currentUrl) {
-    const result = await setWebPreviewTarget(sessionId, previewName, currentUrl);
-    if (!result?.active) {
-      setActionMessage('error', 'Reload failed: tlbx could not refresh the preview target.');
-      log.warn(() => 'Failed to refresh web preview target');
-      return;
-    }
-    upsertSessionPreview(result);
-    setCurrentPreviewUrl(result.url ?? currentUrl, false);
-  }
-
-  if (mode === 'soft') {
-    await reloadWebPreview(sessionId, previewName, mode);
-    await loadPreview();
+  // Keep the current document/revision alive through its storage flush barrier.
+  // Replacing the target first invalidates its pending writes and loses data.
+  if (!(await reloadWebPreview(sessionId, previewName, mode))) {
+    setActionMessage(
+      'error',
+      'Reload cancelled: the preview could not confirm that storage was saved.',
+    );
     return;
   }
-
-  if (mode === 'hard') {
-    await reloadWebPreview(sessionId, previewName, mode);
-  }
-
-  await loadPreview(createForceReloadToken());
+  await refreshBrowserPreviewStatus();
 }
 
 /**

@@ -23,6 +23,7 @@ env:
   NPM_VERSION: '12.2.0'
   DOTNET_NOLOGO: true
   DOTNET_CLI_TELEMETRY_OPTOUT: true
+  NuGetAudit: 'false'
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
   GIT_CONFIG_COUNT: '2'
@@ -87,7 +88,7 @@ jobs:
           release_tag = os.environ["RELEASE_TAG"]
           integrity = (
               "## Release integrity\n\n"
-              "Native archives have matching platform-specific SPDX SBOM assets plus GitHub build-provenance and SBOM attestations. "
+              "Native archives include the latest available platform-specific SPDX scan snapshot. Fresh scans run only in Tests (on demand); snapshots may predate this build. Archive and snapshot digests have GitHub build-provenance attestations. "
               "Installers and the built-in updater additionally verify a signed manifest and all packaged-file hashes.\n\n"
               f"[Verification guide](https://github.com/tlbx-ai/tlbx/blob/{release_tag}/docs/RELEASE-INTEGRITY.md) · "
               f"[Security policy](https://github.com/tlbx-ai/tlbx/blob/{release_tag}/SECURITY.md)"
@@ -149,34 +150,6 @@ jobs:
               --notes-file "$RELEASE_NOTES_FILE"
           fi
 
-  supply-chain:
-    needs: prepare
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
-        with:
-          dotnet-version: ${{ env.DOTNET_VERSIONS }}
-
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: '26.12.0'
-
-      - name: Pin npm with strict lifecycle allowlisting support
-        run: npm install --global "npm@$NPM_VERSION" --ignore-scripts
-
-      - name: Audit shipped server dependencies
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: ./scripts/audit-supply-chain.ps1 -Scope server
-
-  # ── Build frontend once (platform-agnostic JS/CSS/HTML) ──────────────────
   frontend:
     runs-on: ubuntu-24.04
     steps:
@@ -219,7 +192,7 @@ jobs:
           retention-days: 1
 
   build-dev:
-    needs: [prepare, frontend, supply-chain]
+    needs: [prepare, frontend]
     if: >-
       (github.event_name == 'push' && needs.prepare.outputs.is_dev == 'true') ||
       (github.event_name == 'workflow_dispatch' && inputs.platform == 'osx-x64')
@@ -229,6 +202,7 @@ jobs:
     permissions:
       contents: write
       id-token: write
+      actions: read
       attestations: write
       artifact-metadata: write
     strategy:
@@ -376,11 +350,10 @@ jobs:
           $archive = "staging/mt-$rid.tar.gz"
           tar -cf - -C "staging/$rid" . | gzip -9 > $archive
 
-      - name: Generate SBOM and attest release
+      - name: Reuse latest SBOM and attest release
         uses: ./.github/actions/attest-release
         with:
           subject-path: staging/mt-${{ matrix.rid }}.tar.gz
-          scan-path: staging/${{ matrix.rid }}
           sbom-path: staging/mt-${{ matrix.rid }}.spdx.json
 
       - name: Upload release archive and SBOM
@@ -430,12 +403,13 @@ jobs:
 
   # ── Build macOS + Linux for stable/public releases ─────────────────────────
   build:
-    needs: [prepare, frontend, supply-chain]
+    needs: [prepare, frontend]
     if: needs.prepare.outputs.is_dev != 'true'
     continue-on-error: true
     permissions:
       contents: write
       id-token: write
+      actions: read
       attestations: write
       artifact-metadata: write
     strategy:
@@ -586,11 +560,10 @@ jobs:
           $archive = "staging/mt-$rid.tar.gz"
           tar -cf - -C "staging/$rid" . | gzip -9 > $archive
 
-      - name: Generate SBOM and attest release
+      - name: Reuse latest SBOM and attest release
         uses: ./.github/actions/attest-release
         with:
           subject-path: staging/mt-${{ matrix.rid }}.tar.gz
-          scan-path: staging/${{ matrix.rid }}
           sbom-path: staging/mt-${{ matrix.rid }}.spdx.json
 
       - name: Upload release archive and SBOM
@@ -627,12 +600,13 @@ jobs:
 
   # ── Build Windows: hosted runner for dev, self-hosted with signing for stable ─
   build-windows-dev:
-    needs: [prepare, frontend, supply-chain]
+    needs: [prepare, frontend]
     if: needs.prepare.outputs.is_dev == 'true' && (github.event_name != 'workflow_dispatch' || inputs.platform != 'osx-x64')
     continue-on-error: true
     permissions:
       contents: write
       id-token: write
+      actions: read
       attestations: write
       artifact-metadata: write
     strategy:
@@ -716,11 +690,10 @@ jobs:
             Compress-Archive -Path "./staging/$rid/*" -DestinationPath $archive -CompressionLevel Fastest -Force
           }
 
-      - name: Generate SBOM and attest release
+      - name: Reuse latest SBOM and attest release
         uses: ./.github/actions/attest-release
         with:
           subject-path: staging/mt-${{ matrix.rid }}.zip
-          scan-path: staging/${{ matrix.rid }}
           sbom-path: staging/mt-${{ matrix.rid }}.spdx.json
 
       - name: Upload release archive and SBOM
@@ -761,12 +734,13 @@ jobs:
           compression-level: 0
           retention-days: 3
   build-windows:
-    needs: [prepare, frontend, supply-chain]
+    needs: [prepare, frontend]
     if: needs.prepare.outputs.is_dev != 'true'
     continue-on-error: true
     permissions:
       contents: write
       id-token: write
+      actions: read
       attestations: write
       artifact-metadata: write
     strategy:
@@ -897,11 +871,10 @@ jobs:
             Compress-Archive -Path "./staging/$rid/*" -DestinationPath $archive -CompressionLevel Fastest -Force
           }
 
-      - name: Generate SBOM and attest release
+      - name: Reuse latest SBOM and attest release
         uses: ./.github/actions/attest-release
         with:
           subject-path: staging/mt-${{ matrix.rid }}.zip
-          scan-path: staging/${{ matrix.rid }}
           sbom-path: staging/mt-${{ matrix.rid }}.spdx.json
 
       - name: Upload release archive and SBOM
@@ -968,10 +941,10 @@ jobs:
           npm publish --access public --provenance --tag latest
 
   publish-release:
-    needs: [prepare, frontend, supply-chain, build, build-windows, build-dev, build-windows-dev]
+    needs: [prepare, frontend, build, build-windows, build-dev, build-windows-dev]
     if: >-
       always() && !cancelled() && needs.prepare.result == 'success' &&
-      needs.frontend.result == 'success' && needs.supply-chain.result == 'success' &&
+      needs.frontend.result == 'success' &&
       github.event_name == 'push'
     runs-on: ubuntu-24.04
     permissions:

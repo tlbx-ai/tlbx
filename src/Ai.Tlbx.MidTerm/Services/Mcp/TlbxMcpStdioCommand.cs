@@ -60,9 +60,10 @@ internal static class TlbxMcpStdioCommand
         using var bootstrapHttp = new HttpClient(bootstrapHandler, disposeHandler: false) { Timeout = TimeSpan.FromSeconds(15) };
         credentials.Configure(bootstrapHttp);
         using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var freshness = new McpStdioFreshness(Startup.CliCommands.GetVersion());
         using var context = options.OperatorMode ? null : new McpStdioRuntimeContext(bootstrapHttp, credentials, options);
         if (context is not null) await context.EnsureAsync(force: true, lifetime.Token).ConfigureAwait(false);
-        using var contextHandler = new McpStdioContextHandler(context, credentials, options.OperatorMode)
+        using var contextHandler = new McpStdioContextHandler(context, credentials, options.OperatorMode, freshness)
         {
             InnerHandler = CreateHttpHandler(options, cookies)
         };
@@ -79,12 +80,14 @@ internal static class TlbxMcpStdioCommand
         services.AddLogging();
         var proxy = services.AddMcpServer(server =>
         {
-            server.ServerInfo = upstream.ServerInfo;
+            server.ServerInfo = new() { Name = "TLBX native MCP adapter", Version = Startup.CliCommands.GetVersion() };
             server.ServerInstructions = upstream.ServerInstructions;
         }).WithStreamServerTransport(input, output);
-        ConfigureForwarding(proxy, upstream, context);
+        ConfigureForwarding(proxy, upstream, context, freshness);
         await using var provider = services.BuildServiceProvider();
         var server = provider.GetRequiredService<McpServer>();
+        freshness.Attach(server);
+        await using var catalogNotifications = freshness.RelayNotifications(upstream);
         var renewal = context is null ? Task.CompletedTask : RenewWhileAliveAsync(context, lifetime.Token);
         try { await server.RunAsync(lifetime.Token).ConfigureAwait(false); }
         finally
@@ -95,13 +98,16 @@ internal static class TlbxMcpStdioCommand
         return 0;
     }
 
-    internal static void ConfigureForwarding(IMcpServerBuilder builder, McpClient upstream, McpStdioRuntimeContext? context = null)
+    internal static void ConfigureForwarding(IMcpServerBuilder builder, McpClient upstream, McpStdioRuntimeContext? context = null,
+        McpStdioFreshness? freshness = null)
     {
+        freshness ??= new McpStdioFreshness(Startup.CliCommands.GetVersion());
+        freshness.Initialize(upstream.ServerInfo?.Version ?? "unknown");
         // Forward one protocol request with its original parameters and metadata.
         // Preserve cursors and opaque URIs instead of flattening/prefetching lists.
         builder.Services.Configure<McpServerOptions>(options => options.Capabilities = new ServerCapabilities
         {
-            Tools = upstream.ServerCapabilities.Tools is null ? null : new ToolsCapability(),
+            Tools = upstream.ServerCapabilities.Tools is null ? null : new ToolsCapability { ListChanged = true },
             Resources = upstream.ServerCapabilities.Resources is null ? null : new ResourcesCapability(),
             Prompts = upstream.ServerCapabilities.Prompts is null ? null : new PromptsCapability(),
             Completions = upstream.ServerCapabilities.Completions
@@ -109,6 +115,7 @@ internal static class TlbxMcpStdioCommand
         if (upstream.ServerCapabilities.Tools is not null)
             builder.WithListToolsHandler(async (request, ct) =>
                 {
+                    freshness.Attach(request.Server);
                     var result = await ForwardAsync(upstream, request.JsonRpcRequest, McpClientJsonContext.Default.ListToolsResult, ct).ConfigureAwait(false);
                     result.Tools = result.Tools.Where(tool => tool.Name is not ("process_run_isolated" or TlbxMcpProcessWaitTool.ToolName or TlbxMcpFileCallTool.ToolName or TlbxMcpArtifactSaveTool.ToolName or TlbxMcpOutputFileTool.ToolName)).ToList();
                     result.Tools = result.Tools.Select(tool => tool.Name == "update_apply" ? TlbxMcpUpdateWorkflow.ProtocolTool : tool).ToList();
@@ -124,6 +131,7 @@ internal static class TlbxMcpStdioCommand
                 })
                 .WithCallToolHandler(async (request, ct) =>
                 {
+                    freshness.Attach(request.Server);
                     try
                     {
                         var native = context is null ? null : await context.ResolveNativeCallAsync(request.JsonRpcRequest, request.Params?.Name == "context_repair", ct).ConfigureAwait(false);
@@ -137,11 +145,15 @@ internal static class TlbxMcpStdioCommand
                         if (request.Params?.Name == "context_repair" && context is not null)
                             await context.EnsureAsync(force: true, ct).ConfigureAwait(false);
                         if (request.Params?.Name == "workflow_run")
-                            return await TlbxMcpNativeWorkflow.InvokeAsync(request.Params, upstream, ct).ConfigureAwait(false);
+                            return !TlbxMcpNativeWorkflow.RequiresCallerLocalExecution(request.Params)
+                                ? await ForwardAsync(upstream, request.JsonRpcRequest, McpClientJsonContext.Default.CallToolResult, ct).ConfigureAwait(false)
+                                : await TlbxMcpNativeWorkflow.InvokeAsync(request.Params, upstream, ct).ConfigureAwait(false);
                         if (request.Params?.Name == "update_apply")
                             return await TlbxMcpUpdateWorkflow.InvokeAsync(request.Params,
                                 (name, arguments, token) => TlbxMcpNativeWorkflow.CallUpstreamAsync(upstream, name, arguments, token), ct).ConfigureAwait(false);
-                        return await ForwardAsync(upstream, request.JsonRpcRequest, McpClientJsonContext.Default.CallToolResult, ct).ConfigureAwait(false);
+                        var result = await ForwardAsync(upstream, request.JsonRpcRequest, McpClientJsonContext.Default.CallToolResult, ct).ConfigureAwait(false);
+                        return request.Params?.Name is "context_get" or "context_repair"
+                            ? freshness.DescribeContext(result) : result;
                     }
                     catch (InvalidOperationException error) when (
                         error.Message.StartsWith("TLBX_MCP_", StringComparison.Ordinal) ||
@@ -454,7 +466,8 @@ internal sealed class McpStdioRuntimeContext : IDisposable
     }
 }
 
-internal sealed class McpStdioContextHandler(McpStdioRuntimeContext? context, McpStdioCredentials credentials, bool operatorMode = false) : DelegatingHandler
+internal sealed class McpStdioContextHandler(McpStdioRuntimeContext? context, McpStdioCredentials credentials, bool operatorMode = false,
+    McpStdioFreshness? freshness = null) : DelegatingHandler
 {
     internal const string OperatorHeader = "X-Tlbx-Mcp-Operator";
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
@@ -474,6 +487,7 @@ internal sealed class McpStdioContextHandler(McpStdioRuntimeContext? context, Mc
         }
         var response = await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
         credentials.Observe(response);
+        if (freshness is not null) await freshness.ObserveAsync(response, cancellationToken).ConfigureAwait(false);
         // Deliberately no retry after dispatch: an operation can have succeeded
         // even when its response was lost or authentication subsequently changed.
         return response;

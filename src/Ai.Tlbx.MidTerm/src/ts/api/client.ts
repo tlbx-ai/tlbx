@@ -53,9 +53,9 @@ import {
   configureAppServerControlRuntimeWs,
   attachAppServerControlSession,
   declineAppServerControlRequestWs,
+  selectAppServerControlPermissionOptionWs,
   detachAppServerControlSession,
   getAppServerControlHistoryWindowWs,
-  interruptAppServerControlTurnWs,
   openAppServerControlHistorySocket,
   recoverAppServerControlWebSocket,
   suspendAppServerControlWebSocketForBrowserBackground,
@@ -413,8 +413,8 @@ export async function getBootstrapLogin(): ClientGetResult<'/api/bootstrap/login
 
 // --- Sessions ---
 
-export async function getSessions(): ClientGetResult<'/api/sessions'> {
-  return client.GET('/api/sessions', { cache: 'no-store' });
+export async function getSessions(signal?: AbortSignal): ClientGetResult<'/api/sessions'> {
+  return client.GET('/api/sessions', { cache: 'no-store', signal: signal ?? null });
 }
 
 export async function createSession(
@@ -723,7 +723,17 @@ export async function interruptAppServerControlTurn(
   id: string,
   request: AppServerControlInterruptRequest,
 ): Promise<AppServerControlCommandAcceptedResponse> {
-  return interruptAppServerControlTurnWs(id, request);
+  // Stop must still work when the history WebSocket is reconnecting or suspended.
+  return fetchAppServerControlJson(
+    `/api/sessions/${encodeURIComponent(id)}/agent-control/interrupt`,
+    'Could not stop the turn.',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(request),
+      signal: AbortSignal.timeout(30000),
+    },
+  );
 }
 
 export async function getAppServerControlUsage(id: string): Promise<AppServerControlUsageSummary> {
@@ -772,6 +782,8 @@ export async function declineAppServerControlRequest(
 ): Promise<AppServerControlCommandAcceptedResponse> {
   return declineAppServerControlRequestWs(id, requestId, request);
 }
+
+export const selectAppServerControlPermissionOption = selectAppServerControlPermissionOptionWs;
 
 export async function resolveAppServerControlUserInput(
   id: string,
@@ -825,7 +837,7 @@ export async function getSettings(): ClientGetResult<'/api/settings'> {
 }
 
 export async function updateSettings(
-  settings: MidTermSettingsUpdate,
+  settings: Partial<MidTermSettingsUpdate>,
 ): ClientPatchResult<'/api/settings'> {
   return client.PATCH('/api/settings', {
     body: settings as unknown as MidTermSettingsPublic,

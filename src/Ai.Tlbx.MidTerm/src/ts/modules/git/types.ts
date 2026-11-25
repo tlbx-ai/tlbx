@@ -27,6 +27,12 @@ export interface GitStatusResponse {
   repoRoot: string;
   totalAdditions: number;
   totalDeletions: number;
+  filesOmitted?: boolean;
+  stagedCount?: number | null;
+  modifiedCount?: number | null;
+  untrackedCount?: number | null;
+  conflictedCount?: number | null;
+  recentCommitsCount?: number | null;
 }
 
 export type GitStatusReadResult =
@@ -203,6 +209,7 @@ export interface GitCommitDetailsResponse {
 export interface GitWsMessage {
   type: string;
   sessionId: string;
+  sessionIds?: string[];
   status?: GitStatusResponse;
   repos?: GitRepoBinding[];
   diff?: string;

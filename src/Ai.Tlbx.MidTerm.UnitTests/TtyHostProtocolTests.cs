@@ -212,7 +212,7 @@ public class TtyHostProtocolTests
     {
         byte[]? bufferFrame = null;
         var snapshotData = Encoding.UTF8.GetBytes("retained-output");
-        var terminalState = new TerminalReplayState(1049);
+        var terminalState = new TerminalReplayState(1049, 0x8194);
 
         TtyHostProtocol.WriteBufferResponseWithReplayState(
             500UL,
@@ -230,6 +230,7 @@ public class TtyHostProtocolTests
         Assert.Equal(500UL, snapshot.SequenceStart);
         Assert.Equal(1049, snapshot.TerminalState.AlternateScreenMode);
         Assert.True(snapshot.TerminalState.AlternateScreenActive);
+        Assert.Equal(terminalState.InputModes, snapshot.TerminalState.InputModes);
         Assert.Equal(snapshotData, snapshot.Data);
     }
 

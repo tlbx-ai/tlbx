@@ -28,9 +28,21 @@ is vulnerability-free.
 
 ## Inspect the SBOM
 
-The matching `.spdx.json` file is an SPDX 2.3 software bill of materials for
-the staged platform artifact. It is intentionally release- and platform-
-specific: native dependencies and packaged files can differ between RIDs.
+The platform `.spdx.json` file is the latest available SPDX 2.3 scan snapshot.
+It may predate this build and changes to code or dependencies. Fresh snapshots
+are generated only by Tests (on demand), suite=all or security, from verified
+published packages. Inspect `creationInfo.created` and snapshot annotations for
+the scanned package and date; do not treat reuse as a fresh inventory.
+
+Current releases attest the archive and copied SPDX file as build outputs. Verify
+the snapshot digest independently:
+
+```shell
+gh attestation verify mt-win-x64.spdx.json --repo tlbx-ai/tlbx
+```
+
+Historical releases instead carry exact archive/SBOM
+predicates. No fresh archive/SBOM predicate is issued for a reused snapshot.
 
 The public SBOM is transparency material. The installer does not trust package
 names from the SBOM as an installation authorization mechanism.
@@ -56,8 +68,8 @@ independently protect the downloaded archive and record build provenance.
 
 A web-only update deliberately preserves the running `mthost` and
 `mtagenthost`. An installed system can therefore report different server,
-frontend, and host versions. A release SBOM describes a fresh archive for its
-RID, not a synthesized SBOM of every possible mixed-version installation.
+frontend, and host versions. A snapshot describes its recorded scanned package,
+not every later archive or possible mixed-version installation.
 
 Use **Settings -> Updates & About** to inspect the versions actually running on
 the current host.

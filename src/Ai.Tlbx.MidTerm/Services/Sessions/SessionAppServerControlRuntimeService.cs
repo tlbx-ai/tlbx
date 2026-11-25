@@ -8,6 +8,7 @@ namespace Ai.Tlbx.MidTerm.Services.Sessions;
 
 public sealed class SessionAppServerControlRuntimeService : IAsyncDisposable, ISessionAppServerControlHeatSource
 {
+    private readonly TtyHostSessionManager _sessionManager;
     private readonly AiCliProfileService _profileService;
     private readonly SessionAppServerControlHostRuntimeService _hostRuntime;
 
@@ -17,6 +18,7 @@ public sealed class SessionAppServerControlRuntimeService : IAsyncDisposable, IS
         SessionAppServerControlHostRuntimeService hostRuntime,
         SettingsService? settingsService = null)
     {
+        _sessionManager = sessionManager;
         _profileService = profileService;
         _hostRuntime = hostRuntime;
         sessionManager.OnSessionClosed += Forget;
@@ -103,6 +105,11 @@ public sealed class SessionAppServerControlRuntimeService : IAsyncDisposable, IS
         return _hostRuntime.OwnsSession(sessionId);
     }
 
+    public bool IsEnabledFor(string? profile)
+    {
+        return _hostRuntime.IsEnabledFor(profile);
+    }
+
     public Task<TtyHostGitRepoMetadata[]?> GetGitMetadataAsync(string sessionId, CancellationToken ct = default)
     {
         return _hostRuntime.GetGitMetadataAsync(sessionId, ct);
@@ -114,6 +121,20 @@ public sealed class SessionAppServerControlRuntimeService : IAsyncDisposable, IS
         CancellationToken ct = default)
     {
         return _hostRuntime.SetGitMetadataAsync(sessionId, repos, ct);
+    }
+
+    public Task<bool> ResumeAsync(SessionInfoDto session, string threadId, string workingDirectory, CancellationToken ct)
+    {
+        var profile = ResolveAttachProfile(session);
+        if (!session.AppServerControlOnly || !IsAttachableProfile(profile))
+            throw new InvalidOperationException("Resume requires a dedicated Agent Controller session.");
+        session.CurrentDirectory = workingDirectory;
+        session.AgentAttachPoint = null;
+        return _hostRuntime.ResumeAsync(session.Id, profile, session, threadId, () =>
+        {
+            _sessionManager.SetAppServerControlResumeThreadId(session.Id, threadId);
+            _sessionManager.SetAgentWorkingDirectory(session.Id, workingDirectory);
+        }, ct);
     }
 
     public Task DetachAsync(string sessionId, CancellationToken ct = default)
@@ -136,22 +157,20 @@ public sealed class SessionAppServerControlRuntimeService : IAsyncDisposable, IS
         return _hostRuntime.TryGetCachedHistoryWindow(sessionId, out historyWindow);
     }
 
+    public event Action<string>? TextActivity
+    {
+        add => _hostRuntime.TextActivity += value;
+        remove => _hostRuntime.TextActivity -= value;
+    }
+
     public SessionAppServerControlHeatSnapshot GetHeatSnapshot(string sessionId)
     {
-        if (!_hostRuntime.TryGetCachedHistoryWindow(sessionId, out var historyWindow))
-        {
-            return SessionAppServerControlHeatSnapshot.Cold;
-        }
-
-        if (!ShouldSurfaceWorkingHeat(historyWindow))
-        {
-            return SessionAppServerControlHeatSnapshot.Cold;
-        }
-
+        var activityAt = _hostRuntime.GetLastActivityAt(sessionId);
         return new SessionAppServerControlHeatSnapshot
         {
-            CurrentHeat = 1,
-            LastActivityAt = historyWindow.Session.LastEventAt ?? historyWindow.CurrentTurn.StartedAt
+            IsDedicatedSession = _sessionManager.IsAppServerControlOnly(sessionId),
+            CurrentHeat = TerminalHeat.FromTextOutput(activityAt, DateTimeOffset.UtcNow),
+            LastActivityAt = activityAt
         };
     }
 
@@ -160,14 +179,10 @@ public sealed class SessionAppServerControlRuntimeService : IAsyncDisposable, IS
         int? startIndex = null,
         int? count = null,
         int? viewportWidth = null,
+        bool updateCache = true,
         CancellationToken ct = default)
     {
-        return _hostRuntime.GetHistoryWindowAsync(
-            sessionId,
-            startIndex,
-            count,
-            viewportWidth,
-            ct);
+        return _hostRuntime.GetHistoryWindowAsync(sessionId, startIndex, count, viewportWidth, updateCache, ct);
     }
 
     public AppServerControlHistoryPatchSubscription SubscribeHistoryPatches(
@@ -205,13 +220,13 @@ public sealed class SessionAppServerControlRuntimeService : IAsyncDisposable, IS
         return await _hostRuntime.StartTurnAsync(sessionId, request, ct).ConfigureAwait(false);
     }
 
-    public async Task SendComposerTurnAsync(
+    public async Task<AppServerControlTurnStartResponse> SendComposerTurnAsync(
         string sessionId,
         AppServerControlTurnRequest request,
         CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(request);
-        await _hostRuntime.SendComposerTurnAsync(sessionId, request, ct).ConfigureAwait(false);
+        return await _hostRuntime.SendComposerTurnAsync(sessionId, request, ct).ConfigureAwait(false);
     }
 
     public async Task<AppServerControlCommandAcceptedResponse> InterruptTurnAsync(
@@ -326,22 +341,6 @@ public sealed class SessionAppServerControlRuntimeService : IAsyncDisposable, IS
         return ValueTask.CompletedTask;
     }
 
-    private static bool ShouldSurfaceWorkingHeat(AppServerControlHistoryWindowResponse historyWindow)
-    {
-        if (historyWindow.Requests.Any(static request => string.Equals(request.State, "open", StringComparison.OrdinalIgnoreCase)))
-        {
-            return false;
-        }
-
-        if (IsWorkingTurnState(historyWindow.CurrentTurn.State))
-        {
-            return true;
-        }
-
-        return string.IsNullOrWhiteSpace(historyWindow.CurrentTurn.State) &&
-               IsWorkingSessionState(historyWindow.Session.State);
-    }
-
     private string ResolveAttachProfile(SessionInfoDto session)
     {
         var detectedProfile = _profileService.NormalizeProfile(null, session);
@@ -366,27 +365,7 @@ public sealed class SessionAppServerControlRuntimeService : IAsyncDisposable, IS
         return _hostRuntime.IsEnabledFor(profile);
     }
 
-    private static bool IsWorkingTurnState(string? state)
-    {
-        return state?.Trim().ToLowerInvariant() switch
-        {
-            "running" => true,
-            "in_progress" => true,
-            "started" => true,
-            "submitted" => true,
-            _ => false
-        };
-    }
 
-    private static bool IsWorkingSessionState(string? state)
-    {
-        return state?.Trim().ToLowerInvariant() switch
-        {
-            "starting" => true,
-            "running" => true,
-            _ => false
-        };
-    }
 }
 
 public sealed class AppServerControlRuntimeSummary

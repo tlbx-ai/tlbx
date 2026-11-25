@@ -9,6 +9,7 @@ using System.Security.Cryptography.X509Certificates;
 using Ai.Tlbx.MidTerm.Models.WebPreview;
 using Ai.Tlbx.MidTerm.Services;
 using Ai.Tlbx.MidTerm.Services.Browser;
+using Ai.Tlbx.MidTerm.Services.Sessions;
 
 namespace Ai.Tlbx.MidTerm.Services.WebPreview;
 
@@ -21,6 +22,9 @@ public sealed class WebPreviewService
     private readonly Func<X509Certificate2?>? _mainServerCertificate;
     private readonly BrowserPreviewOriginService? _previewOriginService;
     private readonly string? _cookiesDirectory;
+    private readonly SessionControlStateService? _controlState;
+    private readonly BrowserPreviewOwnerService? _owners;
+    private readonly Lock _targetLock = new();
     private readonly ConcurrentDictionary<string, PreviewState> _previews = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, string> _routeKeyToPreviewKey = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, string> _leakedPathToRouteKey = new(StringComparer.OrdinalIgnoreCase);
@@ -34,13 +38,45 @@ public sealed class WebPreviewService
         int serverPort,
         BrowserPreviewOriginService? previewOriginService,
         string? cookiesDirectory = null,
-        Func<X509Certificate2?>? mainServerCertificate = null)
+        Func<X509Certificate2?>? mainServerCertificate = null,
+        SessionControlStateService? controlState = null,
+        BrowserPreviewOwnerService? owners = null)
     {
         _mainServerCertificate = mainServerCertificate;
         _serverPort = serverPort;
         _previewOriginService = previewOriginService;
         _cookiesDirectory = cookiesDirectory;
+        _controlState = controlState;
+        _owners = owners;
     }
+
+    public void RestoreSession(string sessionId)
+    {
+        lock (_targetLock)
+        {
+            foreach (var (name, saved) in _controlState?.GetPreviews(sessionId) ?? new(StringComparer.Ordinal))
+            {
+                if (TryGetState(sessionId, name, out _)) continue;
+                var state = GetOrCreateState(sessionId, name);
+                // Invalidate tab-local navigation caches and pre-restart bridge
+                // messages. Route keys and registrations are always fresh.
+                state.TargetRevision = saved.TargetRevision is >= 0 and < long.MaxValue ? saved.TargetRevision + 1 : 1;
+                state.LocalRoot = saved.LocalRoot;
+                if (saved.Url is not null && !SetTarget(sessionId, name, saved.Url, preserveTargetRevision: true))
+                {
+                    state.LocalRoot = null;
+                    PersistTarget(state);
+                }
+                else if (saved.Url is null)
+                {
+                    PersistTarget(state);
+                }
+            }
+        }
+    }
+
+    private void PersistTarget(PreviewState state) =>
+        _controlState?.SetPreviewTarget(state.SessionId, state.PreviewName, state.TargetUrl, state.LocalRoot, state.TargetRevision);
 
     public static string NormalizePreviewName(string? previewName)
     {
@@ -51,7 +87,12 @@ public sealed class WebPreviewService
 
     public WebPreviewSessionInfo EnsurePreviewSession(string sessionId, string? previewName = null)
     {
-        return ToInfo(GetOrCreateState(sessionId, previewName));
+        lock (_targetLock)
+        {
+            var state = GetOrCreateState(sessionId, previewName);
+            PersistTarget(state);
+            return ToInfo(state);
+        }
     }
 
     public WebPreviewSessionInfo? GetPreviewSession(string? sessionId, string? previewName = null)
@@ -90,39 +131,49 @@ public sealed class WebPreviewService
 
     public bool DeletePreviewSession(string sessionId, string? previewName = null)
     {
-        var normalized = NormalizePreviewName(previewName);
-        if (string.Equals(normalized, DefaultPreviewName, StringComparison.OrdinalIgnoreCase))
+        lock (_targetLock)
         {
-            return false;
-        }
+            var normalized = NormalizePreviewName(previewName);
+            if (string.Equals(normalized, DefaultPreviewName, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
 
-        var key = BuildPreviewKey(sessionId, normalized);
-        if (!_previews.TryRemove(key, out var state))
-        {
-            return false;
-        }
+            var key = BuildPreviewKey(sessionId, normalized);
+            if (!_previews.TryRemove(key, out var state))
+            {
+                return false;
+            }
 
-        _routeKeyToPreviewKey.TryRemove(state.RouteKey, out _);
-        ClearLeakedPathRoutes(state.RouteKey);
-        state.Dispose();
-        return true;
+            _routeKeyToPreviewKey.TryRemove(state.RouteKey, out _);
+            ClearLeakedPathRoutes(state.RouteKey);
+            _controlState?.RemovePreview(sessionId, state.PreviewName);
+            _owners?.Release(sessionId, state.PreviewName);
+            state.Dispose();
+            return true;
+        }
     }
 
     public void ClearSession(string sessionId)
     {
-        var matches = _previews
-            .Where(entry => string.Equals(entry.Value.SessionId, sessionId, StringComparison.Ordinal))
-            .Select(entry => entry.Key)
-            .ToArray();
-
-        foreach (var key in matches)
+        lock (_targetLock)
         {
-            if (_previews.TryRemove(key, out var state))
+            var matches = _previews
+                .Where(entry => string.Equals(entry.Value.SessionId, sessionId, StringComparison.Ordinal))
+                .Select(entry => entry.Key)
+                .ToArray();
+
+            foreach (var key in matches)
             {
-                _routeKeyToPreviewKey.TryRemove(state.RouteKey, out _);
-                ClearLeakedPathRoutes(state.RouteKey);
-                state.Dispose();
+                if (_previews.TryRemove(key, out var state))
+                {
+                    _routeKeyToPreviewKey.TryRemove(state.RouteKey, out _);
+                    ClearLeakedPathRoutes(state.RouteKey);
+                    state.Dispose();
+                }
             }
+            _controlState?.RemoveSessionPreviews(sessionId);
+            _owners?.ClearSession(sessionId);
         }
     }
 
@@ -255,30 +306,40 @@ public sealed class WebPreviewService
             return false;
         }
 
-        var state = GetOrCreateState(sessionId, previewName);
-        var oldTarget = state.TargetUri;
-        if (!preserveTargetRevision) state.LocalRoot = localRoot;
-        if ((oldTarget is null || !TargetsShareCookieScope(oldTarget, uri)) && !preserveCookies)
+        lock (_targetLock)
         {
-            ResetCookieJar(state);
-        }
+            var state = GetOrCreateState(sessionId, previewName);
+            var oldTarget = state.TargetUri;
+            if (!preserveTargetRevision) state.LocalRoot = localRoot;
+            if ((oldTarget is null || !TargetsShareCookieScope(oldTarget, uri)) && !preserveCookies)
+            {
+                ResetCookieJar(state);
+            }
 
-        state.TargetUri = uri;
-        state.TargetUrl = uri.ToString();
-        // Natural navigation keeps the document's bridge identity. Explicit target
-        // replacement still invalidates older commands and preview clients.
-        if (!preserveTargetRevision) state.TargetRevision++;
-        LoadCookiesFromDisk(state, uri);
-        return true;
+            state.TargetUri = uri;
+            state.TargetUrl = uri.ToString();
+            // Natural navigation keeps the document's bridge identity. Explicit target
+            // replacement still invalidates older commands and preview clients.
+            if (!preserveTargetRevision) state.TargetRevision++;
+            LoadCookiesFromDisk(state, uri);
+            PersistTarget(state);
+            return true;
+        }
     }
 
     public void ClearTarget(string sessionId, string? previewName = null)
     {
-        var state = GetOrCreateState(sessionId, previewName);
-        state.TargetUrl = null;
-        state.TargetUri = null;
-        state.TargetRevision++;
-        ResetCookieJar(state);
+        lock (_targetLock)
+        {
+            var state = GetOrCreateState(sessionId, previewName);
+            state.TargetUrl = null;
+            state.TargetUri = null;
+            state.TargetRevision++;
+            state.LocalRoot = null;
+            ResetCookieJar(state);
+            _controlState?.RemovePreview(sessionId, state.PreviewName);
+            _owners?.Release(sessionId, state.PreviewName);
+        }
     }
 
     public bool HardReload(string sessionId, string? previewName = null)

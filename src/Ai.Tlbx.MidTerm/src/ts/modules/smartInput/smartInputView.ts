@@ -554,11 +554,6 @@ function createAppServerControlQuickSettingsDropdown(select: HTMLSelectElement):
   const menu = document.createElement('div');
   menu.className = 'manager-bar-action-popover smart-input-appServerControl-dropdown-menu hidden';
 
-  const statusDescription = document.createElement('p');
-  statusDescription.className = 'smart-input-appServerControl-setting-description';
-  statusDescription.hidden = true;
-  statusDescription.setAttribute('role', 'status');
-
   const closeMenu = (): void => {
     menu.classList.add('hidden');
     wrapper.classList.remove('smart-input-appServerControl-dropdown-open-up');
@@ -620,7 +615,7 @@ function createAppServerControlQuickSettingsDropdown(select: HTMLSelectElement):
   };
 
   const rebuildMenu = (): void => {
-    menu.replaceChildren(statusDescription);
+    menu.replaceChildren();
     for (const option of [...select.options]) {
       const optionButton = document.createElement('button');
       optionButton.type = 'button';
@@ -694,9 +689,6 @@ function createAppServerControlQuickSettingsDropdown(select: HTMLSelectElement):
       return;
     }
 
-    statusDescription.textContent =
-      wrapper.closest<HTMLElement>('.smart-input-appServerControl-field')?.title ?? '';
-    statusDescription.hidden = !statusDescription.textContent;
     menu.classList.remove('hidden');
     updateMenuPlacement();
     trigger.setAttribute('aria-expanded', 'true');

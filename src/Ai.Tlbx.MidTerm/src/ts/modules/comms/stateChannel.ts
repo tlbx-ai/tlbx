@@ -1,4 +1,5 @@
 import { SocketReadiness, resumeProbeTimeoutMs } from './socketReadiness';
+import { getSessions } from '../../api/client';
 import { recordTextActivity } from '../sidebar/heatIndicator';
 /**
  * State Channel Module
@@ -42,6 +43,7 @@ import {
   setDetachedPreviewViewport,
 } from '../web/webDetach';
 import { setViewportSize, openWebPreviewDock } from '../web/webDock';
+import { readPreviewViewportMetrics, type PreviewViewportMetrics } from '../web/webViewport';
 import { getWebPreviewTarget } from '../web/webApi';
 import {
   getSessionPreview,
@@ -57,6 +59,8 @@ import { isEmbeddedWebPreviewContext } from '../web/webContext';
 import { isSharedSessionRoute } from '../share';
 import { checkVersionAndReload } from '../../utils/versionCheck';
 import type { MobileDeviceAction } from '../web/mobileDeviceBridge';
+import type { MobileDeviceCommandResult } from '../web/mobileDeviceController';
+import { getOrCreateTabId } from '../../utils/cookies';
 import type { TerminalNotificationSignal } from '../terminal/terminalNotifications';
 
 interface TmuxDockMessage {
@@ -110,7 +114,7 @@ interface LayoutStateMessage {
 
 interface StateUpdateMessage {
   type?: undefined;
-  sessions?: { sessions: Session[] };
+  sessions?: { sessions: Session[] } | null;
   update?: UpdateInfo | null;
   layout?: LayoutStateMessage | null;
   managerBarQueue?: ManagerBarQueueEntry[];
@@ -153,6 +157,8 @@ type StateWsMessage =
 const log = createLogger('state');
 const stateReconnect = new ReconnectController();
 const stateReadiness = new SocketReadiness();
+const LINK_SESSION_FALLBACK_DELAY_MS = 1500;
+let stopSessionFallback: (() => void) | undefined;
 import {
   stateWs,
   sessionTerminals,
@@ -392,11 +398,11 @@ function handleStateSocketMessage(data: StateWsMessage): void {
     return;
   }
 
-  const sessionList = data.sessions?.sessions ?? [];
   if (data.terminalSizeControls !== undefined) {
     setTerminalSizeControls(data.terminalSizeControls);
   }
-  handleStateUpdate(sessionList, data.layout);
+  if (Array.isArray(data.sessions?.sessions))
+    handleStateUpdate(data.sessions.sessions, data.layout);
   if (data.managerBarQueue !== undefined) {
     setManagerBarQueue(data.managerBarQueue);
   }
@@ -408,6 +414,7 @@ function handleStateSocketMessage(data: StateWsMessage): void {
  * Automatically reconnects with exponential backoff on disconnect.
  */
 export function connectStateWebSocket(): void {
+  stopSessionFallback?.();
   stateReconnect.cancel();
   rejectPendingCommands('Connection replaced');
   closeWebSocket(stateWs, setStateWs);
@@ -417,6 +424,31 @@ export function connectStateWebSocket(): void {
   const wsPath = isSharedSessionRoute() ? '/ws/share/state' : '/ws/state';
   const ws = new WebSocket(createWsUrl(wsPath));
   setStateWs(ws);
+
+  // A confirmed WebSocket snapshot owns readiness and layout. Recover just
+  // the list over HTTP when Link has not delivered its initial snapshot.
+  const fallback = new AbortController();
+  const fallbackTimer =
+    typeof window !== 'undefined' && window.__tlbxConnectPreview && !isSharedSessionRoute()
+      ? window.setTimeout(() => {
+          void getSessions(fallback.signal)
+            .then(({ data, response }) => {
+              if (fallback.signal.aborted || stateWs !== ws || !response.ok) return;
+              if (Array.isArray(data?.sessions)) handleStateUpdate(data.sessions);
+            })
+            .catch((error: unknown) => {
+              if (!fallback.signal.aborted) {
+                log.warn(() => `Link session fallback failed: ${String(error)}`);
+              }
+            });
+        }, LINK_SESSION_FALLBACK_DELAY_MS)
+      : undefined;
+  const cancelFallback = (): void => {
+    clearTimeout(fallbackTimer);
+    fallback.abort();
+    if (stopSessionFallback === cancelFallback) stopSessionFallback = undefined;
+  };
+  stopSessionFallback = cancelFallback;
 
   ws.onopen = () => {
     if (stateWs !== ws) return;
@@ -434,7 +466,10 @@ export function connectStateWebSocket(): void {
     try {
       const data = JSON.parse(event.data as string) as StateWsMessage;
       handleStateSocketMessage(data);
-      if ('sessions' in data) $stateWsConnected.set(true);
+      if ('sessions' in data && Array.isArray(data.sessions?.sessions)) {
+        cancelFallback();
+        $stateWsConnected.set(true);
+      }
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
       log.error(() => `Error parsing state: ${message}`);
@@ -442,6 +477,7 @@ export function connectStateWebSocket(): void {
   };
 
   ws.onclose = (event) => {
+    cancelFallback();
     if (stateWs !== ws) return;
     $stateWsConnected.set(false);
 
@@ -810,7 +846,14 @@ async function handleBrowserUiCommand(msg: BrowserUiMessage): Promise<void> {
   }
 
   try {
-    let result: { success: boolean; error?: string } = { success: true };
+    let result: {
+      success: boolean;
+      error?: string;
+      viewport?: PreviewViewportMetrics;
+      device?: MobileDeviceCommandResult;
+    } = {
+      success: true,
+    };
     switch (msg.command) {
       case 'detach':
         result = await handleDetachBrowserUiCommand(msg);
@@ -830,20 +873,7 @@ async function handleBrowserUiCommand(msg: BrowserUiMessage): Promise<void> {
         }
         break;
       case 'mobile-device':
-        if (msg.deviceAction) {
-          void import('../web/mobileDeviceController')
-            .then(({ controlMobileDevice }) =>
-              controlMobileDevice(
-                msg.deviceAction as MobileDeviceAction,
-                msg.sessionId,
-                msg.previewName,
-                msg.deviceProfile,
-              ),
-            )
-            .catch((error: unknown) => {
-              log.warn(() => `Mobile device command failed: ${String(error)}`);
-            });
-        }
+        result.device = await handleMobileBrowserUiCommand(msg);
         break;
       case 'agent-wheel':
         await handleAgentWheelBrowserUiCommand(msg);
@@ -853,7 +883,13 @@ async function handleBrowserUiCommand(msg: BrowserUiMessage): Promise<void> {
         log.warn(() => result.error ?? 'Unknown browser-ui command');
     }
 
-    await reportBrowserUiCommandResult(msg, result.success, result.error);
+    await reportBrowserUiCommandResult(
+      msg,
+      result.success,
+      result.error,
+      result.viewport,
+      result.device,
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     log.warn(() => `Browser UI command failed: ${message}`);
@@ -861,10 +897,30 @@ async function handleBrowserUiCommand(msg: BrowserUiMessage): Promise<void> {
   }
 }
 
+async function handleMobileBrowserUiCommand(
+  msg: BrowserUiMessage,
+): Promise<MobileDeviceCommandResult> {
+  if (!msg.deviceAction || !msg.sessionId || !msg.previewName || msg.targetRevision === undefined) {
+    throw new Error(
+      'Mobile device command requires an exact session, preview and target revision.',
+    );
+  }
+  const { controlMobileDeviceCommand } = await import('../web/mobileDeviceController');
+  return controlMobileDeviceCommand(
+    msg.deviceAction as MobileDeviceAction,
+    msg.sessionId,
+    msg.previewName,
+    msg.targetRevision,
+    msg.deviceProfile,
+  );
+}
+
 async function reportBrowserUiCommandResult(
   msg: BrowserUiMessage,
   success: boolean,
   error?: string,
+  viewport?: PreviewViewportMetrics,
+  device?: MobileDeviceCommandResult,
 ): Promise<void> {
   if (!msg.requestId) {
     return;
@@ -872,8 +928,19 @@ async function reportBrowserUiCommandResult(
 
   const response = await fetch('/api/browser/ui-result', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ requestId: msg.requestId, command: msg.command, success, error }),
+    headers: { 'Content-Type': 'application/json', 'X-MidTerm-Tab-Id': getOrCreateTabId() },
+    body: JSON.stringify({
+      requestId: msg.requestId,
+      command: msg.command,
+      success,
+      error,
+      viewport,
+      sessionId: msg.sessionId,
+      previewName: msg.previewName,
+      targetRevision: msg.targetRevision,
+      mobileDevice: device?.mobileDevice,
+      screenshotDataUrl: device?.screenshotDataUrl,
+    }),
   });
   if (!response.ok) {
     log.warn(() => `Browser UI result delivery failed: HTTP ${response.status}`);
@@ -943,6 +1010,7 @@ function handleDockBrowserUiCommand(msg: BrowserUiMessage): { success: boolean; 
 function handleViewportBrowserUiCommand(msg: BrowserUiMessage): {
   success: boolean;
   error?: string;
+  viewport?: PreviewViewportMetrics;
 } {
   const target = resolveBrowserUiTarget(msg, false);
   if (!target) {
@@ -956,9 +1024,11 @@ function handleViewportBrowserUiCommand(msg: BrowserUiMessage): {
     return { success: true };
   }
 
-  return setViewportSize(width, height, target)
-    ? { success: true }
-    : { success: false, error: 'The requested preview frame is not attached.' };
+  if (!setViewportSize(width, height, target)) {
+    return { success: false, error: 'The requested preview frame is not attached.' };
+  }
+  const viewport = readPreviewViewportMetrics(target.sessionId, target.previewName);
+  return viewport ? { success: true, viewport } : { success: true };
 }
 
 function applyDetachedPreviewViewport(
@@ -978,7 +1048,8 @@ function applyDetachedPreviewViewport(
 async function handleOpenBrowserUiCommand(
   msg: BrowserUiMessage,
 ): Promise<{ success: boolean; error?: string }> {
-  const target = resolveBrowserUiTarget(msg);
+  // Resolve scope without changing selection before the target/revision is validated.
+  const target = resolveBrowserUiTarget(msg, false);
   if (!target || !msg.url) {
     return { success: false, error: 'The browser open command is missing its target or URL.' };
   }
@@ -1029,9 +1100,15 @@ async function handleBrowserOpen(
   }
 
   upsertSessionPreview(result);
-  setSessionSelectedPreviewName(sessionId, previewName);
   setSessionMode(sessionId, previewName, 'docked');
-  if (activateSession && $activeSessionId.get() !== sessionId) {
+  if (!activateSession) {
+    // Independent hidden opens must never race through the selected-preview sync
+    // token: a sibling open can supersede it before this exact frame is attached.
+    await syncBackgroundWebPreview(sessionId, previewName);
+    return { success: true };
+  }
+  setSessionSelectedPreviewName(sessionId, previewName);
+  if ($activeSessionId.get() !== sessionId) {
     selectSession(sessionId, { closeSettingsPanel: false });
   }
   if ($activeSessionId.get() !== sessionId) {

@@ -119,6 +119,7 @@ export function resolveHistoryEstimatedEntryHeight(
   entry: AppServerControlHistoryEntry,
   clientWidth: number,
 ): number {
+  if (entry.toolPresentation?.mcp) return estimateHistoryEntryHeight(entry, clientWidth);
   return (
     normalizeEstimatedHeight(entry.estimatedHeightPx) ??
     estimateHistoryEntryHeight(entry, clientWidth)
@@ -130,15 +131,16 @@ export function resolveHistoryViewportEntryHeight(
   state: SessionAppServerControlViewState | undefined,
   clientWidth: number,
 ): number {
-  const estimatedHeight = resolveHistoryEstimatedEntryHeight(entry, clientWidth);
-  if (!state) {
-    return estimatedHeight;
-  }
+  if (!state) return resolveHistoryEstimatedEntryHeight(entry, clientWidth);
 
-  activateHistoryMeasurementBucket(state, clientWidth);
+  // Scroll reads share the active bucket. Touching all three LRU maps and
+  // allocating an adapter per row makes even an already measured window costly.
+  if (state.historyMeasuredWidthBucket !== resolveHistoryMeasurementWidthBucket(clientWidth)) {
+    activateHistoryMeasurementBucket(state, clientWidth);
+  }
   return (
     state.historyMeasuredHeights.get(entry.id) ??
     state.historyObservedHeights.get(entry.id) ??
-    estimatedHeight
+    resolveHistoryEstimatedEntryHeight(entry, clientWidth)
   );
 }

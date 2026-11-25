@@ -1866,7 +1866,7 @@
                           min="65536"
                           max="10485760"
                           step="262144"
-                          value="2097152"
+                          value="8388608"
                         />
                         <button type="button" class="inline-save-btn" title="Save">
                           <span class="icon">&#xe90f;</span>
@@ -2054,6 +2054,7 @@
                         <option value="Terminus">Terminus</option>
                       </select>
                     </div>
+                    <div id="settings-agent-chat-appearance"></div>
                     <div class="setting-row">
                       <label
                         for="setting-show-agent-message-timestamps"
@@ -2087,6 +2088,29 @@
                           min="0"
                           max="20"
                           value="5"
+                        />
+                        <button type="button" class="inline-save-btn" title="Save">
+                          <span class="icon">&#xe90f;</span>
+                        </button>
+                      </div>
+                    </div>
+                    <div class="setting-row">
+                      <label
+                        for="setting-agent-image-preview-width"
+                        data-i18n="settings.agentUi.agentImagePreviewWidth"
+                        >Maximum image preview width (px)</label
+                      >
+                      <div
+                        class="text-input-wrapper"
+                        data-setting="agentImagePreviewWidth"
+                        data-type="number"
+                      >
+                        <input
+                          type="number"
+                          id="setting-agent-image-preview-width"
+                          min="120"
+                          max="1000"
+                          value="520"
                         />
                         <button type="button" class="inline-save-btn" title="Save">
                           <span class="icon">&#xe90f;</span>
@@ -2570,10 +2594,11 @@
                           value="fullReplay"
                           data-i18n="settings.options.resumeModeFullReplay"
                         >
-                          Full Replay (Default)
+                          Full Replay
                         </option>
                         <option
                           value="quickResume"
+                          selected
                           data-i18n="settings.options.resumeModeQuickResume"
                         >
                           Quick Resume (Better for More Sessions)

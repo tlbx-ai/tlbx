@@ -102,7 +102,7 @@ import {
 import { handleStateUpdate } from './stateChannel';
 import { getSessions } from '../../api/client';
 import { applyTerminalScaling } from '../terminal/scaling';
-import { createAlternateScreenReplayPrefix } from '../terminal/replayState';
+import { createTerminalReplayPrefix } from '../terminal/replayState';
 import { isSharedSessionRoute } from '../share';
 import { isHubSessionId } from '../hub/runtime';
 import { requestHubBufferRefresh, sendHubInput } from '../hub/channel';
@@ -172,8 +172,48 @@ const pendingBufferRefreshes = new Map<
 const browserTransportSnapshots = new Map<string, BrowserTransportSnapshot>();
 const activeSessionRecoveries = new Map<string, ActiveSessionRecovery>();
 const recoveryPreparationBarrierBypasses = new Set<string>();
+const RECOVERY_REQUEST_IN_FLIGHT_TIMEOUT_MS = 4000;
 const recoveryRequestsInFlight = new Set<string>();
+const recoveryRequestTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const recoveryFollowupCauses = new Map<string, string>();
+
+function clearRecoveryRequestTimer(sessionId: string): void {
+  const timer = recoveryRequestTimers.get(sessionId);
+  if (timer !== undefined) {
+    clearTimeout(timer);
+    recoveryRequestTimers.delete(sessionId);
+  }
+}
+
+function clearRecoveryRequestInFlight(sessionId: string): void {
+  clearRecoveryRequestTimer(sessionId);
+  recoveryRequestsInFlight.delete(sessionId);
+}
+
+function clearAllRecoveryRequestsInFlight(): void {
+  recoveryRequestTimers.forEach((timer) => {
+    clearTimeout(timer);
+  });
+  recoveryRequestTimers.clear();
+  recoveryRequestsInFlight.clear();
+}
+
+function armRecoveryRequestTimeout(sessionId: string): void {
+  clearRecoveryRequestTimer(sessionId);
+  const timer = setTimeout(() => {
+    recoveryRequestTimers.delete(sessionId);
+    if (!recoveryRequestsInFlight.has(sessionId) || activeSessionRecoveries.has(sessionId)) {
+      return;
+    }
+    recoveryRequestsInFlight.delete(sessionId);
+    const followupCause = recoveryFollowupCauses.get(sessionId);
+    recoveryFollowupCauses.delete(sessionId);
+    if (followupCause !== undefined) {
+      requestSessionRecovery(sessionId, followupCause);
+    }
+  }, RECOVERY_REQUEST_IN_FLIGHT_TIMEOUT_MS);
+  recoveryRequestTimers.set(sessionId, timer);
+}
 
 function discardSessionRecovery(sessionId: string): void {
   const recovery = activeSessionRecoveries.get(sessionId);
@@ -371,6 +411,7 @@ function measureCompletedOutputRtt(sessionId: string): void {
 
 // Track last hinted session to avoid redundant hints
 let lastHintedSessionId: string | null = null;
+let currentVisibilityActiveSessionId: string | null = null;
 let currentVisibleSessionIds: string[] = [];
 let currentBackgroundSessionIds: string[] = [];
 let muxSuspendedForBrowserBackground = false;
@@ -580,7 +621,7 @@ export function forgetMuxSession(sessionId: string): void {
   sessionsNeedingResync.delete(sessionId);
   browserTransportSnapshots.delete(sessionId);
   discardSessionRecovery(sessionId);
-  recoveryRequestsInFlight.delete(sessionId);
+  clearRecoveryRequestInFlight(sessionId);
   recoveryFollowupCauses.delete(sessionId);
   recoveryPreparationBarrierBypasses.delete(sessionId);
   pendingBufferRefreshes.delete(sessionId);
@@ -1321,16 +1362,22 @@ function handleMuxRecoveryBeginFrame(
   const sequenceStart = view.getBigUint64(6, true);
   const sourceSequenceEndExclusive = view.getBigUint64(14, true);
   const alternateScreenMode = payload.length >= 24 ? view.getUint16(22, true) : 0;
+  const inputModes = payload.length >= 26 ? view.getUint16(24, true) : 0;
 
   // Invalidate only this session. Async decompression and xterm callbacks from
   // other terminals must remain live while this transaction re-establishes one cursor.
   clearQueuedOutput(sessionId);
   discardSessionRecovery(sessionId);
+  clearRecoveryRequestTimer(sessionId);
   pendingOutputFrames.delete(sessionId);
   pendingTerminalReplayModes.delete(sessionId);
   sessionsNeedingResync.delete(sessionId);
   clearBracketedPasteScanState(sessionId);
   bracketedPasteState.delete(sessionId);
+
+  if ((inputModes & 0x8000) !== 0) {
+    bracketedPasteState.set(sessionId, (inputModes & (1 << 7)) !== 0);
+  }
 
   const snapshot = getOrCreateBrowserTransportSnapshot(sessionId);
   snapshot.lastReplayReason = resolveMuxDataLossReason(reasonCode);
@@ -1377,7 +1424,7 @@ function handleMuxRecoveryBeginFrame(
         // Missing terminal bytes may end inside UTF-8 or ANSI state. reset() is the
         // only operation that repairs parser state; clear() only erases the viewport.
         terminalState.terminal.reset();
-        const replayPrefix = createAlternateScreenReplayPrefix(alternateScreenMode);
+        const replayPrefix = createTerminalReplayPrefix(alternateScreenMode, inputModes);
         if (replayPrefix !== null) {
           try {
             terminalState.terminal.write(replayPrefix, finishPreparation);
@@ -1386,8 +1433,8 @@ function handleMuxRecoveryBeginFrame(
             // Fall through and release the barrier so recovery can continue.
           }
         }
-      } else if (createAlternateScreenReplayPrefix(alternateScreenMode) !== null) {
-        pendingTerminalReplayModes.set(sessionId, alternateScreenMode);
+      } else if (createTerminalReplayPrefix(alternateScreenMode, inputModes) !== null) {
+        pendingTerminalReplayModes.set(sessionId, { alternateScreenMode, inputModes });
       }
     }
 
@@ -1472,7 +1519,7 @@ function tryCompleteSessionRecovery(sessionId: string): void {
   }
 
   discardSessionRecovery(sessionId);
-  recoveryRequestsInFlight.delete(sessionId);
+  clearRecoveryRequestInFlight(sessionId);
   sessionsNeedingResync.delete(sessionId);
   snapshot.recoveryCompleted += 1;
   snapshot.recoveryReplayBytes += recovery.replayBytes;
@@ -1520,7 +1567,7 @@ function handleMuxResyncFrame(type: number, sessionId: string): boolean {
     snapshot.submittedSeq = 0n;
     snapshot.renderedSeq = 0n;
     discardSessionRecovery(sessionId);
-    recoveryRequestsInFlight.delete(sessionId);
+    clearRecoveryRequestInFlight(sessionId);
     recoveryFollowupCauses.delete(sessionId);
     clearBracketedPasteScanState(sessionId);
     bracketedPasteState.delete(sessionId);
@@ -1535,7 +1582,7 @@ function handleMuxResyncFrame(type: number, sessionId: string): boolean {
       snapshot.renderedSeq = 0n;
     });
     discardAllSessionRecoveries();
-    recoveryRequestsInFlight.clear();
+    clearAllRecoveryRequestsInFlight();
     recoveryFollowupCauses.clear();
     clearBracketedPasteScanState();
     bracketedPasteState.clear();
@@ -1629,9 +1676,10 @@ function retireMuxConnectionState(): void {
   // transactions and invalidate async output before releasing their barriers.
   clearQueuedOutput();
   discardAllSessionRecoveries();
-  recoveryRequestsInFlight.clear();
+  clearAllRecoveryRequestsInFlight();
   recoveryFollowupCauses.clear();
   lastHintedSessionId = null;
+  currentVisibilityActiveSessionId = null;
   syncCompletePending = false;
   if (syncCompleteTimeout !== null) {
     clearTimeout(syncCompleteTimeout);
@@ -1656,6 +1704,7 @@ export function connectMuxWebSocket(): void {
   $muxWsConnected.set(false);
 
   const activeId = $activeSessionId.get();
+  currentVisibilityActiveSessionId = activeId && !isHubSessionId(activeId) ? activeId : null;
   const query = new URLSearchParams();
   if (activeId) {
     query.set('activeSessionId', activeId);
@@ -1723,7 +1772,7 @@ export function connectMuxWebSocket(): void {
 
       // If state WS is connected, fetch fresh session list to ensure consistency
       // (state WS may have missed updates while mux was disconnected)
-      if ($stateWsConnected.get()) {
+      if ($stateWsConnected.get() && !window.__tlbxConnectPreview) {
         void refreshSessionList();
       }
     } else {
@@ -2016,6 +2065,7 @@ export function requestBufferRefresh(
   snapshot.lastReplayReason =
     mode === 'quickResume' ? 'quick_resume_tail_replay' : 'buffer_refresh_tail_replay';
   recoveryRequestsInFlight.add(sessionId);
+  armRecoveryRequestTimeout(sessionId);
   snapshot.recoveryRequested += 1;
   snapshot.lastRecoveryCause = recoveryCause;
 
@@ -2048,7 +2098,7 @@ export function restartStalledSessionRecovery(
   pendingTerminalReplayModes.delete(sessionId);
   sessionsNeedingResync.delete(sessionId);
   discardSessionRecovery(sessionId);
-  recoveryRequestsInFlight.delete(sessionId);
+  clearRecoveryRequestInFlight(sessionId);
   recoveryFollowupCauses.delete(sessionId);
   clearBracketedPasteScanState(sessionId);
   bracketedPasteState.delete(sessionId);
@@ -2085,7 +2135,7 @@ function queueBufferRefreshUntilMuxOpens(
 }
 
 function requestSessionRecovery(sessionId: string, cause: string): void {
-  if (activeSessionRecoveries.has(sessionId)) {
+  if (activeSessionRecoveries.has(sessionId) || recoveryRequestsInFlight.has(sessionId)) {
     const snapshot = getOrCreateBrowserTransportSnapshot(sessionId);
     snapshot.recoveryCoalesced += 1;
     recoveryFollowupCauses.set(sessionId, cause);
@@ -2114,6 +2164,7 @@ export function sendActiveSessionHint(sessionId: string | null): void {
     encodeSessionId(frame, 1, sessionId);
   }
   sendFrame(frame);
+  currentVisibilityActiveSessionId = sessionId;
 }
 
 export function sendVisibleSessionsHint(sessionIds: readonly string[]): void {
@@ -2139,23 +2190,32 @@ function sendSessionIdsHint(type: number, sessionIds: readonly string[]): void {
 }
 
 export function updateTerminalVisibility(
-  _activeSessionId: string | null,
+  activeSessionId: string | null,
   visibleSessionIds: readonly string[],
   backgroundSessionIds: readonly string[] = [],
 ): void {
+  const normalizedActiveSessionId =
+    activeSessionId && !isHubSessionId(activeSessionId) ? activeSessionId : null;
   const normalizedVisibleSessionIds = muxSessionRouting.normalizeSessionIds(visibleSessionIds);
   const normalizedBackgroundSessionIds =
     muxSessionRouting.normalizeSessionIds(backgroundSessionIds);
+  const activeChanged =
+    normalizedActiveSessionId !== null &&
+    normalizedActiveSessionId !== currentVisibilityActiveSessionId;
   const visibleChanged = !sameSessionIds(currentVisibleSessionIds, normalizedVisibleSessionIds);
   const backgroundChanged = !sameSessionIds(
     currentBackgroundSessionIds,
     normalizedBackgroundSessionIds,
   );
 
+  if (normalizedActiveSessionId === null) {
+    currentVisibilityActiveSessionId = null;
+  }
   currentVisibleSessionIds = normalizedVisibleSessionIds;
   currentBackgroundSessionIds = normalizedBackgroundSessionIds;
 
   if (muxWs && muxWs.readyState === WebSocket.OPEN) {
+    if (activeChanged) sendActiveSessionHint(normalizedActiveSessionId);
     if (visibleChanged) sendVisibleSessionsHint(normalizedVisibleSessionIds);
     if (backgroundChanged) sendBackgroundSessionsHint(normalizedBackgroundSessionIds);
   }
@@ -2276,12 +2336,13 @@ export function resetMuxChannelRuntimeForTests(): void {
   lastFlushDelayMs = null;
   lastServerIoRttMs = null;
   lastHintedSessionId = null;
+  currentVisibilityActiveSessionId = null;
   currentVisibleSessionIds = [];
   currentBackgroundSessionIds = [];
   muxSuspendedForBrowserBackground = false;
   browserTransportSnapshots.clear();
   discardAllSessionRecoveries();
-  recoveryRequestsInFlight.clear();
+  clearAllRecoveryRequestsInFlight();
   recoveryFollowupCauses.clear();
   recoveryPreparationBarrierBypasses.clear();
   bracketedPasteState.clear();

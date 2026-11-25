@@ -851,7 +851,8 @@ Start-Service -Name $serviceName -ErrorAction Stop
             webPreviewService,
             settingsService,
             authService,
-            shutdownService);
+            shutdownService,
+            app.Services.GetRequiredService<WebPreviewStorageService>());
         var hubMuxHandler = app.Services.GetRequiredService<HubMuxWebSocketHandler>();
         var hubStateHandler = app.Services.GetRequiredService<HubStateWebSocketHandler>();
 

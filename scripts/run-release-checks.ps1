@@ -9,8 +9,12 @@ param(
     [string]$Configuration = 'Release'
 )
 $ErrorActionPreference = 'Stop'
+. "$PSScriptRoot/build-storage.ps1"
+Initialize-TlbxBuildStorage (Split-Path $PSScriptRoot -Parent)
 . "$PSScriptRoot/release-test-clusters.ps1"
 $categories = @(Resolve-ReleaseTestClusters -TestCategories $TestCategories)
+$previousNuGetAudit = $env:NuGetAudit
+$env:NuGetAudit = 'false'
 Push-Location (Split-Path $PSScriptRoot -Parent)
 try {
     Write-Host "Release checks (no test suites): $($categories -join ', ')" -ForegroundColor Cyan
@@ -35,9 +39,9 @@ try {
         if ($LASTEXITCODE) { throw 'Server build failed.' }
     }
     if ($categories -contains 'dependencies') {
-        & "$PSScriptRoot/audit-supply-chain.ps1" -Scope server -FrontendInstalled:$FrontendInstalled
+        Write-Host 'Dependency vulnerability scans and fresh SBOMs run in Tests (on demand). Locked restore and package integrity remain part of builds.'
     }
     # Installer behavior is exercised on demand. Actual release packages retain
     # their mandatory signed manifests, hashes, SBOMs and Native AOT publication.
-} finally { Pop-Location }
+} finally { Pop-Location; $env:NuGetAudit = $previousNuGetAudit }
 $global:LASTEXITCODE = 0

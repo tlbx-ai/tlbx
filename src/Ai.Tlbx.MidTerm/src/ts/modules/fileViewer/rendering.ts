@@ -231,11 +231,11 @@ export function buildViewUrl(path: string, sessionId: string): string {
   return url;
 }
 
-export function buildLineNumberText(lineCount: number): string {
+export function buildLineNumberText(lineCount: number, startLine = 1): string {
   const safeLineCount = Math.max(lineCount, 1);
   const lines = new Array<string>(safeLineCount);
   for (let i = 0; i < safeLineCount; i++) {
-    lines[i] = String(i + 1);
+    lines[i] = String(i + startLine);
   }
   return lines.join('\n');
 }
@@ -371,6 +371,7 @@ export function createLineNumberedViewer(
   text: string,
   extraClassNames: string[] = [],
   html?: string,
+  startLine = 1,
 ): LineNumberedViewerHandle {
   const root = document.createElement('div');
   root.className = ['file-viewer-readonly-shell', ...extraClassNames].join(' ');
@@ -393,8 +394,8 @@ export function createLineNumberedViewer(
 
   const setText = (nextText: string, nextHtml?: string): void => {
     const lineCount = getLineCount(nextText);
-    applyViewerFontMetrics(root, lineCount);
-    numbers.textContent = buildLineNumberText(lineCount);
+    applyViewerFontMetrics(root, lineCount + startLine - 1);
+    numbers.textContent = buildLineNumberText(lineCount, startLine);
     if (nextHtml !== undefined) {
       pre.innerHTML = nextHtml;
     } else {

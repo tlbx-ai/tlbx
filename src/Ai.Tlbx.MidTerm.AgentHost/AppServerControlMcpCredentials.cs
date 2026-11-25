@@ -82,6 +82,7 @@ internal sealed class AppServerControlMcpCredentials : IDisposable
         Server = new AppServerControlMcpServer
         {
             ScopeIdentity = source.ScopeIdentity,
+            DisplayAddress = source.DisplayAddress,
             Command = source.Command,
             Arguments = [.. source.Arguments, "--credentials-file", FilePath]
         };

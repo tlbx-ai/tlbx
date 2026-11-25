@@ -187,7 +187,8 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
 
             // A one-shot authenticated read connection never claims the provider's
             // control connection and never queues behind a slow provider command.
-            var historyRead = !connection.OwnerValidated && command.Type is "history.window.get" or "usage.read";
+            var historyRead = !connection.OwnerValidated && command.Type is "history.window.get" or "history.window.binary.get" or "usage.read";
+            connection.BinaryResponses = historyRead && command.Type == "history.window.binary.get";
             if (!connection.OwnerValidated)
             {
                 if (!historyRead && !string.Equals(command.Type, "runtime.attach", StringComparison.Ordinal))
@@ -355,6 +356,8 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
 
         var recoveryWindow = command.Type == "runtime.recover" ? _history.GetSnapshotWindow(command.SessionId, 0, 1) : null;
         var runtime = await GetRuntimeAsync(command).ConfigureAwait(false);
+        if (command.ResolveRequest?.OptionId is not null && runtime is not AcpAppServerControlAgentRuntime)
+            throw new InvalidOperationException("ACP permission options require an ACP runtime.");
         HostCommandOutcome outcome;
         try { outcome = await runtime.ExecuteAsync(command, _shutdown.Token).ConfigureAwait(false); }
         catch
@@ -501,6 +504,7 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
                     "user-input.resolve",
                     "history.window.get",
                     "history.window.read",
+                    "history.window.binary.read",
                     "session.git-metadata.get",
                     "session.git-metadata.set",
                     "history.patch"
@@ -668,7 +672,7 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
             {
                 await foreach (var delta in subscription.Reader.ReadAllAsync(connection.Token).ConfigureAwait(false))
                 {
-                    connection.Outbound.Writer.TryWrite(
+                    connection.Outbound.Writer.TryWrite(new OutboundMessage(
                         JsonSerializer.Serialize(
                             new AppServerControlHostHistoryPatchEnvelope
                             {
@@ -676,7 +680,7 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
                                 McpScopeIdentity = _mcpScope.Identity,
                                 Patch = delta
                             },
-                            AppServerControlHostJsonContext.Default.AppServerControlHostHistoryPatchEnvelope));
+                            AppServerControlHostJsonContext.Default.AppServerControlHostHistoryPatchEnvelope), null));
                 }
             }
             catch (OperationCanceledException)
@@ -692,6 +696,7 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
     {
         return new AppServerControlProviderEvent
         {
+            IsReplay = appServerControlEvent.IsReplay,
             Sequence = appServerControlEvent.Sequence,
             EventId = appServerControlEvent.EventId,
             SessionId = appServerControlEvent.SessionId,
@@ -784,7 +789,10 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
             {
                 RequestType = appServerControlEvent.RequestOpened.RequestType,
                 RequestTypeLabel = appServerControlEvent.RequestOpened.RequestTypeLabel,
-                Detail = appServerControlEvent.RequestOpened.Detail
+                Detail = appServerControlEvent.RequestOpened.Detail,
+                ApprovalPurpose = appServerControlEvent.RequestOpened.ApprovalPurpose,
+                ApprovalTool = appServerControlEvent.RequestOpened.ApprovalTool,
+                PermissionOptions = appServerControlEvent.RequestOpened.PermissionOptions
             },
             RequestResolved = appServerControlEvent.RequestResolved is null ? null : new AppServerControlProviderRequestResolvedPayload
             {
@@ -864,8 +872,12 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
         T payload,
         JsonTypeInfo<T> typeInfo)
     {
-        await connection.Outbound.Writer.WriteAsync(JsonSerializer.Serialize(payload, typeInfo), connection.Token).ConfigureAwait(false);
+        await connection.Outbound.Writer.WriteAsync(connection.BinaryResponses
+            ? new OutboundMessage(null, NativeHistoryCodec.Encode(payload, typeInfo))
+            : new OutboundMessage(JsonSerializer.Serialize(payload, typeInfo), null), connection.Token).ConfigureAwait(false);
     }
+
+    private sealed record OutboundMessage(string? Json, byte[]? Binary);
 
     private sealed class ConnectionState : IDisposable
     {
@@ -889,7 +901,7 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
             _cts = CancellationTokenSource.CreateLinkedTokenSource(shutdownToken);
             Reader = new StreamReader(inputStream, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: false, bufferSize: 1024, leaveOpen: false);
             Writer = new StreamWriter(outputStream, System.Text.Encoding.UTF8, bufferSize: 1024, leaveOpen: false) { AutoFlush = true };
-            Outbound = Channel.CreateUnbounded<string>(new UnboundedChannelOptions
+            Outbound = Channel.CreateUnbounded<OutboundMessage>(new UnboundedChannelOptions
             {
                 SingleReader = true,
                 SingleWriter = false
@@ -899,10 +911,11 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
 
         public StreamReader Reader { get; }
         public StreamWriter Writer { get; }
-        public Channel<string> Outbound { get; }
+        public Channel<OutboundMessage> Outbound { get; }
         public Task WriterTask { get; }
         public CancellationToken Token => _cts.Token;
         public bool OwnerValidated { get; set; }
+        public bool BinaryResponses { get; set; }
         public string? SessionId { get; private set; }
         public bool HistoryPatchForwarderStarted { get; set; }
         public Task? HistoryPatchForwarder { get; set; }
@@ -936,7 +949,16 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
                 {
                     while (state.Outbound.Reader.TryRead(out var line))
                     {
-                        await state.Writer.WriteLineAsync(line.AsMemory(), state.Token).ConfigureAwait(false);
+                        if (line.Binary is { } binary)
+                        {
+                            var header = new byte[4];
+                            System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(header, binary.Length);
+                            await state.Writer.BaseStream.WriteAsync(header, state.Token).ConfigureAwait(false);
+                            await state.Writer.BaseStream.WriteAsync(binary, state.Token).ConfigureAwait(false);
+                            await state.Writer.BaseStream.FlushAsync(state.Token).ConfigureAwait(false);
+                        }
+                        else if (line.Json is { } json)
+                            await state.Writer.WriteLineAsync(json.AsMemory(), state.Token).ConfigureAwait(false);
                     }
                 }
             }

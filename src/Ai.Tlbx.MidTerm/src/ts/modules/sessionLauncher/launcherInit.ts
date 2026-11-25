@@ -12,7 +12,6 @@ export interface LauncherBrowserPathState<TEntry> {
   pathDirty: boolean;
   pathHistory: string[];
   parentPath: string | null;
-  roots: TEntry[];
   entries: TEntry[];
 }
 
@@ -24,14 +23,12 @@ export interface LauncherBrowserPathState<TEntry> {
 export function applyLauncherBrowserDefaults<TEntry>(
   state: LauncherBrowserPathState<TEntry>,
   defaults: LauncherBrowserDefaults,
-  roots: TEntry[],
   requestedPath?: string | null,
 ): string {
   const homePath = defaults.homePath || defaults.path;
   const startPath = defaults.startPath || homePath;
   state.homePath = homePath;
   state.startPath = startPath;
-  state.roots = roots;
   if (state.pathDirty) return state.pathDraft.trim();
   state.currentPath = startPath;
   state.pathDraft = startPath;

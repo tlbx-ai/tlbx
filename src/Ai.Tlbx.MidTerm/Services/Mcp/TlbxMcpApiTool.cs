@@ -57,9 +57,14 @@ internal sealed class TlbxMcpApiTool : McpServerTool
         {
             var arguments = request.Params?.Arguments?.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal)
                 ?? new Dictionary<string, JsonElement>(StringComparer.Ordinal);
-            if (_operation.Name == "repos_list" && arguments.TryGetValue("details", out var detailValue)
+            if (_operation.Name is "repos_list" or "repo_bind" or "repo_refresh"
+                && arguments.TryGetValue("details", out var detailValue)
                 && detailValue.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
                 throw new McpApiArgumentException("details must be a boolean.");
+            if (_operation.Name == "agent_history"
+                && arguments.TryGetValue("includeMetadata", out var includeMetadataValue)
+                && includeMetadataValue.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+                throw new McpApiArgumentException("includeMetadata must be a boolean.");
             var self = context.Items[TlbxMcpEndpoints.SessionItem] as string;
             var invocation = _operation.Bind(arguments, self);
             var result = await services.GetRequiredService<TlbxMcpApiInvoker>()

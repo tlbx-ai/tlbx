@@ -72,6 +72,7 @@ describe('quiet reading defaults', () => {
       'user',
       'answer',
       'working',
+      'tool-activity:command',
     ]);
     const copy = filterReadingHistory(entries, [], true);
     expect(copy).toEqual(entries);
@@ -180,6 +181,8 @@ describe('quiet reading defaults', () => {
       ],
     } as AppServerControlHistorySnapshot;
     const mapped = buildAppServerControlHistoryEntries(snapshot);
-    expect(filterReadingHistory(mapped, [], false).map((value) => value.id)).toEqual(['rate-failure']);
+    expect(filterReadingHistory(mapped, [], false).map((value) => value.id)).toEqual([
+      'rate-failure',
+    ]);
   });
 });

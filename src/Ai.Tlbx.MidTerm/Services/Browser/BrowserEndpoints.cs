@@ -155,8 +155,8 @@ public static class BrowserEndpoints
                 ? Results.Ok()
                 : Results.NotFound());
 
-        app.MapPost("/api/browser/ui-result", (Models.Browser.BrowserUiCommandResult result) =>
-            uiBridge.CompleteUiCommand(result)
+        app.MapPost("/api/browser/ui-result", (Models.Browser.BrowserUiCommandResult result, HttpContext ctx) =>
+            uiBridge.CompleteUiCommand(result, BrowserIdentity.Build(ctx.Request.Cookies["mt-client-id"], ctx.Request.Headers[BrowserIdentity.TabIdHeader].FirstOrDefault()))
                 ? Results.Ok()
                 : Results.NotFound());
 
@@ -210,21 +210,16 @@ public static class BrowserEndpoints
                 cancellationToken);
         });
 
-        app.MapPost("/api/browser/mobile-device", (Models.Browser.MobileDeviceRequest request) =>
+        app.MapPost("/api/browser/mobile-device", async (Models.Browser.MobileDeviceRequest request, CancellationToken cancellationToken) =>
         {
             if (string.IsNullOrWhiteSpace(request.SessionId))
             {
                 return Results.BadRequest("sessionId required");
             }
 
-            return uiBridge.RequestMobileDevice(
-                NormalizeOptional(request.SessionId),
-                NormalizeOptional(request.PreviewName),
-                request.Action,
-                NormalizeOptional(request.Profile),
-                out var error)
-                ? Results.Accepted()
-                : Results.Text(error + "\n", statusCode: 409);
+            return MobileDeviceHttpResult(await uiBridge.SerializeTargetOperationAsync(request.SessionId, request.PreviewName,
+                () => uiBridge.RequestMobileDeviceAsync(request.SessionId, request.PreviewName, request.Action,
+                    NormalizeOptional(request.Profile), cancellationToken), cancellationToken));
         });
 
         app.MapPost("/api/browser/open", async (Models.WebPreview.WebPreviewTargetRequest request, CancellationToken cancellationToken) =>
@@ -253,6 +248,19 @@ public static class BrowserEndpoints
             : Results.Text(
                 (result.Error ?? $"The tlbx browser UI could not complete the {result.Command} command.") + "\n",
                 statusCode: StatusCodes.Status409Conflict);
+    }
+
+    private static IResult MobileDeviceHttpResult(BrowserUiCommandResult result)
+    {
+        if (!result.Success) return BrowserUiCommandHttpResult(result);
+        if (result.ScreenshotDataUrl is { } png)
+        {
+            if (!png.StartsWith("data:image/png;base64,", StringComparison.Ordinal))
+                return Results.Text("Mobile screenshot was not a PNG.\n", statusCode: 409);
+            try { return Results.Bytes(Convert.FromBase64String(png[22..]), "image/png"); }
+            catch (FormatException) { return Results.Text("Mobile screenshot PNG could not be decoded.\n", statusCode: 409); }
+        }
+        return Results.Json(result, AppJsonContext.Default.BrowserUiCommandResult);
     }
 
     internal static void MapCliEndpoint(
@@ -293,9 +301,8 @@ public static class BrowserEndpoints
                     return Results.Text("sessionId required\n", statusCode: 400);
                 }
 
-                return uiBridge.RequestMobileDevice(sessionId, previewName, action, profile, out var error)
-                    ? Results.Text($"mobile device {action} requested\n")
-                    : Results.Text(error + "\n", statusCode: 409);
+                return MobileDeviceHttpResult(await uiBridge.SerializeTargetOperationAsync(sessionId, previewName,
+                    () => uiBridge.RequestMobileDeviceAsync(sessionId, previewName, action, profile, ctx.RequestAborted), ctx.RequestAborted));
             }
 
             if (command == "status")
@@ -329,6 +336,8 @@ public static class BrowserEndpoints
                     return Results.Text("sessionId required\n", statusCode: 400);
                 }
 
+                var flushed = await commandService.FlushStorageBeforeTargetChangeAsync(sessionId, previewName, ctx.RequestAborted).ConfigureAwait(false);
+                if (!flushed.Success) return Results.Text(flushed.Error ?? "Storage flush failed; owner unchanged.", statusCode: 409);
                 return uiBridge.RequestClaim(sessionId, previewName, out var error, GetFlagValue(args, "--browser"))
                     ? Results.Text($"claimed preview '{previewName ?? WebPreviewService.DefaultPreviewName}' in session '{sessionId}'\n")
                     : Results.Text(error + "\n", statusCode: 409);
@@ -461,7 +470,7 @@ public static class BrowserEndpoints
             return Results.Json(response, AppJsonContext.Default.BrowserCapabilitiesResponse);
         });
 
-        app.MapPost("/api/browser/claim", (Models.WebPreview.WebPreviewSessionRequest request) =>
+        app.MapPost("/api/browser/claim", async (Models.WebPreview.WebPreviewSessionRequest request, CancellationToken cancellationToken) =>
         {
             if (uiBridge is null)
             {
@@ -473,6 +482,9 @@ public static class BrowserEndpoints
                 return Results.BadRequest("sessionId required");
             }
 
+            var flushed = await commandService.FlushStorageBeforeTargetChangeAsync(
+                request.SessionId, request.PreviewName, cancellationToken).ConfigureAwait(false);
+            if (!flushed.Success) return Results.Text(flushed.Error ?? "Storage flush failed; owner unchanged.", statusCode: 409);
             return uiBridge.RequestClaim(
                 NormalizeOptional(request.SessionId),
                 NormalizeOptional(request.PreviewName),
@@ -578,7 +590,8 @@ public static class BrowserEndpoints
                     {
                         Id = result.Id,
                         Success = true,
-                        Result = path
+                        Result = path,
+                        Capture = result.Capture
                     });
                 }
             }
@@ -1005,7 +1018,7 @@ public static class BrowserEndpoints
             : new BrowserCommandRequest
             {
                 Command = request.Command,
-                Selector = request.Selector,
+                Selector = request.Selector, Frame = request.Frame,
                 Value = request.Value,
                 MaxDepth = request.MaxDepth,
                 TextOnly = request.TextOnly,
@@ -1093,7 +1106,7 @@ public static class BrowserEndpoints
         new()
         {
             Command = command,
-            Selector = request.Selector,
+            Selector = request.Selector, Frame = request.Frame,
             Value = request.Value,
             MaxDepth = request.MaxDepth,
             TextOnly = request.TextOnly,
@@ -1114,7 +1127,8 @@ public static class BrowserEndpoints
             Success = result.Success,
             Result = result.Result,
             Error = result.Error,
-            MatchCount = result.MatchCount
+            MatchCount = result.MatchCount,
+            Capture = result.Capture
         };
         return Results.Json(response, AppJsonContext.Default.BrowserCommandResponse);
     }

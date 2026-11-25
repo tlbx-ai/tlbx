@@ -72,6 +72,8 @@ internal sealed partial class OpenCodeAppServerControlAgentRuntime : IAppServerC
             if (!_ready || command.SessionId != _sessionId) throw new InvalidOperationException("OpenCode is not attached to this session.");
             switch (command.Type)
             {
+                case "runtime.configure":
+                    return Configure(command);
                 case "turn.start":
                     return await StartAsync(command, command.StartTurn ?? throw new InvalidOperationException("turn.start payload is required."), ct).ConfigureAwait(false);
                 case "turn.interrupt":
@@ -378,10 +380,13 @@ internal sealed partial class OpenCodeAppServerControlAgentRuntime : IAppServerC
     private void PublishSession(string state, string label) => Publish(state == "ready" ? "session.ready" : "session.state.changed", e => e.SessionState = new() { State = state, StateLabel = label });
     private void PublishSettings() => Publish("quick-settings.updated", e => e.QuickSettingsUpdated = AppServerControlQuickSettings.ToPayload(_settings));
 
+    private bool _replayingHistory;
+
     private void Publish(string type, Action<AppServerControlProviderEvent> configure, string? item = null, string? request = null, string? turn = null, DateTimeOffset? at = null)
     {
         var evt = new AppServerControlProviderEvent
         {
+            IsReplay = _replayingHistory,
             Sequence = Interlocked.Increment(ref _sequence),
             EventId = "evt-opencode-" + Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture),
             SessionId = _sessionId,

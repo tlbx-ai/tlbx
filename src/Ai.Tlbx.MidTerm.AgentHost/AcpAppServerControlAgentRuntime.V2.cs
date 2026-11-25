@@ -27,6 +27,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime
         _tools.Clear();
         _configOptionIds.Clear();
         _currentModeId = _planModeId = _defaultModeId = null;
+        _antigravityModeBeforePlan = "default";
         _availableCommandsSignature = _lastSessionNotificationSignature = null;
         _availableCommands.Clear();
         _usage = null;

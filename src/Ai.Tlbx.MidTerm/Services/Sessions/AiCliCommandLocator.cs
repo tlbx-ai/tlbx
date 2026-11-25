@@ -225,6 +225,7 @@ internal static partial class AiCliCommandLocator
 
         AddDirectory(directories, seen, TryCombine(appData, "npm"));
         AddDirectory(directories, seen, TryCombine(localAppData, "Programs", "nodejs"));
+        AddDirectory(directories, seen, TryCombine(localAppData, "agy", "bin"));
         AddDirectory(directories, seen, TryCombine(userProfile, ".grok", "bin"));
 
         if (!string.IsNullOrWhiteSpace(userProfile))

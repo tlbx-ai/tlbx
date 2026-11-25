@@ -56,6 +56,7 @@ import { renderUpdatePanel } from '../updating/checker';
 import { createLogger } from '../logging';
 import { setDevMode } from '../sidebar/voiceSection';
 import { buildAgentMessageFontStack } from '../agentView/fontConfig';
+import { mountAgentChatAppearance } from './agentChatAppearance';
 import { syncInlineTextInputWrappers, updateInlineTextInputWrapperState } from './inlineInputState';
 import {
   bindTerminalColorSchemeEditor,
@@ -530,6 +531,10 @@ export function populateUserDropdown(
 export function populateSettingsForm(settings: MidTermSettingsPublic): void {
   settingsFormHydrated = false;
   settingsSaveArmed = false;
+  const agentChatAppearance = document.getElementById('settings-agent-chat-appearance');
+  if (agentChatAppearance && !agentChatAppearance.hasChildNodes()) {
+    mountAgentChatAppearance(agentChatAppearance);
+  }
   syncTerminalColorSchemeOptions(settings);
   getSettingsRegistryControlEntries().forEach((entry) => {
     setRegistryControlValue(entry, settings[entry.key]);
@@ -653,6 +658,10 @@ export function applySettingsToTerminals(settingsOverride?: MidTermSettingsPubli
   document.documentElement.style.setProperty(
     '--agent-ui-font-family',
     buildAgentMessageFontStack(settings.agentMessageFontFamily),
+  );
+  document.documentElement.style.setProperty(
+    '--agent-image-preview-width',
+    `${Number.isFinite(settings.agentImagePreviewWidth) ? settings.agentImagePreviewWidth : 520}px`,
   );
   document.documentElement.dataset.commandBayLigatures = settings.commandBayLigaturesEnabled
     ? 'true'

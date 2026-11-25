@@ -39,7 +39,7 @@ try {
     }
     if ($categories -contains 'installers') { & "$PSScriptRoot/verify-installers.ps1" }
     if ($categories -contains 'dependencies') {
-        & "$PSScriptRoot/audit-supply-chain.ps1" -Scope server -FrontendInstalled:$FrontendInstalled
+        Write-Host 'Security audits and SBOM generation are separate jobs in Tests (on demand), suite=all or security.'
     }
     if ($categories -contains 'build') {
         & "$PSScriptRoot/test-release-build-system.ps1"

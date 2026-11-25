@@ -290,19 +290,41 @@ export function computeVirtualWindow<TItem>(args: {
   scrollTop: number;
   clientHeight: number;
   overscanItems?: number;
+  overscanPx?: number;
   resolveItemSize: SizeResolver<TItem>;
 }): VirtualizerWindow {
-  const { items, resolveItemSize } = args;
-  const visibleRange = computeVisibleRange(args);
+  const { items, resolveItemSize, scrollTop, clientHeight } = args;
+  if (items.length === 0) return { start: 0, end: 0, topSpacerPx: 0, bottomSpacerPx: 0 };
+  // Build once: range lookup and spacer geometry share the same prefix sums.
   const layout = buildLayoutModel(items, resolveItemSize);
-  const topSpacerPx = layout.prefixSizes[visibleRange.start] ?? 0;
-  const visibleSize = (layout.prefixSizes[visibleRange.end] ?? layout.totalSize) - topSpacerPx;
-
+  const visibleStart = findFirstIntersectingIndex(layout.prefixSizes, scrollTop);
+  const visibleEnd = Math.max(
+    visibleStart + 1,
+    Math.min(items.length, findFirstEndAtOrAfter(layout.prefixSizes, scrollTop + clientHeight)),
+  );
+  const overscan = Math.max(0, args.overscanItems ?? 0);
+  let start = Math.max(0, visibleStart - overscan);
+  let end = Math.min(items.length, visibleEnd + overscan);
+  if (args.overscanPx !== undefined) {
+    const margin = Math.max(0, args.overscanPx);
+    start = Math.max(
+      start,
+      findFirstIntersectingIndex(layout.prefixSizes, Math.max(0, scrollTop - margin)),
+    );
+    end = Math.min(
+      end,
+      Math.max(
+        visibleEnd,
+        findFirstEndAtOrAfter(layout.prefixSizes, scrollTop + clientHeight + margin),
+      ),
+    );
+  }
+  const topSpacerPx = layout.prefixSizes[start] ?? 0;
   return {
-    start: visibleRange.start,
-    end: visibleRange.end,
+    start,
+    end,
     topSpacerPx,
-    bottomSpacerPx: Math.max(0, layout.totalSize - topSpacerPx - visibleSize),
+    bottomSpacerPx: Math.max(0, layout.totalSize - (layout.prefixSizes[end] ?? layout.totalSize)),
   };
 }
 

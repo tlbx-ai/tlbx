@@ -15,6 +15,7 @@ public sealed class BrowserWebSocketHandler
     private readonly SettingsService _settingsService;
     private readonly AuthService _authService;
     private readonly ShutdownService _shutdownService;
+    private readonly WebPreviewStorageService? _storageService;
 
     public BrowserWebSocketHandler(
         BrowserCommandService commandService,
@@ -22,7 +23,8 @@ public sealed class BrowserWebSocketHandler
         WebPreviewService webPreviewService,
         SettingsService settingsService,
         AuthService authService,
-        ShutdownService shutdownService)
+        ShutdownService shutdownService,
+        WebPreviewStorageService? storageService = null)
     {
         _commandService = commandService;
         _previewRegistry = previewRegistry;
@@ -30,6 +32,7 @@ public sealed class BrowserWebSocketHandler
         _settingsService = settingsService;
         _authService = authService;
         _shutdownService = shutdownService;
+        _storageService = storageService;
     }
 
     public async Task HandleAsync(HttpContext context)
@@ -76,7 +79,11 @@ public sealed class BrowserWebSocketHandler
                 hasFocus,
                 isTopLevel,
                 long.TryParse(context.Request.Query["targetRevision"].FirstOrDefault(), CultureInfo.InvariantCulture, out var revision) ? revision : null,
-                previewClient?.OwnershipGeneration))
+                previewClient?.OwnershipGeneration,
+                ParseOptionalBooleanQuery(context.Request.Query["panelVisible"].FirstOrDefault()),
+                ParseOptionalBooleanQuery(context.Request.Query["documentVisible"].FirstOrDefault()),
+                context.Request.Query["documentVisibilityState"].FirstOrDefault(),
+                context.Request.Query["documentId"].FirstOrDefault()))
         {
             BrowserLog.Info($"Rejected duplicate browser client for preview '{previewId}'");
             await ws.CloseAsync(
@@ -145,7 +152,10 @@ public sealed class BrowserWebSocketHandler
                                 if (wsResult is not null)
                                 {
                                     if (wsResult.Type == "browser-state")
+                                    {
                                         _commandService.UpdateClientState(connectionId, wsResult);
+                                        _commandService.AttachStorageForCurrentClient(connectionId, _storageService, wsResult.StorageToken);
+                                    }
                                     else
                                         _commandService.ReceiveResult(wsResult, connectionId);
                                 }
@@ -196,5 +206,13 @@ public sealed class BrowserWebSocketHandler
         return string.Equals(value, "1", StringComparison.Ordinal)
             || string.Equals(value, "true", StringComparison.OrdinalIgnoreCase)
             || string.Equals(value, "yes", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool? ParseOptionalBooleanQuery(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        if (ParseBooleanQuery(value)) return true;
+        return value == "0" || string.Equals(value, "false", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(value, "no", StringComparison.OrdinalIgnoreCase) ? false : null;
     }
 }

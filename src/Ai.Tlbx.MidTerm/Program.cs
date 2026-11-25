@@ -300,6 +300,8 @@ public class Program
 
         sessionManager.OnSessionCreated += (sessionId, _) =>
         {
+            browserPreviewOwnerService.RestoreSession(sessionId);
+            webPreviewService.RestoreSession(sessionId);
             var cwd = sessionManager.GetSession(sessionId)?.CurrentDirectory;
             SyncTlbxDirectoryForCwd(cwd);
         };
@@ -382,6 +384,7 @@ public class Program
 
 #pragma warning disable IDISP013 // Update capture intentionally runs during the app lifetime before restart.
         var sessionGitMetadata = app.Services.GetRequiredService<SessionGitMetadataService>();
+        var updateAgentHosts = app.Services.GetRequiredService<SessionAppServerControlHostRuntimeService>();
         updateService.BeforeApplyUpdateAsync = async (updateType, ct) =>
         {
             await sessionGitMetadata.ReconcileAllAsync(requireHosts: true, ct);
@@ -390,6 +393,7 @@ public class Program
                     gitWatcher,
                     updateType == UpdateType.Full,
                     settingsService.Load().TryResumeNonAiAgentProcesses,
+                    resolveProviderResumeState: updateAgentHosts.GetProviderResumeStateForUpdate,
                     ct: ct);
         };
 #pragma warning restore IDISP013
@@ -585,6 +589,8 @@ public class Program
             }
         }
         await sessionUpdateStateService.RestoreAsync(sessionManager, gitWatcher, ct: shutdownService.Token);
+        app.Services.GetRequiredService<SessionControlStateService>()
+            .PrunePreviewsToValidSessions(sessionManager.GetAllSessions().Select(session => session.Id));
         await spaceService.ReconcileSessionBindingsAsync(sessionManager, shutdownService.Token);
         managerBarQueueService.PruneToValidSessions(sessionManager.GetAllSessions().Select(s => s.Id));
         managerBarQueueService.Start();

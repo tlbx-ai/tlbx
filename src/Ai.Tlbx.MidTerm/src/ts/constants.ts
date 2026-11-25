@@ -314,7 +314,7 @@ export const THEMES: Record<string, TerminalTheme> = {
 export const DEFAULT_SETTINGS = {
   fontSize: 14,
   scrollbackLines: 10000,
-  scrollbackBytes: 2 * 1024 * 1024,
+  scrollbackBytes: 8 * 1024 * 1024,
   cursorStyle: 'block' as const,
   cursorBlink: false,
   theme: 'dark' as const,

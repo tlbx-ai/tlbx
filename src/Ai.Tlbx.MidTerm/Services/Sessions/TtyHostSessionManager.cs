@@ -40,6 +40,9 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _resizeGates = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _metadataGates = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, TerminalDimensions> _redrawDimensionOverrides = new(StringComparer.Ordinal);
+    private const long OscTitleNotifyIntervalMs = 1000;
+    private readonly ConcurrentDictionary<string, long> _lastOscTitleNotifyMs = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, byte> _pendingOscTitleNotify = new(StringComparer.Ordinal);
     private string? _runAsUser;
     private string? _runAsUserSid;
     private bool _disposed;
@@ -849,15 +852,27 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         var response = _registry.GetSessionList(includeHidden);
         foreach (var session in response.Sessions)
         {
-            var descriptor = _foregroundProcessService.Describe(
-                session.ForegroundName,
-                session.ForegroundCommandLine,
-                session.AgentAttachPoint);
-            session.ForegroundDisplayName = string.IsNullOrWhiteSpace(descriptor.DisplayName) ? null : descriptor.DisplayName;
-            session.ForegroundProcessIdentity = string.IsNullOrWhiteSpace(descriptor.ProcessIdentity) ? null : descriptor.ProcessIdentity;
+            ApplyForegroundDescriptor(session);
         }
 
         return response;
+    }
+
+    public SessionInfoDto? GetVisibleSessionDto(string id)
+    {
+        var session = _registry.GetVisibleSessionDto(id);
+        if (session is not null) ApplyForegroundDescriptor(session);
+        return session;
+    }
+
+    private void ApplyForegroundDescriptor(SessionInfoDto session)
+    {
+        var descriptor = _foregroundProcessService.Describe(
+            session.ForegroundName,
+            session.ForegroundCommandLine,
+            session.AgentAttachPoint);
+        session.ForegroundDisplayName = string.IsNullOrWhiteSpace(descriptor.DisplayName) ? null : descriptor.DisplayName;
+        session.ForegroundProcessIdentity = string.IsNullOrWhiteSpace(descriptor.ProcessIdentity) ? null : descriptor.ProcessIdentity;
     }
 
     public async Task<bool> CloseSessionAsync(string sessionId, CancellationToken ct = default)
@@ -1246,6 +1261,8 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         return _registry.SetAgentControlled(sessionId, agentControlled);
     }
 
+    public bool IsAppServerControlOnly(string sessionId) => _registry.IsAppServerControlOnly(sessionId);
+
     public bool SetAppServerControlOnly(string sessionId, bool appServerControlOnly)
     {
         return _registry.SetAppServerControlOnly(sessionId, appServerControlOnly);
@@ -1274,6 +1291,17 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
     public bool SetSpaceId(string sessionId, string? spaceId)
     {
         return _registry.SetSpaceId(sessionId, spaceId);
+    }
+
+    public void SetAgentWorkingDirectory(string sessionId, string path)
+    {
+        if (!_registry.IsAppServerControlOnly(sessionId) || !_sessionCache.TryGetValue(sessionId, out var info)) return;
+        if (!string.Equals(info.CurrentDirectory, path, StringComparison.OrdinalIgnoreCase))
+            _registry.SetSpaceId(sessionId, null);
+        info.CurrentDirectory = path;
+        _registry.SetWorkspacePath(sessionId, path);
+        OnCwdChanged?.Invoke(sessionId, path);
+        _registry.NotifyStateChange();
     }
 
     public bool SetWorkspacePath(string sessionId, string? workspacePath)
@@ -1455,7 +1483,10 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
             {
                 case 0:
                 case 2:
-                    changed |= HandleOscTitle(sessionId, payload);
+                    if (HandleOscTitle(sessionId, payload))
+                    {
+                        ScheduleThrottledOscTitleNotify(sessionId);
+                    }
                     break;
                 case 7:
                     changed |= HandleOscCwdUpdate(sessionId, payload);
@@ -1469,6 +1500,39 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         {
             NotifyStateChange();
         }
+    }
+
+    private void ScheduleThrottledOscTitleNotify(string sessionId)
+    {
+        var now = Environment.TickCount64;
+        if (!_lastOscTitleNotifyMs.TryGetValue(sessionId, out var last) || now - last >= OscTitleNotifyIntervalMs)
+        {
+            _lastOscTitleNotifyMs[sessionId] = now;
+            _pendingOscTitleNotify.TryRemove(sessionId, out _);
+            NotifyStateChange();
+            return;
+        }
+
+        if (!_pendingOscTitleNotify.TryAdd(sessionId, 0))
+        {
+            return;
+        }
+
+        var delayMs = Math.Max(50, (int)(OscTitleNotifyIntervalMs - (now - last)));
+        DelayedActionScheduler.Schedule(TimeSpan.FromMilliseconds(delayMs), () =>
+        {
+            if (_disposed || !_pendingOscTitleNotify.TryRemove(sessionId, out _))
+            {
+                return;
+            }
+            if (!_sessionCache.ContainsKey(sessionId))
+            {
+                _lastOscTitleNotifyMs.TryRemove(sessionId, out _);
+                return;
+            }
+            _lastOscTitleNotifyMs[sessionId] = Environment.TickCount64;
+            NotifyStateChange();
+        });
     }
 
     private bool HandleOscTitle(string sessionId, string title)

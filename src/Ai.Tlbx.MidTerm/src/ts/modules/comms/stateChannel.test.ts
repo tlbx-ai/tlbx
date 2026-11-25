@@ -38,6 +38,16 @@ const mocks = vi.hoisted(() => ({
   initializeFromSession: vi.fn(),
   selectSession: vi.fn(),
   checkVersionAndReload: vi.fn().mockResolvedValue(false),
+  controlMobileDeviceCommand: vi.fn(),
+}));
+
+vi.mock('../web/mobileDeviceController', () => ({
+  controlMobileDeviceCommand: mocks.controlMobileDeviceCommand,
+}));
+
+vi.mock('../../utils/cookies', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../utils/cookies')>()),
+  getOrCreateTabId: () => 'exact-tab',
 }));
 
 vi.mock('../../utils', () => ({
@@ -106,6 +116,8 @@ vi.mock('../web/webDock', () => ({
   setViewportSize: mocks.setViewportSize,
   openWebPreviewDock: mocks.openWebPreviewDock,
 }));
+
+vi.mock('../web/webViewport', () => ({ readPreviewViewportMetrics: vi.fn(() => null) }));
 
 vi.mock('../web/webApi', () => ({
   getWebPreviewTarget: mocks.getWebPreviewTarget,
@@ -246,6 +258,42 @@ async function loadHarness() {
 }
 
 describe('stateChannel browser-ui handling', () => {
+  it('awaits mobile device state before returning its correlated acknowledgement', async () => {
+    const { ws } = await loadHarness();
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal('fetch', fetchMock);
+    let complete!: (value: { mobileDevice: { connected: boolean; available: boolean } }) => void;
+    mocks.controlMobileDeviceCommand.mockReturnValue(new Promise((resolve) => { complete = resolve; }));
+    ws.onmessage?.({ data: JSON.stringify({ type: 'browser-ui', command: 'mobile-device', requestId: 'device-status',
+      sessionId: 'agent5678', previewName: 'named', targetRevision: 7, deviceAction: 'status' }) } as MessageEvent<string>);
+    await vi.waitFor(() => expect(mocks.controlMobileDeviceCommand).toHaveBeenCalledTimes(1));
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(mocks.controlMobileDeviceCommand).toHaveBeenCalledWith('status', 'agent5678', 'named', 7, undefined);
+    complete({ mobileDevice: { connected: false, available: false } });
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
+      requestId: 'device-status', command: 'mobile-device', success: true, sessionId: 'agent5678', previewName: 'named',
+      targetRevision: 7, mobileDevice: { connected: false, available: false },
+    });
+    expect(fetchMock.mock.calls[0]?.[1]?.headers).toMatchObject({ 'X-MidTerm-Tab-Id': 'exact-tab' });
+  });
+
+  it.each(['extension-error', 'frontend-reload'])('reports mobile %s instead of dispatch acceptance', async (failure) => {
+    const { ws } = await loadHarness();
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal('fetch', fetchMock);
+    mocks.controlMobileDeviceCommand.mockRejectedValue(new Error('Chrome bridge disconnected'));
+    mocks.checkVersionAndReload.mockResolvedValue(failure === 'frontend-reload');
+    ws.onmessage?.({ data: JSON.stringify({ type: 'browser-ui', command: 'mobile-device', requestId: 'device-open',
+      sessionId: 'agent5678', previewName: 'named', targetRevision: 7, deviceAction: 'open' }) } as MessageEvent<string>);
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
+      requestId: 'device-open', command: 'mobile-device', success: false, targetRevision: 7,
+      error: expect.stringContaining(failure === 'frontend-reload' ? 'reloading' : 'disconnected'),
+    });
+    if (failure === 'frontend-reload') expect(mocks.controlMobileDeviceCommand).not.toHaveBeenCalled();
+  });
+
   it('sends current input intent only on a live channel and binds it to the observed epoch', async () => {
     vi.stubGlobal('window', {
       setTimeout: globalThis.setTimeout,
@@ -374,6 +422,66 @@ describe('stateChannel browser-ui handling', () => {
     });
   });
 
+  it('opens parallel hidden named previews independently in the active session without changing selection', async () => {
+    const { stores, ws } = await loadHarness();
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal('fetch', fetchMock);
+    const names = ['qa-life-0', 'qa-life-1', 'qa-life-2', 'qa-life-3'] as const;
+    const resolveTargets = new Map<string, () => void>();
+    mocks.getWebPreviewTarget.mockImplementation((sessionId: string, previewName: string) =>
+      new Promise((resolve) => {
+        resolveTargets.set(previewName, () =>
+          resolve({
+            sessionId,
+            previewName,
+            routeKey: `route-${previewName}`,
+            url: 'https://example.com/',
+            active: true,
+            targetRevision: 1,
+          }),
+        );
+      }),
+    );
+    for (const previewName of names) {
+      ws.onmessage?.({
+        data: JSON.stringify({
+          type: 'browser-ui',
+          command: 'open',
+          requestId: previewName,
+          sessionId: 'user1234',
+          previewName,
+          url: 'https://example.com/',
+          activateSession: false,
+          targetRevision: 1,
+        }),
+      } as MessageEvent<string>);
+    }
+    await vi.waitFor(() => expect(resolveTargets.size).toBe(4));
+    // Resolve siblings out of dispatch order, with one target still pending.
+    for (const name of [names[3], names[1], names[0]]) resolveTargets.get(name)!();
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+    expect(mocks.syncBackgroundWebPreview).not.toHaveBeenCalledWith('user1234', names[2]);
+    resolveTargets.get(names[2])!();
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
+    expect(mocks.syncBackgroundWebPreview).toHaveBeenCalledTimes(4);
+    for (const name of names) {
+      expect(mocks.syncBackgroundWebPreview).toHaveBeenCalledWith('user1234', name);
+      expect(
+        fetchMock.mock.calls.some((call) => {
+          const body = JSON.parse(String(call[1]?.body)) as { requestId: string; success: boolean };
+          return body.requestId === name && body.success;
+        }),
+      ).toBe(true);
+    }
+    expect(mocks.setSessionSelectedPreviewName).not.toHaveBeenCalled();
+    expect(mocks.syncActiveWebPreview).not.toHaveBeenCalled();
+    expect(mocks.openWebPreviewDock).not.toHaveBeenCalled();
+    expect(mocks.selectSession).not.toHaveBeenCalled();
+    expect(mocks.closePreviewFromServer).not.toHaveBeenCalled();
+    expect(stores.$activeSessionId.get()).toBe('user1234');
+    expect(stores.$webPreviewUrl.get()).toBeNull();
+  });
+
   it('rejects an obsolete open command without mutating or rendering the newer target', async () => {
     const { ws } = await loadHarness();
     mocks.getWebPreviewTarget.mockResolvedValue({
@@ -402,6 +510,7 @@ describe('stateChannel browser-ui handling', () => {
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
 
     expect(mocks.upsertSessionPreview).not.toHaveBeenCalled();
+    expect(mocks.setSessionSelectedPreviewName).not.toHaveBeenCalled();
     expect(mocks.syncBackgroundWebPreview).not.toHaveBeenCalled();
     expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
       requestId: 'open-1',

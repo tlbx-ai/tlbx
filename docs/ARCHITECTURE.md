@@ -66,6 +66,21 @@ Each terminal session runs in its own `mthost` process. That gives tlbx:
 - platform-specific PTY handling without pulling terminal lifecycle into the web host
 - the ability to restart or replace the web server separately from terminal hosts in web-only update flows
 
+Native terminals advertise Kitty graphics with `KITTY_WINDOW_ID` while keeping
+`TERM=xterm-256color`, `COLORTERM=truecolor`, and `TERM_PROGRAM=tlbx`. They do not
+set `TMUX` or `TMUX_PANE`: tlbx is the terminal emulator, not a containing tmux
+server. In particular, Codex 0.169 automatic helper discovery ignores PATH-based
+shims, so a synthetic tmux identity disables its images even when the shim works
+from an interactive shell. Explicit tmux commands use `MT_TMUX_PANE` through the
+existing authenticated shim; its legacy `TMUX_PANE` fallback keeps existing
+terminal hosts usable across updates. Existing sessions need a new terminal host
+to receive the corrected environment. Windows Kitty APC transport requires the
+packaged ConPTY runtime; nested tool PTYs do not verify the native TUI image path.
+Codex transcript previews additionally require its owned fullscreen transcript
+(`-c tui.fullscreen_transcript=true`). tlbx must not change that user setting or
+inject provider flags into launch commands; inline mode retains textual image labels. In fullscreen, expand native image
+details (`Ctrl+T`) to make the raster visible.
+
 ### `mtagenthost`
 
 Each explicit Agent Controller Session runs through its own `mtagenthost`

@@ -7,6 +7,11 @@
  * into unrelated sibling bars.
  */
 
+import {
+  getQuestionAnswer,
+  endQuestionAnswer,
+  initializeQuestionAnswerBox,
+} from './questionAnswer';
 import { uploadRichComposerFile } from './richComposerUpload';
 import { RichComposer } from './richComposer';
 import { AgentCommandPalette } from './agentCommandPalette';
@@ -19,7 +24,10 @@ import {
   type SessionTool,
 } from '../agentView/sessionTools';
 import { compactAppServerControlSession } from '../../api/client';
-import { orderedRichAttachments } from './smartInputOutboundReferences';
+import {
+  orderedRichAttachments,
+  prepareSmartInputOutboundPrompt,
+} from './smartInputOutboundReferences';
 import {
   KEYBOARD_REPLACEMENT_CHANGED,
   openKeyboardReplacement,
@@ -45,6 +53,9 @@ import { sendCommandBayPrompt } from '../commandBay/queue';
 import { submitSessionText } from '../input/submit';
 import { isBracketedPasteEnabled, sendInput } from '../comms';
 import {
+  APP_SERVER_CONTROL_STOP_CHANGED_EVENT,
+  isAppServerControlStopPending,
+  submitAppServerControlComposerPrompt,
   createAppServerControlTurnRequest,
   handleAppServerControlEscape,
   hasInterruptibleAppServerControlTurnWork,
@@ -52,6 +63,7 @@ import {
 } from '../appServerControl/input';
 import {
   APP_SERVER_CONTROL_QUICK_SETTINGS_CHANGED_EVENT,
+  getAppServerControlStartupState,
   configureAppServerControlQuickSettings,
   getAppServerControlQuickSettingsDraft,
   getAppServerControlQuickSettingsProvider,
@@ -175,6 +187,7 @@ let dockedBar: HTMLDivElement | null = null;
 let touchControllerEl: HTMLElement | null = null;
 let richComposer: RichComposer | null = null;
 let activeTextarea: HTMLTextAreaElement | null = null;
+let syncQuestionAnswerBox: (() => void) | null = null;
 let composerExpandBtn: HTMLButtonElement | null = null;
 let sendBtn: HTMLButtonElement | null = null;
 let toolsToggleBtn: HTMLButtonElement | null = null;
@@ -194,7 +207,10 @@ let appServerControlFastToggle: HTMLButtonElement | null = null;
 let appServerControlPlanSelect: HTMLSelectElement | null = null;
 let appServerControlPermissionSelect: HTMLSelectElement | null = null;
 let appServerControlSettingsSummaryBtn: HTMLButtonElement | null = null;
-let autoSendEnabled = localStorage.getItem('smartinput-autosend') === 'true';
+let autoSendEnabled =
+  typeof localStorage !== 'undefined' && typeof localStorage.getItem === 'function'
+    ? localStorage.getItem('smartinput-autosend') === 'true'
+    : false;
 let keysExpanded = false;
 let isRecording = false;
 let pendingMicPinSessionId: string | null = null;
@@ -318,6 +334,12 @@ interface AdaptiveFooterLayoutState {
   inputMode: string | null | undefined;
   touchControlsAvailable: boolean;
   touchControlsExpanded: boolean;
+}
+
+let appServerControlHandoffHandler: ((sessionId: string) => void) | undefined;
+
+export function setAppServerControlHandoffHandler(handler: (sessionId: string) => void): void {
+  appServerControlHandoffHandler = handler;
 }
 
 export function setAppServerControlResumeConversationHandler(
@@ -621,7 +643,12 @@ function focusSmartInput(): void {
   else activeTextarea?.focus({ preventScroll: true });
 }
 
+function closeQuestionCommandPalette(): void {
+  if (getQuestionAnswer($activeSessionId.get() ?? '')) agentCommandPalette?.close();
+}
+
 function handleRichComposerKeydown(event: KeyboardEvent): boolean {
+  closeQuestionCommandPalette();
   if (agentCommandPalette?.keydown(event)) return true;
   if (handleSmartInputShiftTabShortcut(event)) return true;
   if (activeTextarea && handlePromptHistoryKeydown(event, activeTextarea)) return true;
@@ -702,6 +729,13 @@ function syncRichComposerInputLock(): void {
   const locked = Boolean(
     sessionId && richComposer?.isActive(sessionId) && richComposer.isSubmitting(sessionId),
   );
+  if (sendBtn) {
+    sendBtn.disabled = Boolean(
+      sessionId &&
+      isAppServerControlActiveSession(sessionId) &&
+      (locked || getAppServerControlStartupState(sessionId) !== 'ready'),
+    );
+  }
   if (sharedAttachInput) sharedAttachInput.disabled = locked;
   if (sharedPhotoInput) sharedPhotoInput.disabled = locked;
   for (const button of footerDock?.querySelectorAll<HTMLButtonElement>(
@@ -729,6 +763,10 @@ async function executeAgentSessionTool(sessionId: string, action: SessionTool): 
   }
   if (action === 'compact') {
     await compactAppServerControlSession(sessionId);
+    return;
+  }
+  if (action === 'handoff') {
+    appServerControlHandoffHandler?.(sessionId);
     return;
   }
   const args = getAppServerControlResumeArgs(sessionId);
@@ -774,7 +812,11 @@ function initializeRichComposer(textarea: HTMLTextAreaElement): void {
         $activeSessionId.get() === sessionId &&
         getSmartInputComposerReferenceIds(draft).length === 0
       )
-        agentCommandPalette?.update(sessionId, getSessionDraftText(sessionId), richComposer.host);
+        agentCommandPalette?.update(
+          sessionId,
+          getQuestionAnswer(sessionId) ? '' : getSessionDraftText(sessionId),
+          richComposer.host,
+        );
     },
     keydown: handleRichComposerKeydown,
     submissionChanged: syncRichComposerInputLock,
@@ -843,6 +885,25 @@ function setSessionDraft(sessionId: string, draft: SmartInputComposerDraft): voi
 
   sessionDrafts.set(sessionId, normalizedDraft);
   persistSmartInputCurrentDraft(sessionId, normalizedDraft);
+}
+
+export function setSmartInputHandoffDraft(sessionId: string, path: string): void {
+  const name = path.split(/[\\/]/).pop() ?? 'history';
+  const isChat = name.endsWith('.jsonl');
+  const attachment = createAppServerControlComposerDraftAttachment(
+    sessionId,
+    { name, size: 0, type: isChat ? 'application/jsonl' : 'text/plain' },
+    path,
+  );
+  attachment.referenceKind = 'file';
+  attachment.referenceLabel = name;
+  const instruction = isChat
+    ? 'Read the attached conversation history from the first line (newest entry) and go farther back as needed. Use it as background for the next request. '
+    : 'Read the attached terminal output from the end and use it as background for the next request. ';
+  const draft = createSmartInputComposerDraft(instruction);
+  draft.parts.push({ kind: 'reference', referenceId: attachment.id });
+  setAppServerControlDraftAttachments(sessionId, [attachment]);
+  setSessionDraft(sessionId, draft);
 }
 
 function enqueueComposerPendingOperation(
@@ -1252,11 +1313,20 @@ export function initSmartInput(): void {
       syncAppServerControlQuickSettingsControls();
       syncSmartInputVisibility();
     });
+    window.addEventListener(APP_SERVER_CONTROL_STOP_CHANGED_EVENT, (event) => {
+      if ((event as CustomEvent<string>).detail === $activeSessionId.get())
+        syncSmartInputStopButton();
+    });
     window.addEventListener('resize', () => {
       syncSmartInputVisibility();
     });
     window.addEventListener('orientationchange', () => {
       syncSmartInputVisibility();
+    });
+    window.addEventListener('midterm:visual-viewport-changed', () => {
+      if (activeTextarea?.getClientRects().length && isMobileViewport()) {
+        resizeSmartInputTextarea(activeTextarea);
+      }
     });
   }
 
@@ -1340,6 +1410,25 @@ export function showSmartInput(): void {
 export function hideSmartInput(): void {
   syncSmartInputVisibility();
 }
+function syncSmartInputStopButton(): void {
+  const button = dockedBar?.querySelector<HTMLButtonElement>('.smart-input-escape-btn');
+  if (!button) return;
+  const sessionId = $activeSessionId.get();
+  const agent = isAppServerControlActiveSession(sessionId);
+  const pending = agent && !!sessionId && isAppServerControlStopPending(sessionId);
+  const label = agent ? t(pending ? 'smartInput.stopping' : 'commands.stop') : 'Escape';
+  if (agent && !button.querySelector('svg')) {
+    button.innerHTML =
+      '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true" focusable="false"><rect x="5" y="5" width="14" height="14" rx="1"/></svg>';
+  } else if (!agent && button.textContent !== 'Esc') {
+    button.textContent = 'Esc';
+  }
+  button.disabled = pending;
+  button.title = label;
+  button.setAttribute('aria-label', label);
+  button.setAttribute('aria-busy', String(pending));
+}
+
 function syncSmartInputVisibility(focusTextarea: boolean = false): void {
   ensureFooterHosts();
   const preserveTextareaFocus =
@@ -1525,6 +1614,9 @@ function createDockedDOM(): void {
       event.preventDefault();
       event.stopPropagation();
       setActiveSessionComposerExpanded(!isComposerExpanded($activeSessionId.get()));
+      // The tap is still active here. A later animation frame cannot reliably
+      // summon the mobile OS keyboard if the button was tapped from outside it.
+      focusSmartInput();
     },
     onAppServerControlEffortChange: () => {
       const sessionId = $activeSessionId.get();
@@ -1793,6 +1885,11 @@ function createDockedDOM(): void {
   composerExpandBtn = dom.composerExpandBtn;
   activeTextarea = dom.textarea;
   initializeRichComposer(dom.textarea);
+  syncQuestionAnswerBox = initializeQuestionAnswerBox({
+    host: dockedBar,
+    activeSession: () => $activeSessionId.get(),
+    focus: focusSmartInput,
+  });
   sendBtn = dom.sendBtn;
   toolsToggleBtn = dom.toolsToggleBtn;
   inlineToolHost = dom.inlineToolHost;
@@ -1998,18 +2095,7 @@ function syncInputRow(layoutState: AdaptiveFooterLayoutState): void {
   dockedBar.dataset.surface = layoutState.appServerControlActive ? 'appServerControl' : 'terminal';
   dockedBar.dataset.device = layoutState.isMobile ? 'mobile' : 'desktop';
 
-  const interruptButton = dockedBar.querySelector<HTMLButtonElement>('.smart-input-escape-btn');
-  if (interruptButton) {
-    const label = layoutState.appServerControlActive ? t('commands.stop') : 'Esc';
-    if (layoutState.appServerControlActive) {
-      interruptButton.innerHTML =
-        '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true" focusable="false"><rect x="5" y="5" width="14" height="14" rx="1"/></svg>';
-    } else {
-      interruptButton.textContent = label;
-    }
-    interruptButton.title = layoutState.appServerControlActive ? label : 'Escape';
-    interruptButton.setAttribute('aria-label', interruptButton.title);
-  }
+  syncSmartInputStopButton();
 
   activeTextarea = dockedBar.querySelector('.smart-input-textarea');
   if (activeTextarea) {
@@ -2123,7 +2209,9 @@ function syncStatusRow(layoutState: AdaptiveFooterLayoutState): void {
   }
 
   if (layoutState.appServerControlActive) {
-    renderAppServerControlStatusRow(layoutState);
+    const startupState = getAppServerControlStartupState(layoutState.activeSessionId);
+    if (startupState === 'ready') renderAppServerControlStatusRow(layoutState);
+    else footerStatusHost.appendChild(createAgentStartupStatus(startupState));
     return;
   }
 
@@ -2142,6 +2230,17 @@ function syncStatusRow(layoutState: AdaptiveFooterLayoutState): void {
     footerStatusHost,
   });
   footerStatusHost.toggleAttribute('hidden', !renderedTerminalStatus);
+}
+
+function createAgentStartupStatus(state: 'loading' | 'failed'): HTMLElement {
+  const status = document.createElement('span');
+  status.className = 'adaptive-footer-agent-startup';
+  status.dataset.state = state;
+  status.setAttribute('role', 'status');
+  status.textContent = t(
+    state === 'loading' ? 'smartInput.agentStarting' : 'smartInput.agentStartupFailed',
+  );
+  return status;
 }
 
 function renderAppServerControlStatusRow(layoutState: AdaptiveFooterLayoutState): void {
@@ -2909,9 +3008,55 @@ async function handleAgentComposerCommand(
   return true;
 }
 
+async function sendQuestionComposerAnswer(args: {
+  sessionId: string;
+  ta: HTMLTextAreaElement;
+  draft: SmartInputComposerDraft;
+  attachments: AppServerControlComposerDraftAttachment[];
+  text: string;
+  isCurrentDocument: () => boolean;
+}): Promise<boolean> {
+  const { sessionId, ta, draft, attachments, text, isCurrentDocument } = args;
+  // A local handoff can open in parallel while the source waits for an answer.
+  if (attachments.length === 0 && text.trim().toLowerCase() === '/handoff') return false;
+  const answerTarget = getQuestionAnswer(sessionId);
+  if (answerTarget) {
+    if (!answerTarget.isCurrent()) throw new Error(t('appServerControl.request.noLongerOpen'));
+    const prepared = await prepareSmartInputOutboundPrompt({
+      sessionId,
+      draft,
+      attachments,
+      uploadFailureMessage: t('smartInput.attachmentUploadFailed'),
+      attachmentReadFailureMessage: t('smartInput.attachmentSendFailed'),
+      uploadFile,
+    });
+    if (
+      !isCurrentDocument() ||
+      getQuestionAnswer(sessionId) !== answerTarget ||
+      !answerTarget.isCurrent()
+    )
+      throw new Error(t('smartInput.richTargetChanged'));
+    // Native answer protocols carry strings. Preserve uploaded files/images as
+    // readable host paths, while rich text and pasted text blocks stay intact.
+    const answer = [prepared.text, ...prepared.attachments.map((item) => item.path)]
+      .filter(Boolean)
+      .join('\n\n');
+    await answerTarget.answer(answer);
+    if (getQuestionAnswer(sessionId) === answerTarget) endQuestionAnswer(sessionId);
+    if (isCurrentDocument()) clearSubmittedSmartInputState(sessionId, ta);
+    return true;
+  }
+  return false;
+}
+
 async function sendRichComposerTurn(sessionId: string, ta: HTMLTextAreaElement): Promise<void> {
   const editor = richComposer;
-  if (!editor || editor.isSubmitting(sessionId)) return;
+  if (
+    !editor ||
+    editor.isSubmitting(sessionId) ||
+    getAppServerControlStartupState(sessionId) !== 'ready'
+  )
+    return;
   let handledCommand = false;
   const isCurrentDocument = editor.captureDocumentGuard(sessionId);
   editor.setSubmitting(sessionId, true);
@@ -2927,6 +3072,17 @@ async function sendRichComposerTurn(sessionId: string, ta: HTMLTextAreaElement):
     );
     const text = getSessionDraftText(sessionId);
     if (!text && attachments.length === 0) return;
+    if (
+      await sendQuestionComposerAnswer({
+        sessionId,
+        ta,
+        draft,
+        attachments,
+        text,
+        isCurrentDocument,
+      })
+    )
+      return;
     if (attachments.length === 0) {
       handledCommand = await handleAgentComposerCommand(sessionId, text, ta);
       if (handledCommand) return;
@@ -2941,7 +3097,7 @@ async function sendRichComposerTurn(sessionId: string, ta: HTMLTextAreaElement):
       createTurnRequest: createAppServerControlTurnRequest,
       submitTurn: (targetSessionId, request) => {
         if (!isCurrentDocument()) throw new Error(t('smartInput.richTargetChanged'));
-        return sendCommandBayPrompt(targetSessionId, request);
+        return submitAppServerControlComposerPrompt(targetSessionId, request, sendCommandBayPrompt);
       },
     });
     await submittedTurn;
@@ -2953,8 +3109,12 @@ async function sendRichComposerTurn(sessionId: string, ta: HTMLTextAreaElement):
     showDropToast(error instanceof Error ? error.message : t('smartInput.attachmentSendFailed'));
   } finally {
     if (isCurrentDocument()) editor.setSubmitting(sessionId, false);
-    if (!handledCommand && $activeSessionId.get() === sessionId) focusSmartInput();
+    focusAfterComposerSend(sessionId, handledCommand);
   }
+}
+
+function focusAfterComposerSend(sessionId: string, handledCommand: boolean): void {
+  if (!handledCommand && $activeSessionId.get() === sessionId) focusSmartInput();
 }
 
 async function sendText(ta: HTMLTextAreaElement): Promise<void> {
@@ -3006,6 +3166,7 @@ function applyDraftToTextarea(
   renderSessionDraftIntoTextarea(sessionId, textarea);
 }
 function syncDraftForActiveSession(): void {
+  syncQuestionAnswerBox?.();
   const sessionId = $activeSessionId.get();
   applyDraftToTextarea(activeTextarea, sessionId);
   renderAppServerControlAttachmentDrafts(sessionId);
@@ -3013,6 +3174,7 @@ function syncDraftForActiveSession(): void {
 }
 
 export function removeSmartInputSessionState(sessionId: string): void {
+  endQuestionAnswer(sessionId);
   sessionDrafts.delete(sessionId);
   persistSmartInputCurrentDraft(sessionId, null);
   richComposer?.forget(sessionId);
@@ -3067,6 +3229,11 @@ function beginRecording(pinOnUse: boolean = false): void {
 function sendDirectly(text: string): void {
   const sessionId = $activeSessionId.get();
   if (!sessionId) return;
+  if (getQuestionAnswer(sessionId) && activeTextarea) {
+    insertComposerTextAtSelection(sessionId, activeTextarea, text);
+    void sendText(activeTextarea);
+    return;
+  }
   void submitSessionText(sessionId, text);
 }
 
@@ -3106,6 +3273,15 @@ function pinToolForSession(sessionId: string, tool: ToolKind): void {
 }
 
 function syncAppServerControlQuickSettingsControls(): void {
+  const sessionId = $activeSessionId.get();
+  if (
+    sessionId &&
+    isAppServerControlActiveSession(sessionId) &&
+    getAppServerControlStartupState(sessionId) !== 'ready'
+  ) {
+    setAppServerControlQuickSettingsSheetOpen(false);
+    return;
+  }
   syncAppServerControlQuickSettingsControlsSupport({
     appServerControlQuickSettingsRow,
     appServerControlQuickSettingsActions,

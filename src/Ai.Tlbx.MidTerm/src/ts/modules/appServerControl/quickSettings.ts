@@ -3,7 +3,6 @@ import type {
   AppServerControlQuickSettingsOption,
   AppServerControlQuickSettingsSummary,
   MidTermSettingsPublic,
-  MidTermSettingsUpdate,
   AppServerControlTurnRequest,
   AppServerControlConfigOption,
   AppServerControlConfigValue,
@@ -12,7 +11,7 @@ import type {
   AppServerControlTurnSummary,
   AppServerControlHistorySnapshot,
 } from '../../api/types';
-import { configureAppServerControlRuntime, updateSettings } from '../../api/client';
+import { configureAppServerControlRuntime } from '../../api/client';
 import * as stores from '../../stores';
 import { resolveAppServerControlModelEffortCatalog } from './modelOptions';
 
@@ -34,6 +33,7 @@ interface AppServerControlQuickSettingsSessionState {
   draft: AppServerControlQuickSettingsSummary;
   draftDirty: boolean;
   runtime?: RuntimeSettingsState;
+  startupFailed?: boolean;
 }
 
 const runtimeFields = ['model', 'effort', 'planMode', 'permissionMode', 'fastMode'] as const;
@@ -67,7 +67,6 @@ interface AppServerControlSessionProviderHint {
 
 interface CurrentSettingsStoreLike {
   get?: () => MidTermSettingsPublic | null;
-  set?: (value: MidTermSettingsPublic | null) => void;
 }
 
 type AppServerControlPlanMode = AppServerControlQuickSettingsSummary['planMode'];
@@ -109,7 +108,8 @@ function normalizePlanMode(value: string | null | undefined): AppServerControlPl
 }
 
 function normalizePermissionMode(value: string | null | undefined): AppServerControlPermissionMode {
-  return value?.trim().toLowerCase() === 'auto' ? 'auto' : 'manual';
+  const mode = value?.trim().toLowerCase();
+  return mode === 'auto' || mode === 'full-access' ? mode : 'manual';
 }
 
 function normalizeFastMode(value: string | null | undefined): AppServerControlFastMode {
@@ -271,61 +271,6 @@ export function getAppServerControlResolvedProviderModel(provider: string | null
   return resolveRememberedProviderModel(provider, null);
 }
 
-function persistRememberedProviderModel(provider: string | null, model: string | null): void {
-  if (provider !== 'codex') {
-    return;
-  }
-
-  const currentSettingsStore = getOptionalStoreExport('$currentSettings') as
-    CurrentSettingsStoreLike | undefined;
-  if (
-    !currentSettingsStore ||
-    typeof currentSettingsStore.get !== 'function' ||
-    typeof currentSettingsStore.set !== 'function'
-  ) {
-    return;
-  }
-  const getCurrentSettings = currentSettingsStore.get;
-  const setCurrentSettings = currentSettingsStore.set;
-
-  const currentSettings = getCurrentSettings();
-  if (!currentSettings) {
-    return;
-  }
-
-  const nextStoredValue = normalizeOptionalValue(model) ?? '';
-  const currentStoredValue = currentSettings.codexDefaultAppServerControlModel;
-  if (currentStoredValue === nextStoredValue) {
-    return;
-  }
-
-  const nextSettings: MidTermSettingsPublic = {
-    ...currentSettings,
-    codexDefaultAppServerControlModel: nextStoredValue,
-  };
-
-  setCurrentSettings(nextSettings);
-  void updateSettings(nextSettings as MidTermSettingsUpdate)
-    .then(({ response }) => {
-      if (response.ok) {
-        return;
-      }
-
-      const latestSettings = getCurrentSettings();
-      const latestStoredValue = latestSettings?.codexDefaultAppServerControlModel ?? '';
-      if (latestStoredValue === nextStoredValue) {
-        setCurrentSettings(currentSettings);
-      }
-    })
-    .catch(() => {
-      const latestSettings = getCurrentSettings();
-      const latestStoredValue = latestSettings?.codexDefaultAppServerControlModel ?? '';
-      if (latestStoredValue === nextStoredValue) {
-        setCurrentSettings(currentSettings);
-      }
-    });
-}
-
 function resolveSessionProvider(sessionId: string | null | undefined): string | null {
   if (!sessionId) {
     return null;
@@ -446,6 +391,19 @@ function ensureProviderSeeded(
   return state;
 }
 
+export function getAppServerControlStartupState(sessionId: string): 'loading' | 'ready' | 'failed' {
+  const state = sessionStates.get(sessionId);
+  if (state?.startupFailed) return 'failed';
+  return state?.runtime?.initialTarget ? 'ready' : 'loading';
+}
+
+export function setAppServerControlStartupFailed(sessionId: string, failed: boolean): void {
+  const state = getOrCreateSessionState(sessionId);
+  if (Boolean(state.startupFailed) === failed) return;
+  state.startupFailed = failed;
+  dispatchQuickSettingsChange(sessionId, state, 'sync');
+}
+
 export function getAppServerControlQuickSettingsDraft(
   sessionId: string,
 ): AppServerControlQuickSettingsSummary {
@@ -483,17 +441,14 @@ export function setAppServerControlQuickSettingsDraft(
     resolveSessionProvider(sessionId),
   );
   if (state.runtime) {
-    const target = state.runtime.target;
+    const { target, initialTarget } = state.runtime;
     cancelRuntimeReadinessWait(state.runtime);
     delete state.runtime;
-    getRuntimeSettingsState(state).target = target;
+    Object.assign(getRuntimeSettingsState(state), { target, initialTarget });
   }
   state.draft = normalizeQuickSettings({ ...state.draft, ...patch }, state.provider);
   state.draftDirty = true;
   writeProviderStickyQuickSettings(state.provider, state.draft);
-  if (Object.prototype.hasOwnProperty.call(patch, 'model')) {
-    persistRememberedProviderModel(state.provider, state.draft.model ?? null);
-  }
   dispatchQuickSettingsChange(sessionId, state, 'draft');
 }
 
@@ -575,21 +530,31 @@ export function createAppServerControlTurnRequestWithQuickSettings(
   const quickSettings = getAppServerControlQuickSettingsDraft(sessionId);
   const effective = getAppServerControlQuickSettingsEffective(sessionId);
   const configValues = getNativeConfigChanges(quickSettings, effective);
-  const runtimeManaged = sessionStates.get(sessionId)?.runtime?.managed === true;
+  const state = sessionStates.get(sessionId);
   return {
     text,
-    ...(!runtimeManaged
-      ? {
-          model: quickSettings.model ?? null,
-          effort: quickSettings.effort ?? null,
-          planMode: quickSettings.planMode,
-          permissionMode: quickSettings.permissionMode,
-          fastMode: normalizeFastMode(quickSettings.fastMode),
-        }
-      : {}),
+    ...readTurnSettings(state, quickSettings),
     ...(Object.keys(configValues).length ? { configValues } : {}),
     attachments,
   };
+}
+
+function readTurnSettings(
+  state: AppServerControlQuickSettingsSessionState | undefined,
+  draft: AppServerControlQuickSettingsSummary,
+): Partial<AppServerControlTurnRequest> {
+  if (state?.runtime?.managed || (state?.runtime?.target?.ready && !state.draftDirty)) return {};
+
+  const settings: Partial<AppServerControlTurnRequest> = {
+    model: draft.model ?? null,
+    effort: draft.effort ?? null,
+    fastMode: normalizeFastMode(draft.fastMode),
+  };
+  if (state?.provider !== 'antigravity') {
+    settings.planMode = draft.planMode;
+    settings.permissionMode = draft.permissionMode;
+  }
+  return settings;
 }
 
 type RuntimeSettingsSnapshotTarget = {
@@ -758,7 +723,8 @@ function reconcileCanonicalRuntimeDefaults(
   snapshot: Partial<AppServerControlQuickSettingsSummary> | null | undefined,
 ): void {
   const runtime = state.runtime;
-  if (state.provider !== 'codex' || !runtime?.managed || !snapshot) return;
+  if (!['codex', 'antigravity'].includes(state.provider ?? '') || !runtime?.managed || !snapshot)
+    return;
   for (const field of runtimeFields) {
     const value = snapshot[field];
     if (
@@ -853,6 +819,7 @@ function readActualRuntimeSetting(
     case 'effort':
       return readNullableSettingString(actual[field]);
     case 'planMode': {
+      if (actual.planMode === 'on' || actual.planMode === 'off') return actual.planMode;
       const mode = readObjectProperty(actual.collaborationMode, 'mode');
       return mode === 'plan' ? 'on' : mode === 'default' ? 'off' : undefined;
     }
@@ -860,13 +827,22 @@ function readActualRuntimeSetting(
       const tier = readNullableSettingString(actual.serviceTier);
       return tier === undefined ? undefined : tier === 'fast' ? 'on' : 'off';
     }
-    case 'permissionMode': {
-      const sandbox = readObjectProperty(actual.sandboxPolicy, 'type');
-      if (actual.approvalPolicy === 'never' && sandbox === 'dangerFullAccess') return 'auto';
-      if (actual.approvalPolicy === 'on-request' && sandbox === 'workspaceWrite') return 'manual';
-      return undefined;
-    }
+    case 'permissionMode':
+      return readActualPermissionMode(actual);
   }
+}
+
+function readActualPermissionMode(actual: Record<string, unknown>): string | undefined {
+  if (
+    actual.permissionMode === 'auto' ||
+    actual.permissionMode === 'manual' ||
+    actual.permissionMode === 'full-access'
+  )
+    return actual.permissionMode;
+  const sandbox = readObjectProperty(actual.sandboxPolicy, 'type');
+  if (actual.approvalPolicy === 'never' && sandbox === 'dangerFullAccess') return 'auto';
+  if (actual.approvalPolicy === 'on-request' && sandbox === 'workspaceWrite') return 'manual';
+  return undefined;
 }
 
 interface RuntimeSettingAcceptance {
@@ -984,10 +960,6 @@ function acceptRuntimeFieldReceipt(
       if (accepted.actual || state.provider === 'claude') runtime.observedDefaults.delete(field);
     }
     if (accepted.actual) assignRuntimeField(state.effective, field, accepted.value);
-    if (accepted.defaults) {
-      writeProviderStickyQuickSettings(state.provider, getConfirmedQuickSettings(state));
-      if (field === 'model') persistRememberedProviderModel(state.provider, accepted.value);
-    }
     if (runtime.revisions[field] !== revision) return;
     assignRuntimeField(state.draft, field, accepted.value);
     runtime.statuses[field] = getReceiptFieldStatus(
@@ -1029,7 +1001,7 @@ function getRuntimeTargetProblem(
   ) {
     return 'targetUnavailable';
   }
-  if (!target?.ready || !target.connected || !['codex', 'claude'].includes(provider ?? '')) {
+  if (!target?.ready || !target.connected || !provider) {
     return 'unconfirmed';
   }
   const current = runtime.target;
@@ -1044,8 +1016,7 @@ async function waitForUnsentRuntimeTarget(
   requested: RuntimeSettingsState['target'],
   provider: string | null,
 ): Promise<RuntimeSettingsState['target']> {
-  if (requested?.ready || runtime.unavailable || !['codex', 'claude'].includes(provider ?? ''))
-    return requested;
+  if (requested?.ready || runtime.unavailable || !provider) return requested;
   if (!requested && runtime.initialTarget) return { ...runtime.initialTarget };
   const target = runtime.target?.ready
     ? { ...runtime.target }
@@ -1067,6 +1038,30 @@ function isConfigurationForCurrentThread(
     receipt.status !== 'targetUnavailable'
   );
 }
+export async function waitForAntigravityQuickSettings(sessionId: string): Promise<void> {
+  const state = sessionStates.get(sessionId);
+  const runtime = state?.runtime;
+  if (state?.provider !== 'antigravity' || !runtime) return;
+
+  const fields = (['permissionMode', 'planMode', 'model', 'effort'] as const).filter(
+    (field) => runtime.statuses[field]?.state === 'pending',
+  );
+  if (!fields.length) return;
+
+  let queue: Promise<void>;
+  do {
+    queue = runtime.queue;
+    await queue;
+  } while (queue !== runtime.queue);
+
+  for (const field of fields) {
+    const status = runtime.statuses[field];
+    if (status?.state !== 'applied' && status?.state !== 'acknowledged') {
+      throw new Error(status?.detail ?? `Antigravity did not confirm ${field}.`);
+    }
+  }
+}
+
 export function configureAppServerControlQuickSettings(
   sessionId: string,
   patch: Partial<Pick<AppServerControlQuickSettingsSummary, AppServerControlRuntimeSettingField>>,
@@ -1088,6 +1083,7 @@ export function configureAppServerControlQuickSettings(
     !fields.includes('effort')
   )
     fields.push('effort');
+  dropConflictingAntigravityModeDraft(state, fields);
   const requestedTarget = runtime.target ? { ...runtime.target } : null;
   const revision = ++runtime.revision;
   const settings: Record<string, string | null> = {};
@@ -1149,6 +1145,32 @@ export function configureAppServerControlQuickSettings(
     // Provider outcomes are reported above; an unexpected local failure must not strand later explicit edits.
   });
   return operation;
+}
+
+function dropConflictingAntigravityModeDraft(
+  state: AppServerControlQuickSettingsSessionState,
+  fields: readonly AppServerControlRuntimeSettingField[],
+): void {
+  if (
+    state.provider !== 'antigravity' ||
+    !fields.some((field) => field === 'permissionMode' || field === 'planMode')
+  )
+    return;
+  const mode = state.effective.configOptions?.find(
+    (option) => (option.configId ?? option.id) === 'mode',
+  );
+  if (mode && state.draft.configOptions) {
+    state.draft.configOptions = state.draft.configOptions.map((option) =>
+      (option.configId ?? option.id) === 'mode' ? structuredClone(mode) : option,
+    );
+  }
+}
+
+export function supportsAntigravityAutoMode(
+  settings: AppServerControlQuickSettingsSummary,
+): boolean {
+  const mode = settings.configOptions?.find((option) => (option.configId ?? option.id) === 'mode');
+  return mode?.type === 'select' && hasConfigValue(mode.options ?? [], 'auto');
 }
 
 function getNativeConfigChanges(

@@ -4421,6 +4421,7 @@
           "result",
           "error",
           "matchCount",
+          "capture",
           "durationMs"
         ],
         "type": "object",
@@ -4454,14 +4455,136 @@
             ],
             "format": "int32"
           },
+          "capture": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/BrowserCaptureInfo"
+              }
+            ]
+          },
           "durationMs": {
             "type": "number",
             "format": "double"
           }
         }
       },
+      "BrowserCaptureInfo": {
+        "required": [
+          "renderer",
+          "pixelCoverage",
+          "inventory",
+          "mediaPixels",
+          "nestedMedia",
+          "media",
+          "warningCodes",
+          "warningsMayBeTruncated",
+          "output"
+        ],
+        "type": "object",
+        "properties": {
+          "renderer": {
+            "type": "string"
+          },
+          "pixelCoverage": {
+            "type": "string"
+          },
+          "inventory": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "mediaPixels": {
+            "type": "string"
+          },
+          "nestedMedia": {
+            "type": "string"
+          },
+          "media": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/BrowserCaptureMedia"
+              }
+            ]
+          },
+          "warningCodes": {
+            "type": [
+              "null",
+              "object"
+            ],
+            "additionalProperties": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          "warningsMayBeTruncated": {
+            "type": "boolean"
+          },
+          "output": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/BrowserCaptureOutput"
+              }
+            ]
+          }
+        }
+      },
+      "BrowserCaptureMedia": {
+        "required": [
+          "frames",
+          "unreadableFrames",
+          "canvases",
+          "videos"
+        ],
+        "type": "object",
+        "properties": {
+          "frames": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "unreadableFrames": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "canvases": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "videos": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "BrowserCaptureOutput": {
+        "required": [
+          "width",
+          "height"
+        ],
+        "type": "object",
+        "properties": {
+          "width": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "height": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
       "BrowserClientInfo": {
         "required": [
+          "documentId",
           "sessionId",
           "previewName",
           "previewId",
@@ -4470,11 +4593,20 @@
           "connectedAtUtc",
           "isMainBrowser",
           "isVisible",
+          "isPanelVisible",
+          "isDocumentVisible",
+          "documentVisibilityState",
           "hasFocus",
           "isTopLevel"
         ],
         "type": "object",
         "properties": {
+          "documentId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
           "sessionId": {
             "type": [
               "null",
@@ -4516,6 +4648,24 @@
           "isVisible": {
             "type": "boolean"
           },
+          "isPanelVisible": {
+            "type": [
+              "null",
+              "boolean"
+            ]
+          },
+          "isDocumentVisible": {
+            "type": [
+              "null",
+              "boolean"
+            ]
+          },
+          "documentVisibilityState": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
           "hasFocus": {
             "type": "boolean"
           },
@@ -4537,6 +4687,12 @@
             "type": "string"
           },
           "selector": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "frame": {
             "type": [
               "null",
               "string"
@@ -4617,7 +4773,8 @@
           "success",
           "result",
           "error",
-          "matchCount"
+          "matchCount",
+          "capture"
         ],
         "type": "object",
         "properties": {
@@ -4642,6 +4799,16 @@
               "integer"
             ],
             "format": "int32"
+          },
+          "capture": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/BrowserCaptureInfo"
+              }
+            ]
           }
         }
       },
@@ -6621,6 +6788,10 @@
           "showAgentMessageTimestamps",
           "showAgentTechnicalDetails",
           "toolCallOutputLines",
+          "agentImagePreviewWidth",
+          "agentChatFontScale",
+          "agentChatPanelTransparency",
+          "agentChatColumnWidth",
           "fontSize",
           "fontFamily",
           "terminalLigaturesEnabled",
@@ -6743,6 +6914,25 @@
             "type": "boolean"
           },
           "toolCallOutputLines": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "agentImagePreviewWidth": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "agentChatFontScale": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "agentChatPanelTransparency": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int32"
+          },
+          "agentChatColumnWidth": {
             "type": "integer",
             "format": "int32"
           },
@@ -8930,6 +9120,10 @@
           "statusCode",
           "error",
           "durationMs",
+          "upstreamStatusCode",
+          "upstreamDurationMs",
+          "outcome",
+          "responseStarted",
           "requestHeaders",
           "responseHeaders",
           "requestCookies",
@@ -8974,6 +9168,32 @@
           "durationMs": {
             "type": "integer",
             "format": "int64"
+          },
+          "upstreamStatusCode": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int32"
+          },
+          "upstreamDurationMs": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int64"
+          },
+          "outcome": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "responseStarted": {
+            "type": [
+              "null",
+              "boolean"
+            ]
           },
           "requestHeaders": {
             "type": "object",
@@ -9261,6 +9481,12 @@
               "string"
             ]
           },
+          "handoffSourceSessionId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
           "cols": {
             "type": "integer",
             "format": "int32"
@@ -9331,7 +9557,8 @@
           "launchCommand",
           "slashCommands",
           "guidanceInjected",
-          "tlbxDir"
+          "tlbxDir",
+          "handoffFilePath"
         ],
         "type": "object",
         "properties": {
@@ -9357,6 +9584,12 @@
             "type": "boolean"
           },
           "tlbxDir": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "handoffFilePath": {
             "type": [
               "null",
               "string"

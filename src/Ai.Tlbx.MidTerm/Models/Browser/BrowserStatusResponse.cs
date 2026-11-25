@@ -25,6 +25,7 @@ public sealed class BrowserStatusResponse
 
 public sealed class BrowserClientInfo
 {
+    public string? DocumentId { get; init; }
     public string? SessionId { get; init; }
     public string? PreviewName { get; init; }
     public string? PreviewId { get; init; }
@@ -33,6 +34,9 @@ public sealed class BrowserClientInfo
     public DateTimeOffset ConnectedAtUtc { get; init; }
     public bool IsMainBrowser { get; init; }
     public bool IsVisible { get; init; }
+    public bool? IsPanelVisible { get; init; }
+    public bool? IsDocumentVisible { get; init; }
+    public string? DocumentVisibilityState { get; init; }
     public bool HasFocus { get; init; }
     public bool IsTopLevel { get; init; }
 }

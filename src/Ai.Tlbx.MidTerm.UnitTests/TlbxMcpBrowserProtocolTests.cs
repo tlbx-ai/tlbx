@@ -24,6 +24,168 @@ public sealed class TlbxMcpBrowserProtocolTests
 {
     private const string Png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/l9sAAAAASUVORK5CYII=";
 
+    [Theory]
+    [InlineData("status")]
+    [InlineData("screenshot")]
+    public async Task MobileControlAwaitsExactOwnerCommandPreviewAndRevision(string action)
+    {
+        var owners = new BrowserPreviewOwnerService();
+        var previews = new WebPreviewService(2000);
+        Assert.True(previews.SetTarget("mobile-session", "named", "https://example.invalid/"));
+        var ui = new BrowserUiBridge(new MainBrowserService(), owners, previews);
+        string? requestId = null;
+        long revision = -1;
+        ui.RegisterAcknowledgedListener("ui", "desktop:tab", (_, _, _) => { }, (_, _, _) => { },
+            (_, _, _, _, _) => { }, (_, _, _, _, _, _) => { },
+            mobileDevice: (id, session, name, receivedAction, _, targetRevision) =>
+            {
+                Assert.Equal("mobile-session", session); Assert.Equal("named", name);
+                Assert.Equal(action, receivedAction); requestId = id; revision = targetRevision;
+            });
+        owners.Claim("mobile-session", "named", "desktop:tab");
+        try
+        {
+            var pending = ui.RequestMobileDeviceAsync("mobile-session", "named", action, null, TestContext.Current.CancellationToken);
+            Assert.False(pending.IsCompleted);
+            Assert.NotNull(requestId);
+            BrowserUiCommandResult Result(string command = "mobile-device", string session = "mobile-session", long? targetRevision = null) => new()
+            {
+                RequestId = requestId!, Command = command, SessionId = session, PreviewName = "named",
+                TargetRevision = targetRevision ?? revision, Success = true,
+                MobileDevice = new BrowserMobileDeviceState { Available = action == "screenshot", Connected = action == "screenshot", Open = action == "screenshot" ? true : null },
+                ScreenshotDataUrl = action == "screenshot" ? Png : null
+            };
+            Assert.False(ui.CompleteUiCommand(Result(), "desktop:sibling"));
+            Assert.False(ui.CompleteUiCommand(Result("viewport"), "desktop:tab"));
+            Assert.False(ui.CompleteUiCommand(Result(session: "other-session"), "desktop:tab"));
+            Assert.False(ui.CompleteUiCommand(Result(targetRevision: revision + 1), "desktop:tab"));
+            Assert.False(pending.IsCompleted);
+            Assert.True(ui.CompleteUiCommand(Result(), "desktop:tab"));
+            var result = await pending;
+            Assert.True(result.Success);
+            Assert.Equal(action == "screenshot", result.MobileDevice!.Available);
+            Assert.Equal(action == "screenshot" ? Png : null, result.ScreenshotDataUrl);
+            Assert.False(ui.CompleteUiCommand(Result(), "desktop:tab"));
+            if (action == "screenshot")
+            {
+                await using var services = new ServiceCollection().BuildServiceProvider();
+                var image = await TlbxMcpBrowserTools.CommandResultAsync(services,
+                    new BrowserCommandRequest { Command = "screenshot", SessionId = "mobile-session", PreviewName = "named" },
+                    new BrowserWsResult { Success = true, Result = result.ScreenshotDataUrl }, false);
+                Assert.IsType<ImageContentBlock>(Assert.Single(image.Content));
+                Assert.DoesNotContain(image.Content.OfType<TextContentBlock>(), block => block.Text.Contains("base64", StringComparison.Ordinal));
+            }
+        }
+        finally { ui.UnregisterListener("ui"); }
+    }
+
+    [Theory]
+    [InlineData("revision")]
+    [InlineData("owner")]
+    [InlineData("extension-error")]
+    public async Task MobileControlRejectsStaleTargetsAndSurfacesExtensionFailures(string failure)
+    {
+        var owners = new BrowserPreviewOwnerService();
+        var previews = new WebPreviewService(2000);
+        Assert.True(previews.SetTarget("mobile-session", "named", "https://example.invalid/"));
+        var ui = new BrowserUiBridge(new MainBrowserService(), owners, previews);
+        ui.RegisterAcknowledgedListener("ui", "desktop:tab", (_, _, _) => { }, (_, _, _) => { },
+            (_, _, _, _, _) => { }, (_, _, _, _, _, _) => { }, mobileDevice: (id, session, name, _, _, revision) =>
+            {
+                if (failure == "revision") Assert.True(previews.SetTarget("mobile-session", "named", "https://other.invalid/"));
+                if (failure == "owner") owners.Claim("mobile-session", "named", "other:tab");
+                ui.CompleteUiCommand(new BrowserUiCommandResult
+                {
+                    RequestId = id, Command = "mobile-device", SessionId = session, PreviewName = name, TargetRevision = revision,
+                    Success = failure != "extension-error", Error = failure == "extension-error" ? "Chrome bridge disconnected" : null,
+                    MobileDevice = new BrowserMobileDeviceState { Connected = true, Available = true }
+                }, "desktop:tab");
+            });
+        owners.Claim("mobile-session", "named", "desktop:tab");
+        try
+        {
+            var result = await ui.RequestMobileDeviceAsync("mobile-session", "named", "open", null, TestContext.Current.CancellationToken);
+            Assert.False(result.Success);
+            Assert.Contains(failure == "extension-error" ? "Chrome bridge disconnected" : "changed", result.Error, StringComparison.Ordinal);
+        }
+        finally { ui.UnregisterListener("ui"); }
+    }
+
+    [Fact]
+    public void CooperativeFrameScopeIsLiteralAndRejectsUnsupportedNavigationOrCapture()
+    {
+        var command = TlbxMcpBrowserTools.BuildCommand("evaluate", Args(new { frame = "iframe[data-name='東京']", code = "document.title" }), "first001", "alpha", "parent-preview");
+        Assert.Equal("iframe[data-name='東京']", command.Frame);
+        Assert.Equal("parent-preview", command.PreviewId);
+        Assert.Equal("exec", command.Command);
+        var batch = TlbxMcpBrowserTools.ParseBatch(Args(new { commands = new[] { new { command = "query", frame = "#child", selector = "body" } } }), "first001", "alpha");
+        Assert.Equal("#child", Assert.Single(batch.Commands).Frame);
+        Assert.Throws<ArgumentException>(() => TlbxMcpBrowserTools.BuildCommand("screenshot", Args(new { frame = "#child" }), "first001", "alpha", null));
+        Assert.Throws<ArgumentException>(() => TlbxMcpBrowserTools.BuildCommand("exec", Args(new { frame = "#child", code = "42", timeout = 16 }), "first001", "alpha", null));
+        Assert.Throws<ArgumentException>(() => TlbxMcpBrowserTools.BuildCommand("click", Args(new { frame = "#child", selector = "button", waitForNavigation = true }), "first001", "alpha", null));
+    }
+
+    [Fact]
+    public void DetailScreenshotPreservesSelectorAndRejectsConflictingCaptureModes()
+    {
+        const string selector = "canvas[data-chart='Grüße 東京']";
+        var detail = TlbxMcpBrowserTools.BuildCommand("screenshot", Args(new { selector }), "first001", "alpha", "preview-a");
+        Assert.Equal(selector, detail.Selector);
+        Assert.False(detail.FullPage);
+        Assert.Equal("preview-a", detail.PreviewId);
+        var batch = TlbxMcpBrowserTools.ParseBatch(Args(new { commands = new[] { new { command = "screenshot", selector } } }), "first001", "alpha");
+        Assert.Equal(selector, Assert.Single(batch.Commands).Selector);
+        Assert.Throws<ArgumentException>(() => TlbxMcpBrowserTools.BuildCommand("screenshot", Args(new { selector, fullPage = true }), "first001", "alpha", null));
+        Assert.Throws<ArgumentException>(() => TlbxMcpBrowserTools.BuildCommand("screenshot", Args(new { selector = " " }), "first001", "alpha", null));
+        Assert.Throws<ArgumentException>(() => TlbxMcpBrowserTools.ParseBatch(Args(new { commands = new[] { new { command = "screenshot", selector, fullPage = true } } }), "first001", "alpha"));
+        var viewport = TlbxMcpBrowserTools.BuildCommand("screenshot", Args(new { }), "first001", "alpha", null);
+        Assert.Null(viewport.Selector);
+        Assert.False(viewport.FullPage);
+    }
+
+    [Theory]
+    [InlineData(true, true)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(false, false)]
+    public async Task VisibilityKeepsPanelAndDocumentTruthSeparateWithoutBlockingHiddenDomCommands(bool panel, bool document)
+    {
+        var commands = new BrowserCommandService();
+        var dispatched = 0;
+        Assert.True(commands.TryRegisterClient("visibility", "visibility-session", "alpha", "visibility-preview", message =>
+        {
+            dispatched++;
+            commands.ReceiveResult(new BrowserWsResult { Id = message.Id, Success = true, Result = "executed" }, "visibility");
+        }, isVisible: true, panelVisible: panel, documentVisible: document, documentVisibilityState: document ? "visible" : "hidden"));
+        try
+        {
+            var status = commands.GetStatus("https://example.invalid", "visibility-session", "alpha", "visibility-preview");
+            Assert.True(status.Controllable);
+            Assert.Equal(panel && document, status.DefaultClient!.IsVisible);
+            Assert.Equal(panel, status.DefaultClient.IsPanelVisible);
+            Assert.Equal(document, status.DefaultClient.IsDocumentVisible);
+            var activated = await commands.WaitForControllableAsync("https://example.invalid", "visibility-session", "alpha", "visibility-preview",
+                timeout: TimeSpan.Zero, requirePanelVisibleClient: true, cancellationToken: TestContext.Current.CancellationToken);
+            Assert.Equal(panel, activated.Controllable);
+            var result = await commands.ExecuteCommandAsync(new BrowserCommandRequest
+            {
+                Command = "exec", Value = "document.hidden", SessionId = "visibility-session", PreviewName = "alpha", PreviewId = "visibility-preview"
+            }, TestContext.Current.CancellationToken);
+            Assert.True(result.Success);
+            Assert.Equal(1, dispatched);
+            commands.UpdateClientState("visibility", new BrowserWsResult
+            {
+                Type = "browser-state", Visible = true, PanelVisible = !panel, DocumentVisible = true, DocumentVisibilityState = "hidden"
+            });
+            var changed = commands.GetStatus("https://example.invalid", "visibility-session", "alpha", "visibility-preview").DefaultClient!;
+            Assert.Equal(!panel, changed.IsPanelVisible);
+            Assert.False(changed.IsDocumentVisible);
+            Assert.False(changed.IsVisible);
+            Assert.Equal("hidden", changed.DocumentVisibilityState);
+        }
+        finally { commands.UnregisterClient("visibility"); }
+    }
+
     [Fact]
     public void TypedCommandsPreserveUnicodeAndFractionalNumbersWithoutShellParsing()
     {
@@ -131,7 +293,11 @@ public sealed class TlbxMcpBrowserProtocolTests
                 commands.ReceiveResult(new BrowserWsResult
                 {
                     Id = message.Id, Success = true,
-                    Result = message.Command == "screenshot" ? Png : "{\"session\":\"" + session + "\"}"
+                    Result = message.Command == "screenshot" ? Png : "{\"session\":\"" + session + "\"}",
+                    Capture = message.Command == "screenshot" ? new BrowserCaptureInfo
+                    {
+                        Renderer = "dom-svg", PixelCoverage = "unverified", MediaPixels = "unverified"
+                    } : null
                 }, id);
             });
         }
@@ -217,6 +383,14 @@ public sealed class TlbxMcpBrowserProtocolTests
                 }, cancellationToken: ct);
                 Assert.NotEqual(true, longWait.IsError);
                 Assert.Equal(300, sent[session].Timeout);
+                var child = await client.CallToolAsync("browser_evaluate", new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["previewName"] = preview, ["frame"] = "iframe[data-child='東京']", ["code"] = "document.title"
+                }, cancellationToken: ct);
+                Assert.NotEqual(true, child.IsError);
+                Assert.Equal("iframe[data-child='東京']", sent[session].Frame);
+                Assert.Equal(preview, sent[session].PreviewName);
+                Assert.Equal("exec", sent[session].Command);
                 var image = await client.CallToolAsync("browser_screenshot", new Dictionary<string, object?>(StringComparer.Ordinal)
                 {
                     ["previewName"] = preview, ["fullPage"] = true
@@ -224,6 +398,25 @@ public sealed class TlbxMcpBrowserProtocolTests
                 Assert.NotEqual(true, image.IsError);
                 Assert.IsType<ImageContentBlock>(Assert.Single(image.Content));
                 Assert.True(sent[session].FullPage);
+                Assert.Equal("unverified", image.StructuredContent!.Value.GetProperty("capture").GetProperty("pixelCoverage").GetString());
+                var detail = await client.CallToolAsync("browser_screenshot", new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["previewName"] = preview, ["selector"] = "canvas[data-chart='Grüße 東京']"
+                }, cancellationToken: ct);
+                Assert.NotEqual(true, detail.IsError);
+                Assert.IsType<ImageContentBlock>(Assert.Single(detail.Content));
+                Assert.Equal("canvas[data-chart='Grüße 東京']", sent[session].Selector);
+                Assert.Equal(preview, sent[session].PreviewName);
+                Assert.False(sent[session].FullPage);
+                var batch = await client.CallToolAsync("browser_batch", new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["previewName"] = preview,
+                    ["commands"] = new[] { new { command = "screenshot", selector = "canvas" } }
+                }, cancellationToken: ct);
+                Assert.NotEqual(true, batch.IsError);
+                Assert.Single(batch.Content.OfType<ImageContentBlock>());
+                var captures = batch.StructuredContent!.Value.GetProperty("captures");
+                Assert.Equal("unverified", captures[0].GetProperty("capture").GetProperty("capture").GetProperty("pixelCoverage").GetString());
             }
             await Task.WhenAll(Check(first, "first001", "alpha"), Check(second, "second02", "beta"));
         }
@@ -416,9 +609,9 @@ public sealed class TlbxMcpBrowserProtocolTests
                 commands.TryRegisterClient("restored", session, name, "frame", message =>
                 {
                     if (message.Command == "reload") embeddedReloads++;
-                    commands.ReceiveResult(new BrowserWsResult { Id = message.Id, Success = true, Result = "ready" }, "restored");
+                    commands.ReceiveResult(new BrowserWsResult { Id = message.Id, Success = true, Result = "ready", DocumentId = "restored-document" }, "restored");
                 }, browserId: "desktop", targetRevision: previews.GetPreviewSession(session, name)?.TargetRevision,
-                    ownershipGeneration: owners.GetGeneration(session, name));
+                    ownershipGeneration: owners.GetGeneration(session, name), documentId: "restored-document");
             });
         try
         {
@@ -490,12 +683,13 @@ public sealed class TlbxMcpBrowserProtocolTests
             (session, name, _, activate) =>
             {
                 activated = activate;
+                var documentId = Guid.NewGuid().ToString("N");
                 commands.TryRegisterClient("preview", session, name, "frame", message =>
                 {
                     readyProbed |= message.Command == "ready";
-                    commands.ReceiveResult(new BrowserWsResult { Id = message.Id, Success = true, Result = "ready" }, "preview");
+                    commands.ReceiveResult(new BrowserWsResult { Id = message.Id, Success = true, Result = "ready", DocumentId = documentId }, "preview");
                 }, browserId: "desktop", targetRevision: previews.GetPreviewSession(session, name)?.TargetRevision,
-                    ownershipGeneration: owners.GetGeneration(session, name));
+                    ownershipGeneration: owners.GetGeneration(session, name), documentId: documentId);
             });
         var ct = TestContext.Current.CancellationToken;
         try

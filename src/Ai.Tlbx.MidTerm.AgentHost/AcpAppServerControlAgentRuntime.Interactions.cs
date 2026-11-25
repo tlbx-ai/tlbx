@@ -9,7 +9,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime
     private readonly ConcurrentDictionary<string, PendingChoiceQuestion> _pendingChoiceQuestions = new(StringComparer.Ordinal);
 
     private async Task HandleAcpChoiceQuestionAsync(JsonElement root, JsonElement rpcId, string turnId,
-        IReadOnlyList<PermissionOption> options, string rawLine, CancellationToken ct)
+        IReadOnlyList<AppServerControlPermissionOption> options, string rawLine, CancellationToken ct)
     {
         if (options.Count == 0 || options.Any(option => string.IsNullOrWhiteSpace(option.OptionId)) ||
             options.Select(option => option.OptionId).Distinct(StringComparer.Ordinal).Count() != options.Count)
@@ -25,7 +25,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime
             Options = options.Select(option => new AppServerControlQuestionOption
             {
                 Value = option.OptionId,
-                Label = option.Name ?? option.OptionId,
+                Label = option.Name,
                 Description = string.Empty
             }).ToList()
         };

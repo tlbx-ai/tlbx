@@ -6,7 +6,7 @@ on:
         description: Test suite to run against the selected branch or tag
         type: choice
         default: all
-        options: [all, frontend, server, runtime, installers, build, distribution, native, platform, tooling]
+        options: [all, frontend, server, runtime, installers, build, distribution, native, platform, tooling, security]
 permissions:
   contents: read
 env:
@@ -14,6 +14,105 @@ env:
   DOTNET_CLI_TELEMETRY_OPTOUT: true
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 jobs:
+  security-dependencies:
+    if: inputs.suite == 'all' || inputs.suite == 'security'
+    name: Dependency security audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+        with:
+          dotnet-version: |
+            10.0.402
+            11.0.100
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '26.12.0'
+      - run: npm install --global npm@12.2.0 --ignore-scripts
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6
+        with:
+          distribution: temurin
+          java-version: '27'
+      - uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd
+        with:
+          cmdline-tools-version: '16111833'
+      - name: Install Android dependency resolution SDK
+        run: |
+          android --sdk "$ANDROID_HOME" sdk install 'platforms/android-36'
+          android --sdk "$ANDROID_HOME" sdk install 'build-tools/37.0.0'
+      - name: Audit server, tooling and Android dependencies
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NuGetAudit: 'true'
+        run: ./scripts/audit-supply-chain.ps1 -Scope all
+  security-sbom:
+    if: inputs.suite == 'all' || inputs.suite == 'security'
+    name: Security and SBOM (${{ matrix.rid }})
+    needs: security-dependencies
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        rid: [win-x64, win-x86, linux-x64, linux-arm64, osx-arm64]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Audit selected native dependency graph
+        shell: pwsh
+        run: |
+          ./src/Ai.Tlbx.MidTerm.ConnectNative/prepare.ps1 -RuntimeIdentifier '${{ matrix.rid }}'
+          ./src/Ai.Tlbx.MidTerm.ConnectNative/audit.ps1 -RuntimeIdentifier '${{ matrix.rid }}'
+      - name: Download and verify latest published platform package
+        id: package
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./scripts/release-sbom.ps1 -Mode Prepare -Rid '${{ matrix.rid }}' -OutputDirectory .artifacts/sbom-snapshot
+      - name: Read the scanned package's exact native source inputs
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ steps.package.outputs.source-tag }}
+          path: .artifacts/sbom-source
+          persist-credentials: false
+          sparse-checkout: |
+            src/Ai.Tlbx.MidTerm.ConnectNative
+            scripts
+      - name: Generate fresh SPDX snapshot
+        uses: ./.github/actions/generate-release-sbom
+        with:
+          scan-path: ${{ steps.package.outputs.scan-path }}
+          sbom-path: .artifacts/sbom-snapshot/mt-${{ matrix.rid }}.spdx.json
+          native-source-root: .artifacts/sbom-source/src/Ai.Tlbx.MidTerm.ConnectNative
+      - name: Record snapshot origin and digest
+        shell: pwsh
+        env:
+          SNAPSHOT_RID: ${{ matrix.rid }}
+        run: |
+          $source = Get-Content .artifacts/sbom-snapshot/source.json -Raw | ConvertFrom-Json
+          $sbomPath = ".artifacts/sbom-snapshot/mt-$env:SNAPSHOT_RID.spdx.json"
+          $document = Get-Content $sbomPath -Raw | ConvertFrom-Json -Depth 100
+          $annotation = @{ annotationDate=[DateTimeOffset]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ'); annotationType='OTHER'; annotator='Tool: tlbx Tests (on demand)'; comment="Snapshot of $($source.sourceTag), commit $($source.sourceCommit), archive SHA256 $($source.archiveSha256). Later releases may reuse this document without rescanning." }
+          [object[]]$annotations = @($document.annotations | Where-Object { $null -ne $_ })
+          $annotations += $annotation
+          $document | Add-Member -NotePropertyName annotations -NotePropertyValue $annotations -Force
+          $document | ConvertTo-Json -Depth 100 | Set-Content $sbomPath
+          $source.sbomSha256 = (Get-FileHash ".artifacts/sbom-snapshot/mt-$env:SNAPSHOT_RID.spdx.json" -Algorithm SHA256).Hash.ToLowerInvariant()
+          $source | Add-Member -NotePropertyName generatedAt -NotePropertyValue ([DateTimeOffset]::UtcNow.ToString('o'))
+          $source | ConvertTo-Json -Depth 8 | Set-Content .artifacts/sbom-snapshot/source.json
+          "Fresh $env:SNAPSHOT_RID snapshot from $($source.sourceTag) ($($source.sourceCommit)). Candidate dependency audit: $env:GITHUB_SHA." >> $env:GITHUB_STEP_SUMMARY
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: sbom-snapshot-${{ matrix.rid }}
+          path: .artifacts/sbom-snapshot/
+          if-no-files-found: error
+          retention-days: 90
   tests:
     if: contains(fromJSON('["all","frontend","server","runtime","build"]'), inputs.suite)
     runs-on: windows-2025
@@ -134,10 +233,6 @@ jobs:
           env.pop('LD_LIBRARY_PATH', None)
           subprocess.run([str(temporary / 'load'), str(native / manifest['entryPoint']), *exports], check=True, timeout=30, env=env)
           PY
-      - name: Audit native Linux dependencies and artifact binding
-        if: steps.changes.outputs.native == 'true'
-        shell: pwsh
-        run: ./src/Ai.Tlbx.MidTerm.ConnectNative/audit.ps1 -RuntimeIdentifier linux-x64
   native-url-stdlib:
     name: Native URL parser (libc++)
     runs-on: macos-15-intel

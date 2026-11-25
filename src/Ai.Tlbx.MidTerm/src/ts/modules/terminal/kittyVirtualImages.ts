@@ -71,10 +71,14 @@ export class KittyVirtualImages implements ITerminalAddon {
   }
 
   dispose(): void {
+    if (this.disposed) return;
     this.disposed = true;
     for (const subscription of this.subscriptions) subscription.dispose();
     this.reset();
     this.canvas?.remove();
+    this.subscriptions.length = 0;
+    delete this.terminal;
+    delete this.canvas;
   }
 
   private reset(): void {
@@ -197,6 +201,8 @@ export class KittyVirtualImages implements ITerminalAddon {
   }
 
   private render(): void {
+    // xterm disposes its renderer before addons. Teardown must never read dimensions.
+    if (this.disposed) return;
     const terminal = this.terminal;
     const canvas = this.canvas;
     const dimensions = terminal?.dimensions;

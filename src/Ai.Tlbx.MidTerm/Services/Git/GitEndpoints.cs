@@ -122,7 +122,7 @@ public static class GitEndpoints
                 : ToResult(result);
         });
 
-        app.MapPost("/api/git/repos", async (GitRepoBindRequest request, CancellationToken ct) =>
+        app.MapPost("/api/git/repos", async (GitRepoBindRequest request, bool? details, CancellationToken ct) =>
         {
             if (string.IsNullOrEmpty(request.SessionId) || string.IsNullOrEmpty(request.Path))
             {
@@ -135,7 +135,9 @@ public static class GitEndpoints
                 request.Label,
                 request.Role,
                 ct);
-            return ToResult(result);
+            return result.IsSuccess && details == false
+                ? Results.Json(SummarizeRepos(result.Repos), GitJsonContext.Default.JsonObject)
+                : ToResult(result);
         });
 
         app.MapDelete("/api/git/repos", async (string? sessionId, string? repoRoot, CancellationToken ct) =>
@@ -148,7 +150,7 @@ public static class GitEndpoints
             return ToResult(await gitMetadata.RemoveAsync(sessionId, repoRoot, ct));
         });
 
-        app.MapPost("/api/git/repos/refresh", async (GitRepoRefreshRequest request, CancellationToken ct) =>
+        app.MapPost("/api/git/repos/refresh", async (GitRepoRefreshRequest request, bool? details, CancellationToken ct) =>
         {
             if (string.IsNullOrEmpty(request.SessionId))
             {
@@ -180,9 +182,12 @@ public static class GitEndpoints
                 await Task.WhenAll(repoRoots.Select(gitWatcher.RefreshStatusAsync));
             }
 
-            return Results.Json(
-                new GitRepoListResponse { Repos = gitWatcher.GetRepoBindings(request.SessionId) },
-                GitJsonContext.Default.GitRepoListResponse);
+            var bindings = gitWatcher.GetRepoBindings(request.SessionId);
+            return details == false
+                ? Results.Json(SummarizeRepos(bindings), GitJsonContext.Default.JsonObject)
+                : Results.Json(
+                    new GitRepoListResponse { Repos = bindings },
+                    GitJsonContext.Default.GitRepoListResponse);
         });
 
         app.MapGet("/api/git/status", async Task<IResult> (string? sessionId, string? repoRoot, CancellationToken ct) =>
@@ -266,7 +271,7 @@ public static class GitEndpoints
             }).ConfigureAwait(false);
         });
 
-        app.MapGet("/api/git/log", async Task<IResult> (string? sessionId, string? repoRoot, int? count, int? skip, string? head, CancellationToken ct) =>
+        app.MapGet("/api/git/log", async Task<IResult> (string? sessionId, string? repoRoot, int? count, int? skip, string? head, string? path, CancellationToken ct) =>
         {
             if (string.IsNullOrEmpty(sessionId))
             {
@@ -278,12 +283,12 @@ public static class GitEndpoints
 
             return await RunForGitCallerAsync(sessionId, sessionManager, settings, async () =>
             {
-                var entries = await GitCommandRunner.GetLogAsync(resolvedRepoRoot!, count ?? 20, skip ?? 0, head).ConfigureAwait(false);
+                var entries = await GitCommandRunner.GetLogAsync(resolvedRepoRoot!, count ?? 20, skip ?? 0, head, path).ConfigureAwait(false);
                 return Results.Json(entries, GitJsonContext.Default.GitLogEntryArray);
             }).ConfigureAwait(false);
         });
 
-        app.MapGet("/api/git/commit", async Task<IResult> (string? sessionId, string? repoRoot, string? hash, int? parentIndex, CancellationToken ct) =>
+        app.MapGet("/api/git/commit", async Task<IResult> (string? sessionId, string? repoRoot, string? hash, int? parentIndex, string? path, CancellationToken ct) =>
         {
             if (string.IsNullOrEmpty(sessionId) || string.IsNullOrEmpty(hash))
             {
@@ -301,7 +306,7 @@ public static class GitEndpoints
                 if (comparison < 0 || comparison >= Math.Max(1, metadata.ParentHashes.Length))
                     return Results.BadRequest("Select an actual parent of this commit.");
                 var parent = metadata.ParentHashes.Length == 0 ? null : metadata.ParentHashes[comparison];
-                var (patch, isTruncated) = await GitCommandRunner.GetCommitPatchAsync(resolvedRepoRoot!, metadata.Hash, parent).ConfigureAwait(false);
+                var (patch, isTruncated) = await GitCommandRunner.GetCommitPatchAsync(resolvedRepoRoot!, metadata.Hash, parent, path).ConfigureAwait(false);
                 var response = GitPatchParser.ParseCommitDetails(metadata, patch, isTruncated, comparison);
                 return Results.Json(response, GitJsonContext.Default.GitCommitDetailsResponse);
             }).ConfigureAwait(false);

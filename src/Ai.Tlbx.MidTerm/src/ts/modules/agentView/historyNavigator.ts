@@ -22,7 +22,9 @@ export function resolveHistoryNavigatorGeometry(args: {
   const visibleFraction = Math.max(0, Math.min(1, args.visibleCount / historyCount));
   const thumbHeightPx = Math.min(
     trackHeightPx,
-    args.renderedThumbHeightPx ?? Math.max(18, trackHeightPx * visibleFraction),
+    // This rail seeks canonical indexes; local row density is not a global
+    // pixel extent. Keep its grip stable as prose, tables and tools pass by.
+    args.renderedThumbHeightPx ?? (visibleFraction >= 1 ? trackHeightPx : 32),
   );
   const travelPx = trackHeightPx - thumbHeightPx;
   const maximumIndex = historyCount - 1;
@@ -110,6 +112,21 @@ export function shouldRefreshHistoryNavigatorFromScroll(args: {
   previous: HistoryScrollMetrics | null;
   current: HistoryScrollMetrics;
 }): boolean {
+  const previous = args.previous;
+  const current = args.current;
+  if (
+    previous &&
+    (previous.scrollHeight !== current.scrollHeight ||
+      previous.clientHeight !== current.clientHeight)
+  ) {
+    const clampedTop = Math.max(
+      0,
+      Math.min(previous.scrollTop, current.scrollHeight - current.clientHeight),
+    );
+    // A smaller canvas/viewport can move scrollTop without any new input,
+    // including during the tail of a recent wheel gesture.
+    if (Math.abs(current.scrollTop - clampedTop) <= 1) return false;
+  }
   // Correction callers record the resulting metrics synchronously. Their queued scroll event
   // has no movement left; subsequent user movement (including momentum) must still take effect.
   return (

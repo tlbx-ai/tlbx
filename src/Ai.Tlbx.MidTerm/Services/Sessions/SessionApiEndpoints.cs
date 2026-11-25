@@ -174,6 +174,14 @@ public static partial class SessionApiEndpoints
                     bool accepted;
                     try
                     {
+                        if (sessionManager.IsAppServerControlOnly(request.SessionId))
+                        {
+                            var normalizedTurn = ManagerBarQueueService.NormalizeTurn(request.Turn);
+                            if (normalizedTurn is null) return Results.BadRequest("Prompt was not accepted.");
+                            var response = await appServerControlRuntime.SendComposerTurnAsync(request.SessionId, normalizedTurn, ct).ConfigureAwait(false);
+                            RecordPromptHistory(request.SessionId, normalizedTurn, InputHistorySources.CommandBay);
+                            return Results.Json(response, AppJsonContext.Default.AppServerControlTurnStartResponse);
+                        }
                         accepted = await managerBarQueueService.SubmitPromptAsync(request.SessionId, request.Turn, ct)
                             .ConfigureAwait(false);
                     }
@@ -395,6 +403,30 @@ public static partial class SessionApiEndpoints
 
         async Task<IResult> BootstrapWorker(WorkerBootstrapRequest request, CancellationToken ct, Action<string>? created = null)
         {
+            if (request.AppServerControlOnly)
+            {
+                var requestedAgentProfile = aiCliProfileService.NormalizeProfile(request.Profile);
+                if (!appServerControlRuntime.IsEnabledFor(requestedAgentProfile))
+                {
+                    return Results.BadRequest(
+                        $"Agent Controller profile '{request.Profile ?? string.Empty}' is not supported. Query agent_capabilities to inspect available providers.");
+                }
+            }
+
+            SessionInfoDto? handoffSource = null;
+            if (!string.IsNullOrWhiteSpace(request.HandoffSourceSessionId))
+            {
+                handoffSource = TryGetSessionDto(sessionManager, sessionSupervisor, appServerControlRuntime, request.HandoffSourceSessionId);
+                if (handoffSource is null) return Results.NotFound();
+                if (string.IsNullOrWhiteSpace(handoffSource.CurrentDirectory) || !Directory.Exists(handoffSource.CurrentDirectory))
+                    return Results.Conflict("The source working directory is unavailable.");
+
+                request.WorkingDirectory = handoffSource.CurrentDirectory;
+                request.SpaceId = handoffSource.SpaceId;
+                request.WorkspacePath = handoffSource.WorkspacePath;
+                request.ResumeThreadId = null;
+            }
+
             var creation = await sessionManager.CreateSessionDetailedAsync(
                 request.Shell,
                 request.Cols,
@@ -412,6 +444,23 @@ public static partial class SessionApiEndpoints
             var sessionInfo = creation.Session!;
             var sessionId = sessionInfo.Id;
             created?.Invoke(sessionId);
+            string? handoffFilePath = null;
+            if (handoffSource is not null)
+            {
+                try
+                {
+                    handoffFilePath = await AppServerControlContextHandoff.SaveAsync(
+                        sessionManager, appServerControlRuntime, handoffSource, sessionId, ct).ConfigureAwait(false);
+                    app.Services.GetRequiredService<SessionPathAllowlistService>().RegisterPath(sessionId, handoffFilePath);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or OperationCanceledException or TimeoutException)
+                {
+                    await sessionManager.CloseSessionAsync(sessionId, CancellationToken.None).ConfigureAwait(false);
+                    ct.ThrowIfCancellationRequested();
+                    return Results.Problem(ex.Message, statusCode: StatusCodes.Status409Conflict);
+                }
+            }
+
             ApplySessionSpaceMetadata(
                 sessionManager,
                 sessionId,
@@ -521,7 +570,8 @@ public static partial class SessionApiEndpoints
                 LaunchCommand = launchCommand,
                 SlashCommands = slashCommands,
                 GuidanceInjected = guidanceInjected,
-                TlbxDir = tlbxDir
+                TlbxDir = tlbxDir,
+                HandoffFilePath = handoffFilePath
             }, AppJsonContext.Default.WorkerBootstrapResponse);
         }
         app.MapPost("/api/workers/bootstrap", (WorkerBootstrapRequest request, CancellationToken ct) => BootstrapWorker(request, ct));
@@ -739,6 +789,17 @@ public static partial class SessionApiEndpoints
                 request,
                 ct);
 
+            if (session.AppServerControlOnly)
+            {
+                if (!appServerControlRuntime.IsAttached(id) &&
+                    !await appServerControlRuntime.EnsureAttachedAsync(id, session, ct: ct).ConfigureAwait(false))
+                {
+                    return Results.Conflict(appServerControlRuntime.TryGetRuntimeSummary(id, out var failedRuntime)
+                        ? failedRuntime.LastError ?? "Agent Controller runtime is not available for this session."
+                        : "Agent Controller runtime is not available for this session.");
+                }
+            }
+
             if (await appServerControlRuntime.TrySendPromptAsync(id, request, ct).ConfigureAwait(false))
             {
                 var promptProfile = aiCliProfileService.NormalizeProfile(request.Profile, session);
@@ -753,6 +814,11 @@ public static partial class SessionApiEndpoints
                         InputHistorySurfaces.AgentControl);
                 }
                 return Results.Ok();
+            }
+
+            if (session.AppServerControlOnly)
+            {
+                return Results.Conflict("Agent Controller runtime could not accept the prompt.");
             }
 
             if (!TryBuildPromptExecutionPlan(
@@ -785,20 +851,34 @@ public static partial class SessionApiEndpoints
         app.MapPost("/api/sessions/{id}/input/prompt", (string id, SessionPromptRequest request, HttpContext context, CancellationToken ct) =>
             SubmitPrompt(id, request, context, ct, true));
 
+        app.MapPost("/api/sessions/{id}/agent-control/resume", async (
+            string id, SessionResumeRequest request, CancellationToken ct) =>
+        {
+            var session = TryGetSessionDto(sessionManager, sessionSupervisor, appServerControlRuntime, id);
+            if (session is null) return Results.NotFound();
+            var directory = request.WorkingDirectory?.Trim() ?? session.CurrentDirectory;
+            if (string.IsNullOrWhiteSpace(request.ResumeThreadId) || string.IsNullOrWhiteSpace(directory) || !Directory.Exists(directory))
+                return Results.BadRequest("A saved conversation and an available working directory are required.");
+            try
+            {
+                if (!await appServerControlRuntime.ResumeAsync(session, request.ResumeThreadId.Trim(), directory, ct).ConfigureAwait(false))
+                    return Results.Conflict(appServerControlRuntime.TryGetRuntimeSummary(id, out var runtime)
+                        ? runtime.LastError ?? "Unable to resume the selected conversation." : "Unable to resume the selected conversation.");
+                return Results.Json(GetSessionDto(sessionManager, sessionSupervisor, appServerControlRuntime, id), AppJsonContext.Default.SessionInfoDto);
+            }
+            catch (InvalidOperationException ex) { return Results.Conflict(ex.Message); }
+        });
+
         app.MapGet("/api/sessions/{id}/agent-control/history", async (
             string id,
             int? startIndex = null,
             int? count = null,
             int? viewportWidth = null,
+            bool includeMetadata = true,
             CancellationToken ct = default) =>
         {
-            if (sessionManager.GetSession(id) is null)
-            {
-                return Results.NotFound();
-            }
-
-            var session = GetSessionListDto(sessionManager, sessionSupervisor, appServerControlRuntime)
-                .Sessions.First(item => item.Id == id);
+            var session = TryGetSessionDto(sessionManager, sessionSupervisor, appServerControlRuntime, id);
+            if (session is null) return Results.NotFound();
 
             if (!appServerControlRuntime.IsAttached(id)
                 && !await appServerControlRuntime.EnsureAttachedAsync(id, session, ct: ct).ConfigureAwait(false)
@@ -814,10 +894,12 @@ public static partial class SessionApiEndpoints
                 startIndex,
                 count,
                 viewportWidth,
-                ct).ConfigureAwait(false);
+                ct: ct).ConfigureAwait(false);
             return history is null
                 ? Results.NotFound()
-                : Results.Json(history, AppJsonContext.Default.AppServerControlHistoryWindowResponse);
+                : Results.Json(
+                    ProjectHistoryWindow(history, includeMetadata),
+                    AppJsonContext.Default.AppServerControlHistoryWindowResponse);
         });
 
         app.MapPost("/api/sessions/{id}/agent-control/turn", async (
@@ -848,6 +930,10 @@ public static partial class SessionApiEndpoints
             {
                 return Results.Conflict(ex.Message);
             }
+            catch (IOException)
+            {
+                return Results.Conflict("Agent Controller runtime disconnected while starting turn.");
+            }
             RecordPromptHistory(id, request, InputHistorySources.SessionPrompt, InputHistorySurfaces.AgentControl);
             return Results.Json(response, AppJsonContext.Default.AppServerControlTurnStartResponse);
         });
@@ -867,8 +953,19 @@ public static partial class SessionApiEndpoints
                 return Results.Conflict("Agent Controller runtime is not attached.");
             }
 
-            var response = await appServerControlRuntime.InterruptTurnAsync(id, request, ct).ConfigureAwait(false);
-            return Results.Json(response, AppJsonContext.Default.AppServerControlCommandAcceptedResponse);
+            try
+            {
+                var response = await appServerControlRuntime.InterruptTurnAsync(id, request, ct).ConfigureAwait(false);
+                return Results.Json(response, AppJsonContext.Default.AppServerControlCommandAcceptedResponse);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.Conflict(ex.Message);
+            }
+            catch (IOException)
+            {
+                return Results.Conflict("Agent Controller runtime disconnected while interrupting turn.");
+            }
         });
 
         app.MapPost("/api/sessions/{id}/agent-control/steer", async (
@@ -886,8 +983,19 @@ public static partial class SessionApiEndpoints
                 return Results.Conflict("Agent Controller runtime is not attached.");
             }
 
-            var response = await appServerControlRuntime.SteerTurnAsync(id, request, ct).ConfigureAwait(false);
-            return Results.Json(response, AppJsonContext.Default.AppServerControlCommandAcceptedResponse);
+            try
+            {
+                var response = await appServerControlRuntime.SteerTurnAsync(id, request, ct).ConfigureAwait(false);
+                return Results.Json(response, AppJsonContext.Default.AppServerControlCommandAcceptedResponse);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.Conflict(ex.Message);
+            }
+            catch (IOException)
+            {
+                return Results.Conflict("Agent Controller runtime disconnected while steering turn.");
+            }
         });
 
         app.MapPost("/api/sessions/{id}/agent-control/requests/{requestId}/decision", async (
@@ -1992,8 +2100,7 @@ public static partial class SessionApiEndpoints
         var response = sessionManager.GetSessionList();
         foreach (var session in response.Sessions)
         {
-            session.Supervisor = sessionSupervisor.Describe(session);
-            session.HasAppServerControlHistory = appServerControlRuntime.HasHistory(session.Id);
+            ApplySessionRuntimeMetadata(session, sessionSupervisor, appServerControlRuntime);
         }
 
         return response;
@@ -2053,7 +2160,84 @@ public static partial class SessionApiEndpoints
         SessionAppServerControlRuntimeService appServerControlRuntime,
         string sessionId)
     {
-        return GetSessionListDto(sessionManager, sessionSupervisor, appServerControlRuntime).Sessions.First(s => s.Id == sessionId);
+        return TryGetSessionDto(sessionManager, sessionSupervisor, appServerControlRuntime, sessionId)
+            ?? throw new InvalidOperationException("Session is unavailable.");
+    }
+
+    private static SessionInfoDto? TryGetSessionDto(
+        TtyHostSessionManager sessionManager,
+        SessionSupervisorService sessionSupervisor,
+        SessionAppServerControlRuntimeService appServerControlRuntime,
+        string sessionId)
+    {
+        var session = sessionManager.GetVisibleSessionDto(sessionId);
+        if (session is not null) ApplySessionRuntimeMetadata(session, sessionSupervisor, appServerControlRuntime);
+        return session;
+    }
+
+    private static void ApplySessionRuntimeMetadata(
+        SessionInfoDto session,
+        SessionSupervisorService sessionSupervisor,
+        SessionAppServerControlRuntimeService appServerControlRuntime)
+    {
+        session.Supervisor = sessionSupervisor.Describe(session);
+        session.HasAppServerControlHistory = appServerControlRuntime.HasHistory(session.Id);
+    }
+
+    internal static AppServerControlHistoryWindowResponse ProjectHistoryWindow(
+        AppServerControlHistoryWindowResponse history,
+        bool includeMetadata)
+    {
+        if (includeMetadata)
+        {
+            return history;
+        }
+
+        return new AppServerControlHistoryWindowResponse
+        {
+            SessionId = history.SessionId,
+            Provider = history.Provider,
+            GeneratedAt = history.GeneratedAt,
+            LatestSequence = history.LatestSequence,
+            HistoryCount = history.HistoryCount,
+            HistoryWindowStart = history.HistoryWindowStart,
+            HistoryWindowEnd = history.HistoryWindowEnd,
+            HasOlderHistory = history.HasOlderHistory,
+            HasNewerHistory = history.HasNewerHistory,
+            Session = new AppServerControlSessionSummary
+            {
+                AgentName = history.Session.AgentName,
+                Usage = history.Session.Usage,
+                AvailableCommands = [],
+                AvailableCommandsOmitted = true,
+                State = history.Session.State,
+                StateLabel = history.Session.StateLabel,
+                Reason = history.Session.Reason,
+                LastError = history.Session.LastError,
+                LastEventAt = history.Session.LastEventAt,
+                LastActivityAt = history.Session.LastActivityAt
+            },
+            Thread = history.Thread,
+            CurrentTurn = history.CurrentTurn,
+            QuickSettings = new AppServerControlQuickSettingsSummary
+            {
+                AcknowledgedFields = history.QuickSettings.AcknowledgedFields,
+                Model = history.QuickSettings.Model,
+                Effort = history.QuickSettings.Effort,
+                PlanMode = history.QuickSettings.PlanMode,
+                PermissionMode = history.QuickSettings.PermissionMode,
+                FastMode = history.QuickSettings.FastMode,
+                ModelOptions = [],
+                EffortOptions = [],
+                ConfigOptions = [],
+                OptionsOmitted = true
+            },
+            Streams = new AppServerControlStreamsSummary { StreamsOmitted = true },
+            History = history.History,
+            Items = [],
+            Requests = history.Requests,
+            Notices = []
+        };
     }
 
     internal sealed record SessionPromptExecutionPlan(

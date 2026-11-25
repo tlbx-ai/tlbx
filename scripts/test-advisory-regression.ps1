@@ -32,6 +32,11 @@ $releases = @(
 )
 Check ((Select-AdvisoryBaselineRelease $releases $true).tag_name -eq 'v1.0.2-dev') 'Draft or wrong channel became baseline.'
 Check ((Select-AdvisoryBaselineRelease $releases $false).tag_name -eq 'v1.0.4') 'Stable baseline selection failed.'
+$taggedReleases = @($releases) + @(
+    [pscustomobject]@{ tag_name='v1.0.1-dev'; draft=$false; published_at='2026-10-01T00:00:00Z' },
+    [pscustomobject]@{ tag_name='v1.0.5-dev'; draft=$false; published_at='2026-10-05T00:00:00Z' }
+)
+Check ((Select-AdvisoryBaselineRelease $taggedReleases $true 'v1.0.2-dev').tag_name -eq 'v1.0.1-dev') 'Tagged candidate used itself or a future release as its audit baseline.'
 Reject { Select-AdvisoryBaselineRelease @() $true } 'Missing published baseline passed.'
 
 $report = @'

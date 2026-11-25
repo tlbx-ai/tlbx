@@ -220,15 +220,16 @@ function buildGitIndicatorViewModel(
     };
   }
 
+  const conflictedCount = status.conflictedCount ?? status.conflicted.length;
   const changedCount =
-    status.staged.length +
-    status.modified.length +
-    status.untracked.length +
-    status.conflicted.length;
+    (status.stagedCount ?? status.staged.length) +
+    (status.modifiedCount ?? status.modified.length) +
+    (status.untrackedCount ?? status.untracked.length) +
+    conflictedCount;
   let statusText = t('git.cleanShort');
 
-  if (status.conflicted.length > 0) {
-    statusText = `!${status.conflicted.length}`;
+  if (conflictedCount > 0) {
+    statusText = `!${conflictedCount}`;
   } else if (changedCount > 0) {
     statusText = `~${changedCount}`;
   } else if (status.ahead > 0 || status.behind > 0) {
@@ -528,10 +529,10 @@ function buildGitRepoPopoverHtml(repos: GitRepoBinding[]): string {
             const status = repo.status ?? null;
             const branch = status?.branch || 'HEAD';
             const changeCount = status
-              ? status.staged.length +
-                status.modified.length +
-                status.untracked.length +
-                status.conflicted.length
+              ? (status.stagedCount ?? status.staged.length) +
+                (status.modifiedCount ?? status.modified.length) +
+                (status.untrackedCount ?? status.untracked.length) +
+                (status.conflictedCount ?? status.conflicted.length)
               : 0;
             const removeButton = repo.isPrimary
               ? ''

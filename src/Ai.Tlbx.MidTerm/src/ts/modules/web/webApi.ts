@@ -47,6 +47,9 @@ export interface BrowserClientInfo {
   connectedAtUtc: string;
   isMainBrowser: boolean;
   isVisible: boolean;
+  isPanelVisible?: boolean | null;
+  isDocumentVisible?: boolean | null;
+  documentVisibilityState?: string | null;
   hasFocus: boolean;
   isTopLevel: boolean;
 }

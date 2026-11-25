@@ -216,6 +216,7 @@ public static class ServerSetup
         builder.Services.AddSingleton<BrowserPreviewOwnerService>();
         builder.Services.AddSingleton<BrowserCommandService>();
         builder.Services.AddSingleton<BrowserUiBridge>();
+        builder.Services.AddSingleton<WebPreviewStorageService>();
         builder.Services.AddSingleton<WebPreviewService>(sp =>
         {
             var cookiesDir = Path.Combine(settingsService.SettingsDirectory, "cookies");
@@ -223,7 +224,9 @@ public static class ServerSetup
                 runtimeOptions.Port,
                 sp.GetRequiredService<BrowserPreviewOriginService>(),
                 cookiesDir,
-                static () => LoadedCertificate);
+                static () => LoadedCertificate,
+                sp.GetRequiredService<SessionControlStateService>(),
+                sp.GetRequiredService<BrowserPreviewOwnerService>());
         });
 
         builder.Services.AddResponseCompression(options =>

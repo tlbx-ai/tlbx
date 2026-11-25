@@ -4500,10 +4500,41 @@ export interface components {
       error: null | string;
       /** Format: int32 */
       matchCount: null | number;
+      capture: null | components['schemas']['BrowserCaptureInfo'];
       /** Format: double */
       durationMs: number;
     };
+    BrowserCaptureInfo: {
+      renderer: string;
+      pixelCoverage: string;
+      inventory: null | string;
+      mediaPixels: string;
+      nestedMedia: string;
+      media: null | components['schemas']['BrowserCaptureMedia'];
+      warningCodes: null | {
+        [key: string]: number;
+      };
+      warningsMayBeTruncated: boolean;
+      output: null | components['schemas']['BrowserCaptureOutput'];
+    };
+    BrowserCaptureMedia: {
+      /** Format: int32 */
+      frames: number;
+      /** Format: int32 */
+      unreadableFrames: number;
+      /** Format: int32 */
+      canvases: number;
+      /** Format: int32 */
+      videos: number;
+    };
+    BrowserCaptureOutput: {
+      /** Format: int32 */
+      width: number;
+      /** Format: int32 */
+      height: number;
+    };
     BrowserClientInfo: {
+      documentId: null | string;
       sessionId: null | string;
       previewName: null | string;
       previewId: null | string;
@@ -4514,12 +4545,16 @@ export interface components {
       connectedAtUtc: string;
       isMainBrowser: boolean;
       isVisible: boolean;
+      isPanelVisible: null | boolean;
+      isDocumentVisible: null | boolean;
+      documentVisibilityState: null | string;
       hasFocus: boolean;
       isTopLevel: boolean;
     };
     BrowserCommandRequest: {
       command: string;
       selector?: null | string;
+      frame?: null | string;
       value?: null | string;
       /** Format: int32 */
       maxDepth?: null | number;
@@ -4544,6 +4579,7 @@ export interface components {
       error: null | string;
       /** Format: int32 */
       matchCount: null | number;
+      capture: null | components['schemas']['BrowserCaptureInfo'];
     };
     BrowserPreviewClientRequest: {
       sessionId?: null | string;
@@ -5024,6 +5060,14 @@ export interface components {
       showAgentTechnicalDetails: boolean;
       /** Format: int32 */
       toolCallOutputLines: number;
+      /** Format: int32 */
+      agentImagePreviewWidth: number;
+      /** Format: int32 */
+      agentChatFontScale: number;
+      /** Format: int32 */
+      agentChatPanelTransparency: null | number;
+      /** Format: int32 */
+      agentChatColumnWidth: number;
       /** Format: int32 */
       fontSize: number;
       fontFamily: string;
@@ -5598,6 +5642,12 @@ export interface components {
       error: null | string;
       /** Format: int64 */
       durationMs: number;
+      /** Format: int32 */
+      upstreamStatusCode: null | number;
+      /** Format: int64 */
+      upstreamDurationMs: null | number;
+      outcome: null | string;
+      responseStarted: null | boolean;
       requestHeaders: {
         [key: string]: string;
       };
@@ -5662,6 +5712,7 @@ export interface components {
       shell?: null | string;
       workingDirectory?: null | string;
       resumeThreadId?: null | string;
+      handoffSourceSessionId?: null | string;
       /** Format: int32 */
       cols: number;
       /** Format: int32 */
@@ -5687,6 +5738,7 @@ export interface components {
       slashCommands: string[];
       guidanceInjected: boolean;
       tlbxDir: null | string;
+      handoffFilePath: null | string;
     };
   };
   responses: never;

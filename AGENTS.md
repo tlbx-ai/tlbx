@@ -11,9 +11,22 @@ explicit request. Removed tests can be recovered from Git history.
 All unit, integration and behavioral test runs belong exclusively in the manually
 dispatched Tests (on demand) workflow, build-system-verify.yml. Never call it from
 push, PR, release or artifact publication workflows. Keep compiler/analyzers,
-typecheck, lint, package/signature/SBOM integrity and security audits automatic.
-Before a major or main release, remind Johannes to dispatch suite=all for the exact
-candidate ref and review the result; a reminder must not auto-start or gate tests.
+typecheck, lint, frozen native hashes, package/signature integrity and build provenance automatic.
+Dependency vulnerability audits (including native CVE scans) and fresh SBOM generation
+belong to Tests (on demand), suite=all or security. Ordinary builds reuse the latest
+available platform SPDX snapshot; never describe it as a fresh scan of that build.
+After every successfully published dev build, explicitly ask Johannes whether to run
+Tests (on demand), suite=all, for that exact tag. Before every main promotion, ask the
+same question for the frozen candidate and wait for his run/skip decision. An explicit
+skip permits promotion; an explicit run must finish and its result must be reviewed.
+Never dispatch automatically or repeat the question after a decision for an unchanged
+candidate. Include security/SBOM generation in the question so it cannot be forgotten.
+An explicitly requested verification run includes repairing actionable failures in the
+task's scope and rerunning the affected checks through Tests (on demand), including on
+the repaired successor candidate. Do this without another permission question. Keep
+the existing checks enabled, review the complete result, and continue until green or
+until a concrete blocker requires user input. This does not authorize unrelated work
+or automatic test dispatch from CI/release workflows.
 Local build and release scripts also never start test suites. -TestCategories selects build/analysis/integrity checks, not permission to run tests. Use run-release-tests.ps1 separately only when an explicit test run was requested.
 Tests must exercise a concrete contract or failure. Do not assert source text,
 workflow job layout, documentation wording or arbitrary catalog counts. Reuse
@@ -26,6 +39,8 @@ If `.tlbx/AGENTS.md` exists, follow it for browser control and tmux workflows.
 If it does not exist, do not assume extra MidTerm-specific workflow permissions.
 
 ## Release Authority
+
+Build scripts separate lifetimes: reusable downloads, toolchains, binary caches and the current valid scanner database belong in Git-ignored `.cache/`; current incremental/runtime state belongs in `.dev/` or standard tool working directories; disposable packages and diagnostics belong in `.artifacts/`. Reuse caches and clean owned obsolete output on use. Keep current deliverables until consumed and bounded failure diagnostics; validate paths, reject links and preserve active/locked runs and other checkouts. Use `scripts/build-storage.ps1` for the existing storage boundaries. Explicit native source rebuilds use `scripts/build-connect-native.ps1`, which manages cache storage around the unchanged frozen native recipe; ordinary builds never invoke a native source rebuild.
 
 For feature availability, verify the exact requested runtime by URL/service identity,
 live version and the feature's actual protocol call. A prepared candidate, a higher
@@ -44,9 +59,9 @@ still need `yes`, even when the build can fall back from reuse to compilation.
 
 Release requests authorize the complete matching script workflow in the current turn. Do not run unrelated release, tag, publish, promote, or merge-to-main workflows outside the requested path.
 
-Dependency advisories block releases only for a regression against the last published release in the same channel. Audit both locked graphs against current advisory data: unchanged findings, including newly reported advisories for existing dependencies, remain visible without blocking. Newly introduced vulnerabilities, increased severity or exposure must block. Draft releases are never baselines. Lockfile, signature, provenance and audit-completion checks remain mandatory. See `scripts/audit-supply-chain.ps1` and `docs/BUILD-RELEASE.md`.
+On-demand dependency audits compare current advisory data against the last published release in the same channel. Unchanged findings remain visible; new vulnerabilities or increased severity/exposure fail the manual audit. Draft releases are never baselines. Vulnerability scans and SBOM generation are not automatic release gates. Lockfile, package signature/hash and build-provenance checks remain mandatory. See `scripts/audit-supply-chain.ps1` and `docs/BUILD-RELEASE.md`.
 
-A release is valid with at least one complete verified platform archive and its matching SBOM after shared checks pass. Missing platforms must be listed explicitly; their build/signing/notarization failures must not block other platforms. Never skip integrity checks for included packages or publish an incomplete archive/SBOM pair. See `docs/BUILD-RELEASE.md`.
+A release is valid with at least one complete verified platform archive and its latest available platform SBOM snapshot after shared checks pass. Missing platforms must be listed explicitly; their build/signing/notarization failures must not block other platforms. Never skip integrity checks for included packages or publish an incomplete archive/SBOM pair. See `docs/BUILD-RELEASE.md`.
 
 ## Repository branch workflow
 

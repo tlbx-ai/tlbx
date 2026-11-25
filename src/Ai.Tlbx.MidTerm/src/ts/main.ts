@@ -1,4 +1,3 @@
-import { selectOpenAgentSession } from './modules/agentView/sessionTools';
 import { recoverSettingsAfterBrowserResume } from './modules/comms/settingsChannel';
 import { initBoards, initDetachedBoard } from './modules/boards';
 import { initMobileFullscreen } from './modules/fullscreen';
@@ -137,6 +136,7 @@ import {
 } from './modules/sessionTabs';
 import {
   initAgentView,
+  resumeAgentConversation,
   getAppServerControlDebugScenarioNames,
   inspectAppServerControlHistory,
   recoverAppServerControlAfterBrowserResume,
@@ -177,7 +177,16 @@ import {
   showSharedSessionError,
 } from './modules/share';
 import { initDockState } from './modules/dockState';
-import { initSmartInput, setAppServerControlResumeConversationHandler } from './modules/smartInput';
+import {
+  initSmartInput,
+  setAppServerControlHandoffHandler,
+  setAppServerControlResumeConversationHandler,
+} from './modules/smartInput';
+import {
+  activateTerminalHandoffSession,
+  createContextHandoffSession,
+  openContextHandoff,
+} from './modules/appServerControl/contextHandoff';
 import { openProviderResumePicker, type ResumeProvider } from './modules/providerResume';
 import { initSpacesDropdown, toggleSpacesDropdown } from './modules/spaces';
 import { initSpacesRuntime, type SpaceSurface } from './modules/spaces/runtime';
@@ -187,7 +196,6 @@ import { createMidtermPerfDebugApi } from './modules/perf/midtermPerfDebug';
 import {
   cacheDOMElements,
   sessionTerminals,
-  hiddenSessionIds,
   dom,
   setFontsReadyPromise,
   newlyCreatedSessions,
@@ -460,7 +468,9 @@ async function init(): Promise<void> {
   initNetworkSection();
   initVoiceSection();
   bindVoiceEvents();
-  await initVoiceControls();
+  // Optional device discovery must not hold dock/bootstrap initialization behind
+  // an OS microphone enumeration or an unavailable voice settings endpoint.
+  void initVoiceControls();
   initChatPanel();
   syncAppModeClasses();
   setupResizeObserver();
@@ -596,17 +606,10 @@ function syncMuxTerminalVisibility(): void {
   if (activeSessionId && !isHubSessionId(activeSessionId)) {
     prioritySessionIds.add(activeSessionId);
   }
-  const backgroundSessionIds: string[] = [];
-  sessionTerminals.forEach((_state, sessionId) => {
-    if (
-      !isHubSessionId(sessionId) &&
-      !hiddenSessionIds.has(sessionId) &&
-      !prioritySessionIds.has(sessionId)
-    ) {
-      backgroundSessionIds.push(sessionId);
-    }
-  });
-  updateTerminalVisibility(activeSessionId, visibleSessionIds, backgroundSessionIds);
+  // Keep non-visible terminals paused on the host instead of streaming hidden
+  // output continuously; mthost retains the ring buffer and resumes by cursor
+  // when a tab is activated.
+  updateTerminalVisibility(activeSessionId, visibleSessionIds, []);
 
   syncWebglSessionPriority([...prioritySessionIds]);
 }
@@ -699,6 +702,7 @@ function registerCallbacks(): void {
     onSelect: selectSession,
     onDelete: deleteSession,
     onRename: startInlineRename,
+    onContextHandoff: handoffSessionContext,
     onToggleAgentControl: toggleAgentControl,
     onPinToHistory: (sessionId: string) => {
       void pinSessionToHistory(sessionId);
@@ -829,6 +833,23 @@ const {
   isAppServerControlOnlySession,
 });
 setAppServerControlResumeConversationHandler(resumeAppServerControlConversationFromCommandBay);
+setAppServerControlHandoffHandler(handoffSessionContext);
+
+function handoffSessionContext(sessionId: string): void {
+  const source = getSession(sessionId);
+  if (!source) return;
+  openContextHandoff(source, async (target) => {
+    const { session, filePath } = await createContextHandoffSession(
+      source,
+      target,
+      resolveLauncherShell(),
+    );
+    closeSidebar();
+    if (target.terminal) activateTerminalHandoffSession(session, selectSession);
+    else activateNewAppServerControlSession(session);
+    return filePath;
+  });
+}
 
 async function createSession(): Promise<void> {
   let selection: SessionLauncherSelection | null;
@@ -843,14 +864,15 @@ async function createSession(): Promise<void> {
 
   if (!selection) return;
 
+  let dimensions: { cols: number; rows: number };
   try {
-    await waitForApiReachability();
+    [dimensions] = await Promise.all([resolveNewSessionDimensions(), waitForApiReachability()]);
   } catch (error: unknown) {
     showSessionLaunchFailure(error);
     return;
   }
 
-  const { cols, rows } = await resolveNewSessionDimensions();
+  const { cols, rows } = dimensions;
   const tempId = createPendingSession(cols, rows);
   const shell = resolveLauncherShell();
   const workingDirectory = selection.workingDirectory?.trim() || undefined;
@@ -1050,48 +1072,17 @@ async function resumeAppServerControlConversationFromCommandBay(args: {
     initialScope: 'current',
   });
   if (!candidate) return;
-  if (selectOpenAgentSession(args.provider, candidate.sessionId, selectSession)) return;
-
-  const workingDirectory = candidate.workingDirectory.trim() || args.workingDirectory;
-  const keepsSourceFolder =
-    normalizeResumeFolder(workingDirectory) === normalizeResumeFolder(args.workingDirectory);
-  const { cols, rows } = await resolveLaunchDimensions($currentSettings.get(), 'history');
-  const tempId = createPendingSession(cols, rows);
-
-  bootstrapWorker({
-    cols,
-    rows,
-    shell: resolveLauncherShell(),
-    workingDirectory,
-    agentControlled: false,
-    injectGuidance: true,
-    profile: args.provider,
-    resumeThreadId: candidate.sessionId,
-    spaceId: keepsSourceFolder ? (sourceSession.spaceId ?? null) : null,
-    workspacePath: keepsSourceFolder
-      ? (sourceSession.workspacePath ?? workingDirectory)
-      : workingDirectory,
-    surface: args.provider,
-    appServerControlOnly: true,
-    launchDelayMs: 0,
-    slashCommands: [],
-    slashCommandDelayMs: 350,
-  })
-    .then(({ data }) => {
-      clearPendingSession(tempId);
-      const session = data?.session;
-      if (!session) {
-        return;
-      }
-
-      activateNewAppServerControlSession(session);
-      attachBookmarkToSession(session.id, sourceSession.bookmarkId ?? null, null);
-    })
-    .catch((e: unknown) => {
-      clearPendingSession(tempId);
-      log.error(() => `Failed to resume provider conversation from Command Bay: ${String(e)}`);
-      showSessionLaunchFailure(e);
+  try {
+    await resumeAgentConversation(
+      args.sessionId,
+      candidate.sessionId,
+      candidate.workingDirectory.trim() || args.workingDirectory,
+    );
+  } catch (error) {
+    void showAlert(error instanceof Error ? error.message : String(error), {
+      title: t('providerResume.title'),
     });
+  }
 }
 
 function normalizeResumeFolder(path: string): string {

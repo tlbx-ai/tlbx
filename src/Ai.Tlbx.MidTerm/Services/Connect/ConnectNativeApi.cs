@@ -10,6 +10,7 @@ namespace Ai.Tlbx.MidTerm.Services.Connect;
 /// <summary>The pinned libdatachannel 0.24 C ABI. No assembly-wide DllImport resolver is installed.</summary>
 internal sealed unsafe class ConnectNativeApi
 {
+    private const int SctpSendBufferSize = 64 * 1024;
     private readonly delegate* unmanaged[Cdecl]<Configuration*, int> _create;
     private readonly delegate* unmanaged[Cdecl]<int, int> _closePeer, _deletePeer, _deleteChannel, _buffered;
     private readonly delegate* unmanaged[Cdecl]<int, nint, void> _user;
@@ -57,7 +58,7 @@ internal sealed unsafe class ConnectNativeApi
 #else
         logger(0, 0); // Never print native SDP, TURN URLs or credentials.
 #endif
-        var settings = new SctpSettings { ReceiveBuffer = 2 * 1024 * 1024, SendBuffer = 1024 * 1024, MaximumChunks = 1024 };
+        var settings = new SctpSettings { ReceiveBuffer = 2 * 1024 * 1024, SendBuffer = SctpSendBufferSize, MaximumChunks = 1024 };
         var configure = (delegate* unmanaged[Cdecl]<SctpSettings*, int>)NativeLibrary.GetExport(library, "rtcSetSctpSettings");
         Check(configure(&settings));
     }
@@ -145,11 +146,11 @@ internal sealed unsafe class ConnectNativeApi
         fixed (byte* mediaId = media) Check(_addCandidate(peer, value, mediaId));
     }
 
-    public bool ReliableTlbxChannel(int id)
+    public bool IsReliableChannel(int id, ReadOnlySpan<byte> label)
     {
         var bytes = new byte[32]; int size;
         fixed (byte* buffer = bytes) size = _label(id, buffer, bytes.Length);
-        if (size < 0 || !bytes.AsSpan().StartsWith("tlbx\0"u8)) return false;
+        if (size < 0 || !bytes.AsSpan().StartsWith(label)) return false;
         var reliability = new Reliability();
         return _reliability(id, &reliability) >= 0 && reliability.Unordered == 0 && reliability.Unreliable == 0;
     }
@@ -157,7 +158,7 @@ internal sealed unsafe class ConnectNativeApi
     public void AttachChannel(int id, nint token)
     {
         _user(id, token);
-        Check(_threshold(id, 512 * 1024));
+        Check(_threshold(id, 0));
         Check(_message(id, (nint)(delegate* unmanaged[Cdecl]<int, byte*, int, nint, void>)&ConnectNativePeer.NativeMessage));
         Check(_closed(id, (nint)(delegate* unmanaged[Cdecl]<int, nint, void>)&ConnectNativePeer.NativeClosed));
         Check(_error(id, (nint)(delegate* unmanaged[Cdecl]<int, byte*, nint, void>)&ConnectNativePeer.NativeError));

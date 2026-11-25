@@ -5,6 +5,43 @@ namespace Ai.Tlbx.MidTerm.AgentHost;
 
 internal sealed partial class CodexAppServerControlAgentRuntime
 {
+    private async Task TryRefreshMcpToolAddressesAsync(string threadId, CancellationToken ct)
+    {
+        try
+        {
+            var configTask = SendCodexRequestAsync("config/read", id => BuildJsonString(writer =>
+            {
+                writer.WriteStartObject(); writer.WriteString("jsonrpc", "2.0"); writer.WriteString("id", id);
+                writer.WriteString("method", "config/read"); writer.WritePropertyName("params"); writer.WriteStartObject();
+                writer.WriteBoolean("includeLayers", false); writer.WriteString("cwd", _workingDirectory);
+                writer.WriteEndObject(); writer.WriteEndObject();
+            }), ct, TimeSpan.FromSeconds(8));
+            var statusTask = SendCodexRequestAsync("mcpServerStatus/list", id => BuildJsonString(writer =>
+            {
+                writer.WriteStartObject(); writer.WriteString("jsonrpc", "2.0"); writer.WriteString("id", id);
+                writer.WriteString("method", "mcpServerStatus/list"); writer.WritePropertyName("params"); writer.WriteStartObject();
+                writer.WriteString("threadId", threadId); writer.WriteString("detail", "toolsAndAuthOnly");
+                writer.WriteNumber("limit", 128); writer.WriteEndObject(); writer.WriteEndObject();
+            }), ct, TimeSpan.FromSeconds(8));
+            await Task.WhenAll(configTask, statusTask).ConfigureAwait(false);
+            if (!string.Equals(threadId, _providerThreadId, StringComparison.Ordinal)) return;
+            var config = await configTask.ConfigureAwait(false);
+            if (config.TryGetProperty("config", out var values) && values.TryGetProperty("mcp_servers", out var servers) &&
+                servers.ValueKind == JsonValueKind.Object)
+            {
+                using var entries = servers.EnumerateObject();
+                while (entries.MoveNext())
+                    _mcpTools.Register(entries.Current.Name, GetString(entries.Current.Value, "url") ?? GetString(entries.Current.Value, "command"));
+            }
+            var status = await statusTask.ConfigureAwait(false);
+            if (status.TryGetProperty("data", out var data)) _mcpTools.Observe(data);
+        }
+        catch (Exception error) when (error is InvalidOperationException or IOException or OperationCanceledException or JsonException)
+        {
+            // Display metadata never gates a prompt or exposes echoed private configuration.
+        }
+    }
+
     private async Task<JsonElement> EnsureMcpBindingAsync(AppServerControlAttachRuntimeRequest attach,
         JsonElement threadResult, string threadId, string permissionMode, CancellationToken ct, bool allowIdleReload = false)
     {

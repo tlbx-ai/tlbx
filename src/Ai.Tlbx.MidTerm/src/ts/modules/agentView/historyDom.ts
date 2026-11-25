@@ -1,13 +1,17 @@
 import { t } from '../i18n';
+import { createAttachmentControl } from './attachmentView';
+import { createToolActivityDisclosure, syncToolActivityDisclosure } from './toolActivityView';
+import { createMcpToolDisclosure, isMcpToolEntry, syncMcpToolDisclosure } from './mcpToolView';
 import { appendHighlightedCommand, commandPreview } from './commandHighlight';
 import { createPdfView } from '../fileViewer/pdfView';
+import { createFileChangeHistoryBody, createHistoryDiffBody } from './fileChangeView';
 import { getCachedHistoryMarkdown, pruneHistoryMarkdownCache } from './historyMarkdown';
 import {
   isFileChangeHistoryEntry,
   isHistoryError,
   showAgentTechnicalDetails,
 } from './historyVisibility';
-import { $currentSettings, getSession } from '../../stores';
+import { getSession } from '../../stores';
 import { wireMarkdownTables } from '../../utils/markdown';
 import {
   createAssistantImagePreviewBlock,
@@ -29,12 +33,13 @@ import {
   submitAppServerControlTurn,
 } from '../appServerControl/input';
 import { createAppServerControlTurnRequestWithQuickSettings } from '../appServerControl/quickSettings';
+import { hasInlineCommandPresentation, resolveHistoryBodyPresentation } from './historyContent';
 import {
-  buildRenderedDiffLines,
-  hasInlineCommandPresentation,
-  resolveHistoryBodyPresentation,
-} from './historyContent';
-import { DEFAULT_TOOL_CALL_OUTPUT_LINES, MAX_TOOL_CALL_OUTPUT_LINES } from './historyConstants';
+  clampToolCallOutputLines,
+  resolveToolCallOutputLineLimit,
+  selectProjectedToolEvidenceLines,
+} from './toolOutput';
+export { resolveToolCallOutputLineLimit } from './toolOutput';
 import type {
   ArtifactClusterInfo,
   HistoryBodyPresentation,
@@ -46,44 +51,6 @@ import type {
 
 const BUSY_SWEEP_WALLCLOCK_CYCLE_MS = 4901;
 const BUSY_SWEEP_WALLCLOCK_LEG_MS = BUSY_SWEEP_WALLCLOCK_CYCLE_MS / 2;
-
-export function resolveToolCallOutputLineLimit(): number {
-  const configured = $currentSettings.get()?.toolCallOutputLines;
-  if (typeof configured !== 'number' || !Number.isFinite(configured)) {
-    return DEFAULT_TOOL_CALL_OUTPUT_LINES;
-  }
-
-  return Math.max(0, Math.min(MAX_TOOL_CALL_OUTPUT_LINES, Math.trunc(configured)));
-}
-
-function clampToolCallOutputLines(lines: readonly string[], fromEnd = false): string[] {
-  const lineLimit = resolveToolCallOutputLineLimit();
-  if (lineLimit <= 0) return [];
-  return fromEnd ? lines.slice(-lineLimit) : lines.slice(0, lineLimit);
-}
-
-function selectProjectedToolEvidenceLines(entry: AppServerControlHistoryEntry): string[] {
-  const presentation = entry.toolPresentation;
-  if (!presentation?.evidence) {
-    return [];
-  }
-
-  const lines = presentation.evidence.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
-  const lineLimit = resolveToolCallOutputLineLimit();
-  if (lineLimit <= 0 || lines.length === 0) {
-    return [];
-  }
-  if (lines.length <= lineLimit) {
-    return lines;
-  }
-  if (presentation.evidenceKind === 'error' || presentation.category === 'command') {
-    return lines.slice(lines.length - lineLimit);
-  }
-  if (presentation.category === 'read' || lineLimit === 1) {
-    return lines.slice(0, lineLimit);
-  }
-  return [lines[0] ?? '', ...lines.slice(lines.length - (lineLimit - 1))];
-}
 
 function appServerControlText(key: string, fallback: string): string {
   const translated = t(key);
@@ -232,29 +199,6 @@ function createTurnDurationNoteBody(entry: AppServerControlHistoryEntry): HTMLEl
 
   body.appendChild(marker);
   return body;
-}
-
-function createDiffLineGutterNode(
-  oldLineNumber: number | undefined,
-  newLineNumber: number | undefined,
-): HTMLElement {
-  const gutter = document.createElement('span');
-  gutter.className = 'agent-history-diff-line-gutter';
-  gutter.appendChild(createDiffLineNumberNode(oldLineNumber, 'old'));
-  gutter.appendChild(createDiffLineNumberNode(newLineNumber, 'new'));
-  return gutter;
-}
-
-function createDiffLineNumberNode(value: number | undefined, lane: 'old' | 'new'): HTMLElement {
-  const cell = document.createElement('span');
-  cell.className = `agent-history-diff-line-number agent-history-diff-line-number-${lane}`;
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    cell.textContent = String(value);
-  } else {
-    cell.textContent = '';
-    cell.setAttribute('aria-hidden', 'true');
-  }
-  return cell;
 }
 
 function getEntryFileMentions(
@@ -434,12 +378,48 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     } = {},
   ): HTMLElement {
     const artifactCluster = options.artifactCluster ?? null;
+    const expandedEntries = deps.getState(sessionId)?.historyExpandedEntries;
     if (entry.busyIndicator) {
       return createBusyIndicatorEntry(entry);
     }
 
     const article = document.createElement('article');
     applyHistoryEntryChrome(article, entry, artifactCluster);
+
+    if (entry.toolActivityCount != null) {
+      article.className = 'agent-history-entry agent-history-tool-activity';
+      article.appendChild(
+        createToolActivityDisclosure(
+          entry,
+          (item) => createHistoryEntry(item, sessionId),
+          (element, item) => {
+            syncHistoryEntry(element, item, sessionId);
+          },
+          expandedEntries,
+        ),
+      );
+      return article;
+    }
+
+    if (isMcpToolEntry(entry)) {
+      article.appendChild(
+        createMcpToolDisclosure(entry, expandedEntries, selectProjectedToolEvidenceLines),
+      );
+      return article;
+    }
+
+    if (isFileChangeHistoryEntry(entry)) {
+      article.appendChild(
+        createFileChangeHistoryBody(
+          entry,
+          sessionId,
+          getSession(sessionId)?.currentDirectory,
+          () => deps.getState(sessionId)?.historyEntries ?? [],
+          (diff) => createDiffHistoryBody(diff, sessionId),
+        ),
+      );
+      return article;
+    }
 
     if (artifactCluster?.label) {
       article.appendChild(createArtifactClusterLabel(artifactCluster));
@@ -493,7 +473,8 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
 
   function syncElementAttributes(target: HTMLElement, source: HTMLElement): void {
     for (const attribute of Array.from(target.attributes)) {
-      if (!source.hasAttribute(attribute.name)) {
+      // A keyed parent owns this attribute; row updates must retain its identity.
+      if (attribute.name !== 'data-reconcile-key' && !source.hasAttribute(attribute.name)) {
         target.removeAttribute(attribute.name);
       }
     }
@@ -511,6 +492,18 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
       showAssistantBadge?: boolean;
     } = {},
   ): void {
+    const currentMcp = article.querySelector<HTMLDetailsElement>(':scope > .agent-mcp-tool');
+    if (currentMcp && entry.toolPresentation?.mcp && syncMcpToolDisclosure(currentMcp, entry)) {
+      applyHistoryEntryChrome(article, entry, options.artifactCluster ?? null);
+      return;
+    }
+    const currentActivity = article.querySelector<HTMLDetailsElement>('.agent-tool-activity');
+    if (
+      currentActivity &&
+      entry.toolActivityEntries &&
+      syncToolActivityDisclosure(currentActivity, entry)
+    )
+      return;
     const nextArticle = createHistoryEntry(entry, sessionId, options);
     syncElementAttributes(article, nextArticle);
 
@@ -533,6 +526,8 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     article.className = `agent-history-entry agent-history-${entry.kind} agent-history-${entry.tone}`;
     article.dataset.kind = entry.kind;
     article.dataset.tone = entry.tone;
+    article.classList.toggle('agent-history-mcp', !!entry.toolPresentation?.mcp);
+    article.classList.toggle('agent-history-file-changes', isFileChangeHistoryEntry(entry));
     if (artifactCluster) {
       article.dataset.artifactPosition = artifactCluster.position;
       article.classList.add('agent-history-artifact');
@@ -787,7 +782,7 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
       const output = document.createElement('pre');
       output.className = 'agent-history-command-output-tail';
       output.setAttribute('aria-label', t('appServerControl.title.commandOutput'));
-      output.textContent = outputLines.join('\n');
+      appendHighlightedCommand(output, outputLines.join('\n'));
       // Keep folded command tails as raw terminal text instead of applying
       // FileRadar-style enrichment or thumbnail previews to noisy output.
       body.appendChild(output);
@@ -860,7 +855,7 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     if (visibleEvidence.length > 0) {
       const evidence = document.createElement('pre');
       evidence.className = 'agent-history-command-output-tail';
-      evidence.textContent = evidenceLines.join('\n');
+      appendHighlightedCommand(evidence, evidenceLines.join('\n'));
       body.appendChild(evidence);
     }
 
@@ -904,30 +899,8 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
   }
 
   function createDiffHistoryBody(bodyText: string, sessionId: string): HTMLElement {
-    const body = document.createElement('div');
-    body.className = 'agent-history-body agent-history-diff-body';
-    const content = document.createElement('pre');
-    content.className = 'agent-history-diff-content';
-    const cwd = getSession(sessionId)?.currentDirectory?.trim();
-    for (const line of buildRenderedDiffLines(bodyText, cwd && cwd.length > 0 ? cwd : null)) {
-      const row = document.createElement('span');
-      row.className = `agent-history-diff-line ${line.className}`;
-      const hasLineNumbers =
-        typeof line.oldLineNumber === 'number' || typeof line.newLineNumber === 'number';
-      if (hasLineNumbers) {
-        row.dataset.hasLineNumbers = 'true';
-        row.appendChild(createDiffLineGutterNode(line.oldLineNumber, line.newLineNumber));
-      }
-      const text = document.createElement('span');
-      text.className = 'agent-history-diff-line-text';
-      text.textContent = line.text || ' ';
-      row.appendChild(text);
-      content.appendChild(row);
-    }
-    body.appendChild(content);
-    return body;
+    return createHistoryDiffBody(bodyText, getSession(sessionId)?.currentDirectory);
   }
-
   function createDisclosureSummary(
     entry: AppServerControlHistoryEntry,
     presentation: HistoryBodyPresentation,
@@ -940,9 +913,7 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     label.textContent = command
       ? entry.toolPresentation?.label ||
         appServerControlText('appServerControl.title.commandOutput', 'Command output')
-      : isFileChangeHistoryEntry(entry)
-        ? appServerControlText('appServerControl.panel.reviewChanges', 'Review changes')
-        : appServerControlText('appServerControl.panel.details', 'Details');
+      : appServerControlText('appServerControl.panel.details', 'Details');
     summary.appendChild(label);
     const meta = document.createElement('span');
     meta.className = 'agent-history-disclosure-meta';
@@ -1179,15 +1150,11 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     ).catch(() => undefined);
 
     for (const attachment of attachments) {
-      const link = document.createElement('a');
+      const imageAttachment = isImageAttachment(attachment);
       const previewUrl = buildAppServerControlAttachmentUrl(sessionId, attachment);
-      void accessReady.then(() => {
-        link.href = previewUrl;
-      });
-      link.target = '_blank';
-      link.rel = 'noreferrer';
+      const link = createAttachmentControl(sessionId, attachment, previewUrl, accessReady);
 
-      if (isImageAttachment(attachment)) {
+      if (imageAttachment) {
         link.className = 'agent-history-attachment agent-history-attachment-image';
         const frame = document.createElement('span');
         frame.className = 'agent-history-attachment-image-frame';
@@ -1215,7 +1182,14 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
         (attachment.mimeType?.toLowerCase() === 'application/pdf' ||
           /\.pdf$/i.test(attachment.path));
       container.appendChild(
-        isPdf ? createPdfAttachmentPreview(link, attachment, previewUrl, accessReady) : link,
+        isPdf
+          ? createPdfAttachmentPreview(
+              link as HTMLAnchorElement,
+              attachment,
+              previewUrl,
+              accessReady,
+            )
+          : link,
       );
     }
 

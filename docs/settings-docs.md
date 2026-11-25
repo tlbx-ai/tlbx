@@ -95,8 +95,9 @@ Current top-level order in the UI:
   `Terminal Transparency` — `terminalTransparency`, `settings.json`, Immediate.
   `Terminal Cell Background Transparency` — `terminalCellBackgroundTransparency`, `settings.json`, Immediate.
 - `Terminal Behavior`
+  `Session Resume Mode` — `resumeMode`, `settings.json`. New settings default to Quick Resume: a viewport-sized initial replay followed by ordered live output and a requested TUI repaint when needed. Full Replay remains available; reconnects with a valid sequence cursor replay every retained missing byte. A truncated TUI replay uses the fast path only after observing a fresh synchronized frame with rendition reset, full-screen clear and cursor home (within 500 ms and a 512 KiB probe). Otherwise recovery falls back to the retained full ring. Quick Resume relies on the foreground TUI responding to terminal resize; it does not serialize an independent screen or image checkpoint.
   `Scrollback Lines` — `scrollbackLines`, `settings.json`, Immediate.
-  `Scrollback Bytes` — `scrollbackBytes`, `settings.json`, Immediate.
+  `Scrollback Bytes` — `scrollbackBytes`, `settings.json`, Immediate. Defaults to 8 MiB for new settings; existing saved values remain unchanged and existing PTY hosts keep their allocated capacity until recreated.
   `GPU Rendering (WebGL)` — `useWebGL`, `settings.json`, Immediate.
   `Smooth Scrolling` — `smoothScrolling`, `settings.json`, Immediate.
   `Bell Style` — `bellStyle`, `settings.json`, Next event.

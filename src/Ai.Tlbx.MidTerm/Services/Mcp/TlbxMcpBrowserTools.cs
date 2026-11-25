@@ -50,7 +50,7 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
         Command("fill", "Fill exactly one visible, enabled input, textarea, select or contenteditable editing host with literal Unicode text. Rich editors use native text replacement, selection and undo, without HTML or clipboard access. Reject ambiguous, read-only and unsupported controls without changing them; rich fill requires native editing commands and no non-editable descendants.", Fields(("selector", Property("string")), ("value", Property("string"))), ["selector", "value"]),
         Command("evaluate", "Execute JavaScript in the existing preview. code is passed literally, not through a shell.", Fields(("code", Property("string")), ("timeout", Timeout())), ["code"], command: "exec"),
         Command("wait", "Wait for attached (default), visible, hidden or detached elements before the next interaction. Visibility uses the same checks as click/fill.", Fields(("selector", Property("string")), ("state", Enum("attached", "visible", "hidden", "detached")), ("timeout", Timeout())), ["selector"], true),
-        Command("screenshot", "Capture viewport or fullPage as inline MCP PNG. Optionally save the same artifact as the CLI in the target workspace.", Fields(("fullPage", Property("boolean")), ("saveToWorkspace", Property("boolean")))),
+        Command("screenshot", "Capture viewport, fullPage, or one visible element's bounding box as inline PNG with DOM reconstruction coverage metadata (partial or unverified). Optional selector must be unique and cannot combine with fullPage. CSS-pixel resolution; preserves scroll and viewport. Optionally save the same artifact in the target workspace.", Fields(("selector", Property("string")), ("fullPage", Property("boolean")), ("saveToWorkspace", Property("boolean")))),
         Command("snapshot", "Return the existing preview HTML directly, optionally also saving the CLI-compatible workspace artifact.", Fields(("saveToWorkspace", Property("boolean")))),
         Command("outline", "Read visible semantic controls with labels, state and unique selectors. Layout wrappers do not consume maxDepth. Optional selector narrows the root; bounded output marks truncation.", Fields(("maxDepth", Property("integer")), ("selector", Property("string"))), readOnly: true),
         Command("attributes", "Read a selected element's attributes.", Fields(("selector", Property("string"))), ["selector"], true, "attrs"),
@@ -79,12 +79,12 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
         new TlbxMcpBrowserTools("browser_claim", "Explicitly hand this preview to a selected connected tlbx browser. browserId is recommended when there are several UIs.", Fields(("browserId", Property("string")))),
         new TlbxMcpBrowserTools("browser_claim_main", "Explicitly make a selected browser the leading browser; this is separate from preview ownership.", Fields(("browserId", Property("string")))),
         new TlbxMcpBrowserTools("browser_ui_clients", "List connected browser identities available for an explicit ownership handoff.", new(), readOnly: true),
-        new TlbxMcpBrowserTools("browser_capabilities", "Read live browser capabilities and recovery hints from the shared CLI capability projection.", new(), readOnly: true),
+        new TlbxMcpBrowserTools("browser_capabilities", "Read compact owner diagnosis, native recovery tools and passive sandbox/storage/media observations. No active usability probes; page timeout preserves owner status.", new(), readOnly: true),
         new TlbxMcpBrowserTools("browser_inspect", "Gather the same compact page/status/proxy diagnostic bundle as the CLI, with optional inline screenshot or workspace artifact.", Fields(("screenshot", Property("boolean")), ("saveToWorkspace", Property("boolean")))),
         new TlbxMcpBrowserTools("browser_detach", "Detach this preview into its owning browser's popup and wait for acknowledgment.", new()),
         new TlbxMcpBrowserTools("browser_dock", "Dock this preview back in its owning browser and wait for acknowledgment.", new()),
         new TlbxMcpBrowserTools("browser_viewport", "Set iframe width/height in the owning browser. Both zero reset the viewport.", Fields(("width", Property("integer")), ("height", Property("integer")))),
-        new TlbxMcpBrowserTools("browser_mobile", "Control Chrome mobile emulation in the owning browser's optional extension. Actions: open/status/rotate/keyboard/background/foreground/reload/screenshot/close.", Fields(("action", Property("string")), ("profile", Property("string")))),
+        new TlbxMcpBrowserTools("browser_mobile", "Await actual device state from the owning browser's optional Chrome extension. Status reports unavailable when disconnected. Screenshot returns PNG and never pastes into a terminal. Actions: open/status/rotate/keyboard/background/foreground/reload/screenshot/close.", Fields(("action", Property("string")), ("profile", Property("string")), ("saveToWorkspace", Property("boolean")))),
         new TlbxMcpBrowserTools("browser_agent_wheel", "Wheel the visible structured-agent history and return measured progress.", Fields(("direction", Enum("up", "down")), ("deltaY", Property("number")), ("steps", PositiveInteger()))),
         new TlbxMcpBrowserTools("browser_batch", "Run 1-32 typed browser commands with shared owner/revision checks and partial results. No step is automatically replayed.", BatchFields(), ["commands"]),
         new TlbxMcpBrowserTools("browser_with_preview", "Open a fresh ephemeral named preview, execute a typed browser batch, and remove the preview in finally even on failure/cancellation.", WithPreviewFields(), ["url", "commands"]),
@@ -145,7 +145,6 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
         switch (_tool.Name)
         {
             case "browser_open":
-            case "browser_navigate":
                 // Validate every typed option before a requested ownership change.
                 var openUrl = RequiredString(args, "url");
                 var shouldClaim = Bool(args, "claim");
@@ -153,11 +152,28 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
                 var claimBrowser = OptionalString(args, "browserId");
                 if (!shouldClaim && claimBrowser is not null)
                     throw new ArgumentException("browserId on browser_open requires claim=true.");
-                if (shouldClaim && !ui.RequestClaim(target, preview, out var claimError, claimBrowser))
-                    return Error("TLBX_MCP_BROWSER_OWNER_UNAVAILABLE", claimError);
+                if (shouldClaim)
+                {
+                    var preclaimFlush = await commands.FlushStorageBeforeTargetChangeAsync(target, preview, ct).ConfigureAwait(false);
+                    if (!preclaimFlush.Success)
+                        return Error("TLBX_MCP_BROWSER_STORAGE_FLUSH_FAILED", preclaimFlush.Error ?? "Storage flush failed; owner unchanged.");
+                    if (!ui.RequestClaim(target, preview, out var claimError, claimBrowser))
+                        return Error("TLBX_MCP_BROWSER_OWNER_UNAVAILABLE", claimError);
+                }
                 var opened = await operations.OpenAsync(target, preview, openUrl,
-                    _tool.Name == "browser_open" && shouldActivate, ct).ConfigureAwait(false);
+                    shouldActivate, ct).ConfigureAwait(false);
                 return OperationResult(opened, target, preview);
+            case "browser_navigate":
+                var navigationUrl = RequiredString(args, "url");
+                var navigationStatus = commands.GetStatus(previews.GetTargetUrl(target, preview), target, preview, previewId);
+                if (!navigationStatus.Controllable && string.IsNullOrEmpty(previewId) && navigationStatus.ConnectedClientCount == 0)
+                    return OperationResult(await operations.OpenAsync(target, preview, navigationUrl, false, ct).ConfigureAwait(false), target, preview);
+                var navigationRequest = new BrowserCommandRequest
+                {
+                    Command = "navigate", Value = navigationUrl, SessionId = target, PreviewName = preview, PreviewId = previewId
+                };
+                return await CommandResultAsync(services, navigationRequest,
+                    await commands.ExecuteCommandAsync(navigationRequest, ct).ConfigureAwait(false), false).ConfigureAwait(false);
             case "browser_scope_open":
                 var http = services.GetRequiredService<IHttpContextAccessor>().HttpContext!;
                 var scope = await operations.OpenScopeAsync((string)http.Items[TlbxMcpEndpoints.CallerIdentityItem]!, target,
@@ -201,6 +217,9 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
                 return Reply(new JsonObject { ["sessionId"] = target, ["previewName"] = WebPreviewService.NormalizePreviewName(preview),
                     ["summary"] = WebPreviewEndpoints.BuildProxyLogSummaryText(previews.GetLogEntries(target, preview, Integer(args, "limit", 100))) });
             case "browser_claim":
+                var claimFlush = await commands.FlushStorageBeforeTargetChangeAsync(target, preview, ct).ConfigureAwait(false);
+                if (!claimFlush.Success)
+                    return Error("TLBX_MCP_BROWSER_STORAGE_FLUSH_FAILED", claimFlush.Error ?? "Storage flush failed; owner unchanged.");
                 return ui.RequestClaim(target, preview, out var error, OptionalString(args, "browserId"))
                     ? Success(target, preview) : Error("TLBX_MCP_BROWSER_OWNER_UNAVAILABLE", error);
             case "browser_claim_main":
@@ -209,8 +228,15 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
             case "browser_ui_clients":
                 return Reply(new JsonObject { ["browserIds"] = Strings(ui.GetConnectedBrowserIds()) });
             case "browser_capabilities":
-                return Reply(BrowserEndpoints.BuildCapabilitiesResponse(commands, previews, ui, target, preview,
-                    previews.GetTargetUrl(target, preview)), AppJsonContext.Default.BrowserCapabilitiesResponse);
+                var capabilityStatus = commands.GetStatus(previews.GetTargetUrl(target, preview), target, preview, previewId, ui.ConnectedBrowserCount);
+                var capabilities = await BrowserCapabilityDiagnostics.ReadAsync(commands, capabilityStatus, target, preview, previewId, ct).ConfigureAwait(false);
+                // Structured content carries the diagnosis once, rather than repeating
+                // the complete status/client tree in both MCP output representations.
+                return new CallToolResult
+                {
+                    StructuredContent = JsonSerializer.SerializeToElement(capabilities, McpJsonContext.Default.JsonObject),
+                    Content = [new TextContentBlock { Text = $"Browser {capabilityStatus.State}; page {capabilities["page"]?["state"]}. Details in structuredContent." }]
+                };
             case "browser_inspect":
                 var diagnostics = await BrowserEndpoints.BuildInspectTextAsync(commands, services.GetRequiredService<TtyHostSessionManager>(),
                     previews, ui, target, preview, false, ct, previewId).ConfigureAwait(false);
@@ -240,11 +266,23 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
                     "browser_dock" => ui.RequestDockAsync(target, preview, ct),
                     _ => ui.RequestViewportAsync(target, preview, Integer(args, "width", 0), Integer(args, "height", 0), ct)
                 }, ct).ConfigureAwait(false);
-                return result.Success ? Success(target, preview) : Error("TLBX_MCP_BROWSER_UI_FAILED", result.Error ?? "Browser UI did not acknowledge the operation.");
+                return result.Success ? Success(target, preview, result.Viewport) : Error("TLBX_MCP_BROWSER_UI_FAILED", result.Error ?? "Browser UI did not acknowledge the operation.");
             case "browser_mobile":
-                return ui.RequestMobileDevice(target, preview, OptionalString(args, "action") ?? "status", OptionalString(args, "profile") ?? "pixel-8", out var mobileError)
-                    ? Reply(new JsonObject { ["accepted"] = true, ["sessionId"] = target, ["previewName"] = WebPreviewService.NormalizePreviewName(preview) })
-                    : Error("TLBX_MCP_BROWSER_MOBILE_FAILED", mobileError);
+                var mobileAction = OptionalString(args, "action") ?? "status";
+                var mobileProfile = OptionalString(args, "profile") ?? "pixel-8";
+                var saveMobile = Bool(args, "saveToWorkspace");
+                var mobile = await ui.SerializeTargetOperationAsync(target, preview,
+                    () => ui.RequestMobileDeviceAsync(target, preview, mobileAction, mobileProfile, ct), ct).ConfigureAwait(false);
+                if (!mobile.Success) return Error("TLBX_MCP_BROWSER_MOBILE_FAILED", mobile.Error ?? "Mobile device command failed.");
+                if (mobileAction.Trim().Equals("screenshot", StringComparison.OrdinalIgnoreCase))
+                {
+                    var mobileShot = new BrowserCommandRequest { Command = "screenshot", SessionId = target, PreviewName = preview };
+                    return await CommandResultAsync(services, mobileShot,
+                        new BrowserWsResult { Success = true, Result = mobile.ScreenshotDataUrl, Capture = new BrowserCaptureInfo { Renderer = "chrome-extension" } }, saveMobile).ConfigureAwait(false);
+                }
+                return Reply(new JsonObject { ["success"] = true, ["sessionId"] = target,
+                    ["previewName"] = WebPreviewService.NormalizePreviewName(preview), ["targetRevision"] = mobile.TargetRevision,
+                    ["device"] = JsonSerializer.SerializeToNode(mobile.MobileDevice, AppJsonContext.Default.BrowserMobileDeviceState) });
             case "browser_agent_wheel":
                 var wheel = await ui.RequestAgentWheelAsync(target, WheelDelta(args), Integer(args, "steps", 1), ct).ConfigureAwait(false);
                 var wheelReply = Reply(wheel, AppJsonContext.Default.AgentHistoryWheelResult);
@@ -314,7 +352,7 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
         foreach (var step in batch.Results.Where(s => s.Command == "screenshot" && s.Success))
         {
             var shot = new BrowserCommandRequest { Command = "screenshot", SessionId = target, PreviewName = preview };
-            var captured = await CommandResultAsync(services, shot, new BrowserWsResult { Success = true, Result = step.Result }, Bool(args, "saveToWorkspace")).ConfigureAwait(false);
+            var captured = await CommandResultAsync(services, shot, new BrowserWsResult { Success = true, Result = step.Result, Capture = step.Capture }, Bool(args, "saveToWorkspace")).ConfigureAwait(false);
             // The structured-result text is content block 0.
             var imageIndex = images.Count + 1;
             images.AddRange(captured.Content);
@@ -367,9 +405,17 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
     {
         command = command == "evaluate" ? "exec" : command;
         var selector = OptionalString(args, "selector");
+        var frame = OptionalString(args, "frame");
+        if (frame is not null && command is not ("query" or "exec" or "attrs" or "css" or "click" or "fill"))
+            throw new ArgumentException("frame supports query, evaluate, attributes, css, click and fill only.");
+        if (frame is not null && Bool(args, "waitForNavigation"))
+            throw new ArgumentException("Child navigation waits are unsupported; inspect the child state after navigation without replaying writes.");
+        if (command == "screenshot" && selector is not null && Bool(args, "fullPage"))
+            throw new ArgumentException("Screenshot selector cannot be combined with fullPage.");
         var value = OptionalString(args, "value", allowEmpty: command is "fill" or "exec");
         int? timeout = args.ContainsKey("timeout") ? Integer(args, "timeout", 0) : command == "wait" ? 15 : null;
         if (timeout is < 1 or > MaximumTimeoutSeconds) throw new ArgumentException("timeout exceeds the shared browser timer range.");
+        if (frame is not null && timeout > 15) throw new ArgumentException("Cooperative child commands have a maximum 15-second deadline.");
         if (command is "query" or "click" or "fill" or "wait" or "attrs" or "css")
             selector = RequiredString(args, "selector");
         if (command == "wait")
@@ -420,7 +466,7 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
         return new BrowserCommandRequest
         {
             Command = command, SessionId = target, PreviewName = preview, PreviewId = previewId,
-            Selector = selector, Value = value, Timeout = timeout,
+            Selector = selector, Frame = frame, Value = value, Timeout = timeout,
             MaxDepth = args.ContainsKey("maxDepth") ? Integer(args, "maxDepth", 4) : command == "outline" ? 4 : null,
             TextOnly = Bool(args, "textOnly"), FullPage = Bool(args, "fullPage"),
             DeltaX = args.ContainsKey("deltaX") ? Number(args, "deltaX", 0) : null,
@@ -451,6 +497,11 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
             ["sessionId"] = request.SessionId, ["previewName"] = WebPreviewService.NormalizePreviewName(request.PreviewName),
             ["matchCount"] = result.MatchCount, ["artifactPath"] = artifact
         };
+        if (request.Command == "screenshot")
+            data["capture"] = result.Capture is { } coverage ? JsonSerializer.SerializeToNode(coverage, AppJsonContext.Default.BrowserCaptureInfo)
+                : new JsonObject { ["renderer"] = "dom-svg", ["pixelCoverage"] = "unverified" };
+        var partialCapture = result.Capture is { PixelCoverage: "partial" };
+        const string partialCaptureWarning = "Screenshot coverage is partial. Nested-frame or media pixels may be missing or degraded; see capture metadata. This is DOM reconstruction, not a browser framebuffer.";
         ResourceLinkBlock? resource = null;
         if (store is not null && result.Result is { } original)
         {
@@ -476,6 +527,7 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
                 var oversized = Reply(data);
                 if (resource is not null) oversized.Content.Add(resource);
                 if (previewImage is not null) oversized.Content.Add(previewImage);
+                if (partialCapture) oversized.Content.Add(new TextContentBlock { Text = partialCaptureWarning });
                 oversized.IsError = workspaceFailed || resource is null && artifact is null;
                 if (workspaceFailed) oversized.Content.Add(new TextContentBlock
                     { Text = "Screenshot captured, but the requested workspace copy could not be saved. Do not replay the browser operation." });
@@ -485,6 +537,7 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
             if (image.IsError == true) return image;
             image.StructuredContent = JsonSerializer.SerializeToElement(data, McpJsonContext.Default.JsonObject);
             if (resource is not null) image.Content.Add(resource);
+            if (partialCapture) image.Content.Add(new TextContentBlock { Text = partialCaptureWarning });
             if (save && artifact is null)
             {
                 image.IsError = true;
@@ -576,15 +629,24 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
         response.IsError = !result.Success;
         return response;
     }
-    private static CallToolResult Success(string target, string? preview) => Reply(new JsonObject { ["success"] = true,
-        ["sessionId"] = target, ["previewName"] = WebPreviewService.NormalizePreviewName(preview) });
+    private static CallToolResult Success(string target, string? preview, BrowserViewportMetrics? viewport = null)
+    {
+        var data = new JsonObject { ["success"] = true, ["sessionId"] = target,
+            ["previewName"] = WebPreviewService.NormalizePreviewName(preview) };
+        if (viewport is not null) data["viewport"] = JsonSerializer.SerializeToNode(viewport, AppJsonContext.Default.BrowserViewportMetrics);
+        return Reply(data);
+    }
     private static CallToolResult Reply<T>(T value, JsonTypeInfo<T> typeInfo) => Reply(JsonSerializer.SerializeToElement(value, typeInfo));
     private static CallToolResult Reply(JsonObject value) => Reply(JsonSerializer.SerializeToElement(value, McpJsonContext.Default.JsonObject));
     private static CallToolResult Reply(JsonElement value) => new() { StructuredContent = value, Content = [new TextContentBlock { Text = value.GetRawText() }] };
     private static CallToolResult Error(string code, string message) => new() { IsError = true, Content = [new TextContentBlock { Text = code + ": " + message }] };
     private static TlbxMcpBrowserTools Command(string name, string description, JsonObject properties,
         string[]? required = null, bool readOnly = false, string? command = null)
-        => new("browser_" + name, description, properties, required, readOnly, command ?? name);
+    {
+        if (name is "query" or "evaluate" or "attributes" or "css" or "click" or "fill")
+            properties["frame"] = Property("string", "Optional CSS selector matching exactly one immediate iframe with an injected cooperative bridge. Executes only inside that child; 15-second maximum, no automatic replay. Arbitrary uninstrumented frames are unsupported.");
+        return new("browser_" + name, description, properties, required, readOnly, command ?? name);
+    }
     private static JsonObject Fields(params (string Name, JsonObject Schema)[] fields)
     {
         var result = new JsonObject();
@@ -600,18 +662,18 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
     private static JsonObject PositiveInteger() => new() { ["type"] = "integer", ["minimum"] = 1 };
     // CancellationTokenSource's timer accepts at most uint.MaxValue - 1 ms.
     private const int MaximumTimeoutSeconds = (int)((uint.MaxValue - 1L) / 1000L);
-    private static JsonObject Timeout(int maximum = MaximumTimeoutSeconds) => new() { ["type"] = "integer", ["minimum"] = 1, ["maximum"] = maximum };
+    private static JsonObject Timeout(int maximum = MaximumTimeoutSeconds) => new() { ["type"] = "integer", ["minimum"] = 1, ["maximum"] = maximum, ["description"] = "Timeout in seconds (for example, 5 means five seconds)." };
     private static JsonArray Strings(IEnumerable<string> values) => new(values.Select(v => (JsonNode?)JsonValue.Create(v)).ToArray());
     private static JsonObject Enum(params string[] values) => new() { ["type"] = "string", ["enum"] = Strings(values) };
     private static readonly string[] BatchCommands = ["query", "click", "fill", "exec", "evaluate", "wait", "screenshot", "scroll", "wheel", "navigate", "reload", "outline", "attrs", "css", "log", "links", "submit", "forms", "url"];
-    private static readonly string[] BatchPropertyNames = ["command", "selector", "value", "code", "timeout", "maxDepth", "textOnly", "fullPage", "deltaX", "deltaY", "steps", "direction", "to", "properties", "props", "filter", "state", "waitForNavigation"];
+    private static readonly string[] BatchPropertyNames = ["command", "selector", "frame", "value", "code", "timeout", "maxDepth", "textOnly", "fullPage", "deltaX", "deltaY", "steps", "direction", "to", "properties", "props", "filter", "state", "waitForNavigation"];
     private static JsonObject BatchFields() => Fields(("commands", new JsonObject
     {
         ["type"] = "array", ["minItems"] = 1, ["maxItems"] = 32,
         ["items"] = new JsonObject
         {
             ["type"] = "object", ["additionalProperties"] = false, ["required"] = Strings(["command"]),
-            ["properties"] = Fields(("command", Enum(BatchCommands)), ("selector", Property("string")), ("value", Property("string")),
+            ["properties"] = Fields(("command", Enum(BatchCommands)), ("selector", Property("string")), ("frame", Property("string")), ("value", Property("string")),
                 ("code", Property("string")), ("timeout", Timeout()), ("maxDepth", Property("integer")), ("textOnly", Property("boolean")),
                 ("fullPage", Property("boolean")), ("deltaX", Property("number")), ("deltaY", Property("number")), ("steps", PositiveInteger()),
                 ("direction", Enum("up", "down")), ("to", Enum("top", "bottom", "left", "right")),

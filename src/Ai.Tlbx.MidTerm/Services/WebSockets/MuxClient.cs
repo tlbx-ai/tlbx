@@ -139,6 +139,8 @@ public sealed class MuxClient : IAsyncDisposable
     private readonly Action<string, string, ulong, long>? _outputFrameSent;
     private FrozenSet<string> _visibleSessionIds = FrozenSet.ToFrozenSet<string>([], StringComparer.Ordinal);
     private FrozenSet<string> _backgroundSessionIds = FrozenSet.ToFrozenSet<string>([], StringComparer.Ordinal);
+    internal TimeSpan PausedRenotifyInterval { get; set; } = TimeSpan.FromSeconds(1);
+    private readonly ConcurrentDictionary<string, long> _lastPausedRenotifyTicks = new(StringComparer.Ordinal);
     private long _transportDegradedUntilMs;
     private long _lastDegradedLogAtMs;
     private int _nextRecoveryGeneration;
@@ -420,19 +422,13 @@ public sealed class MuxClient : IAsyncDisposable
             buffer.Release();
             return false;
         }
-        if (!ShouldDeliverSession(sessionId))
+        if (!TryGateDeliveryOrPause(sessionId, sequenceEndExclusive, buffer.Length, out var shouldRenotifyDataLoss))
         {
-            PauseSessionOutput(sessionId, sequenceEndExclusive, buffer.Length);
             buffer.Release();
-            return false;
-        }
-
-        if (_pausedSessions.ContainsKey(sessionId) && !_activeRecoveries.ContainsKey(sessionId))
-        {
-            // Once a session is paused, do not leak newer live frames across the
-            // missing range. Visibility/activation starts one cursor recovery.
-            PauseSessionOutput(sessionId, sequenceEndExclusive, buffer.Length);
-            buffer.Release();
+            if (shouldRenotifyDataLoss)
+            {
+                SendDeferredDataLoss(sessionId);
+            }
             return false;
         }
 
@@ -503,45 +499,58 @@ public sealed class MuxClient : IAsyncDisposable
     public void SetActiveSession(string? sessionId)
     {
         var activeId = sessionId is not null && CanAccessSession(sessionId) ? sessionId : null;
-        Volatile.Write(ref _activeSessionHint, new ActiveSessionHint(activeId, activeId is not null
+        var nextHint = new ActiveSessionHint(activeId, activeId is not null
             ? new[] { activeId }.ToFrozenSet(StringComparer.Ordinal)
-            : FrozenSet<string>.Empty));
+            : FrozenSet<string>.Empty);
+        lock (_recoveryGate)
+        {
+            var wasDeliverable = activeId is not null && ShouldDeliverSession(activeId);
+            Volatile.Write(ref _activeSessionHint, nextHint);
+            if (activeId is not null && !wasDeliverable && _pausedSessions.ContainsKey(activeId))
+            {
+                _lastPausedRenotifyTicks[activeId] = Stopwatch.GetTimestamp();
+            }
+        }
         WakeProcessor();
     }
 
     public void SetVisibleSessions(HashSet<string> sessionIds)
     {
-        if (sessionIds.Count == 0)
-        {
-            _visibleSessionIds = FrozenSet.ToFrozenSet<string>([], StringComparer.Ordinal);
-            WakeProcessor();
-            return;
-        }
-
-        var visibleSessions = sessionIds
-            .Where(CanAccessSession)
-            .ToArray();
-        _visibleSessionIds = visibleSessions.Length == 0
+        var nextVisible = sessionIds.Count == 0
             ? FrozenSet.ToFrozenSet<string>([], StringComparer.Ordinal)
-            : FrozenSet.ToFrozenSet(visibleSessions, StringComparer.Ordinal);
+            : sessionIds.Where(CanAccessSession).ToFrozenSet(StringComparer.Ordinal);
+        lock (_recoveryGate)
+        {
+            var nowTicks = Stopwatch.GetTimestamp();
+            foreach (var pausedSessionId in _pausedSessions.Keys)
+            {
+                if (!ShouldDeliverSession(pausedSessionId) && nextVisible.Contains(pausedSessionId))
+                {
+                    _lastPausedRenotifyTicks[pausedSessionId] = nowTicks;
+                }
+            }
+            _visibleSessionIds = nextVisible;
+        }
         WakeProcessor();
     }
 
     public void SetBackgroundSessions(HashSet<string> sessionIds)
     {
-        if (sessionIds.Count == 0)
-        {
-            _backgroundSessionIds = FrozenSet.ToFrozenSet<string>([], StringComparer.Ordinal);
-            WakeProcessor();
-            return;
-        }
-
-        var backgroundSessions = sessionIds
-            .Where(CanAccessSession)
-            .ToArray();
-        _backgroundSessionIds = backgroundSessions.Length == 0
+        var nextBackground = sessionIds.Count == 0
             ? FrozenSet.ToFrozenSet<string>([], StringComparer.Ordinal)
-            : FrozenSet.ToFrozenSet(backgroundSessions, StringComparer.Ordinal);
+            : sessionIds.Where(CanAccessSession).ToFrozenSet(StringComparer.Ordinal);
+        lock (_recoveryGate)
+        {
+            var nowTicks = Stopwatch.GetTimestamp();
+            foreach (var pausedSessionId in _pausedSessions.Keys)
+            {
+                if (!ShouldDeliverSession(pausedSessionId) && nextBackground.Contains(pausedSessionId))
+                {
+                    _lastPausedRenotifyTicks[pausedSessionId] = nowTicks;
+                }
+            }
+            _backgroundSessionIds = nextBackground;
+        }
         WakeProcessor();
     }
 
@@ -615,6 +624,7 @@ public sealed class MuxClient : IAsyncDisposable
                 droppedBytes,
                 missingSequenceStart,
                 missingSequenceEndExclusive);
+            _lastPausedRenotifyTicks[sessionId] = Stopwatch.GetTimestamp();
             recoveryOwnsDelivery = _activeRecoveries.ContainsKey(sessionId);
         }
 
@@ -624,7 +634,71 @@ public sealed class MuxClient : IAsyncDisposable
         }
     }
 
+    private bool TryGateDeliveryOrPause(
+        string sessionId,
+        ulong sequenceEndExclusive,
+        int byteCount,
+        out bool shouldRenotifyDataLoss)
+    {
+        shouldRenotifyDataLoss = false;
+        lock (_recoveryGate)
+        {
+            if (!ShouldDeliverSession(sessionId))
+            {
+                PauseSessionOutputLocked(sessionId, sequenceEndExclusive, byteCount);
+                return false;
+            }
+
+            if (_pausedSessions.TryGetValue(sessionId, out var paused) && !_activeRecoveries.ContainsKey(sessionId))
+            {
+                // Once a session is paused, do not leak newer live frames across the
+                // missing range. If the session is already deliverable with no active
+                // recovery (e.g. a prior data-loss frame was coalesced), periodically
+                // re-signal data loss so the browser cannot stay frozen until tab switch.
+                PauseSessionOutputLocked(sessionId, sequenceEndExclusive, byteCount);
+                var nowTicks = Stopwatch.GetTimestamp();
+                var canRenotify = !_lastPausedRenotifyTicks.TryGetValue(sessionId, out var lastTicks)
+                    || Stopwatch.GetElapsedTime(lastTicks, nowTicks) >= PausedRenotifyInterval;
+                if (canRenotify)
+                {
+                    _lastPausedRenotifyTicks[sessionId] = nowTicks;
+                    _deferredDataLoss[sessionId] = new DeferredDataLoss(
+                        TerminalReplayReason.MuxOverflow,
+                        0,
+                        paused.ResumeSequence,
+                        Math.Max(paused.SourceSequenceEndExclusive, sequenceEndExclusive));
+                    shouldRenotifyDataLoss = true;
+                }
+                return false;
+            }
+
+            return true;
+        }
+    }
+
+    private bool TryPauseBufferedSessionIfUndeliverable(string sessionId, ulong sequenceEndExclusive, int byteCount)
+    {
+        lock (_recoveryGate)
+        {
+            if (ShouldDeliverSession(sessionId))
+            {
+                return false;
+            }
+
+            PauseSessionOutputLocked(sessionId, sequenceEndExclusive, byteCount);
+            return true;
+        }
+    }
+
     private void PauseSessionOutput(string sessionId, ulong sequenceEndExclusive, int byteCount)
+    {
+        lock (_recoveryGate)
+        {
+            PauseSessionOutputLocked(sessionId, sequenceEndExclusive, byteCount);
+        }
+    }
+
+    private void PauseSessionOutputLocked(string sessionId, ulong sequenceEndExclusive, int byteCount)
     {
         var byteCountAsSequence = (ulong)Math.Max(0, byteCount);
         var sequenceStart = sequenceEndExclusive >= byteCountAsSequence
@@ -633,19 +707,16 @@ public sealed class MuxClient : IAsyncDisposable
         var resumeSequence = _lastDeliveredSequences.TryGetValue(sessionId, out var delivered)
             ? delivered
             : sequenceStart;
-        lock (_recoveryGate)
-        {
-            _pausedSessions.AddOrUpdate(
-                sessionId,
-                static (_, initial) => initial,
-                static (_, current, latest) => current with
-                {
-                    SourceSequenceEndExclusive = Math.Max(
-                        current.SourceSequenceEndExclusive,
-                        latest.SourceSequenceEndExclusive)
-                },
-                new PausedSessionOutput(resumeSequence, sequenceEndExclusive));
-        }
+        _pausedSessions.AddOrUpdate(
+            sessionId,
+            static (_, initial) => initial,
+            static (_, current, latest) => current with
+            {
+                SourceSequenceEndExclusive = Math.Max(
+                    current.SourceSequenceEndExclusive,
+                    latest.SourceSequenceEndExclusive)
+            },
+            new PausedSessionOutput(resumeSequence, sequenceEndExclusive));
     }
 
     public int GetFlushDelay(string sessionId)
@@ -724,6 +795,7 @@ public sealed class MuxClient : IAsyncDisposable
                 {
                     _pausedSessions.TryRemove(sessionId, out _);
                     _deferredDataLoss.TryRemove(sessionId, out _);
+                    _lastPausedRenotifyTicks.TryRemove(sessionId, out _);
                 }
             }
             Interlocked.Increment(ref counters.Completed);
@@ -764,6 +836,7 @@ public sealed class MuxClient : IAsyncDisposable
                     if (_pausedSessions.TryGetValue(sessionId, out var remaining)
                         && ShouldDeliverSession(sessionId))
                     {
+                        _lastPausedRenotifyTicks[sessionId] = Stopwatch.GetTimestamp();
                         _deferredDataLoss.TryAdd(sessionId, new DeferredDataLoss(
                             TerminalReplayReason.MuxOverflow, 0,
                             remaining.ResumeSequence, remaining.SourceSequenceEndExclusive));
@@ -868,6 +941,7 @@ public sealed class MuxClient : IAsyncDisposable
                     var sessionId = removal.SessionId;
                     _pausedSessions.TryRemove(sessionId, out _);
                     _deferredDataLoss.TryRemove(sessionId, out _);
+                    _lastPausedRenotifyTicks.TryRemove(sessionId, out _);
                     _lastDeliveredSequences.TryRemove(sessionId, out _);
                     _recoveryCounters.TryRemove(sessionId, out _);
                     if (_sessionBuffers.Remove(sessionId, out var buffer))
@@ -1030,22 +1104,33 @@ public sealed class MuxClient : IAsyncDisposable
             && _sessionBuffers.TryGetValue(activeId, out var activeBuffer)
             && (activeBuffer.TotalBytes > 0 || activeBuffer.DroppedBytes > 0))
         {
-            var queuedDelay = Stopwatch.GetElapsedTime(activeBuffer.QueuedAtTicks, nowTicks);
-            if (activeBuffer.DroppedBytes > 0
-                || activeBuffer.TotalBytes >= ForegroundFlushThresholdBytes
-                || GetActiveFlushDelay(activeBuffer.LastFlushTicks, nowTicks) == TimeSpan.Zero)
+            if (_pausedSessions.ContainsKey(activeId))
             {
-                if (activeBuffer.TotalBytes > 0)
-                {
-                    var delayMs = (int)queuedDelay.TotalMilliseconds;
-                    _lastFlushDelayMs[activeId] = delayMs;
-                    if (delayMs > 50)
-                    {
-                        Log.Warn(() => string.Create(CultureInfo.InvariantCulture, $"[MuxClient] {Id}: Active session flush delayed {delayMs}ms"));
-                    }
-                }
-                await FlushBufferAsync(activeId, activeBuffer, compress: false, flushAllAvailable: true, maxChunks: ActiveFlushMaxChunksPerPass).ConfigureAwait(false);
+                // Never flush stale buffered output across a paused gap; replay
+                // recovery owns the cursor until the paused range is resolved.
+                activeBuffer.Reset();
+                activeBuffer.DroppedBytes = 0;
                 activeBuffer.LastFlushTicks = nowTicks;
+            }
+            else
+            {
+                var queuedDelay = Stopwatch.GetElapsedTime(activeBuffer.QueuedAtTicks, nowTicks);
+                if (activeBuffer.DroppedBytes > 0
+                    || activeBuffer.TotalBytes >= ForegroundFlushThresholdBytes
+                    || GetActiveFlushDelay(activeBuffer.LastFlushTicks, nowTicks) == TimeSpan.Zero)
+                {
+                    if (activeBuffer.TotalBytes > 0)
+                    {
+                        var delayMs = (int)queuedDelay.TotalMilliseconds;
+                        _lastFlushDelayMs[activeId] = delayMs;
+                        if (delayMs > 50)
+                        {
+                            Log.Warn(() => string.Create(CultureInfo.InvariantCulture, $"[MuxClient] {Id}: Active session flush delayed {delayMs}ms"));
+                        }
+                    }
+                    await FlushBufferAsync(activeId, activeBuffer, compress: true, flushAllAvailable: true, maxChunks: ActiveFlushMaxChunksPerPass).ConfigureAwait(false);
+                    activeBuffer.LastFlushTicks = nowTicks;
+                }
             }
         }
 
@@ -1056,9 +1141,9 @@ public sealed class MuxClient : IAsyncDisposable
         {
             if ((buffer.TotalBytes == 0 && buffer.DroppedBytes == 0) || sessionId == activeId) continue;
             if (_activeRecoveries.ContainsKey(sessionId)) continue;
-            if (!ShouldDeliverSession(sessionId))
+            if (_pausedSessions.ContainsKey(sessionId)
+                || TryPauseBufferedSessionIfUndeliverable(sessionId, buffer.LastSequenceEndExclusive, buffer.TotalBytes))
             {
-                PauseSessionOutput(sessionId, buffer.LastSequenceEndExclusive, buffer.TotalBytes);
                 buffer.Reset();
                 buffer.DroppedBytes = 0;
                 buffer.LastFlushTicks = nowTicks;
@@ -1095,7 +1180,7 @@ public sealed class MuxClient : IAsyncDisposable
 
         foreach (var (sessionId, buffer) in _sessionBuffers)
         {
-            if (_activeRecoveries.ContainsKey(sessionId))
+            if (_activeRecoveries.ContainsKey(sessionId) || _pausedSessions.ContainsKey(sessionId))
             {
                 continue;
             }

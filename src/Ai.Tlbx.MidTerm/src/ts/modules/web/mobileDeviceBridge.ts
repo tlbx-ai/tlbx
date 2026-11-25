@@ -71,8 +71,8 @@ function handleBridgeMessage(event: MessageEvent<unknown>): void {
   if (!request) return;
   window.clearTimeout(request.timeout);
   pending.delete(message.requestId);
+  ready = true;
   if (message.success && message.result) {
-    ready = true;
     request.resolve(message.result);
   } else {
     request.reject(new Error(message.error || 'Chrome device bridge command failed.'));
@@ -88,6 +88,7 @@ function request(
   return new Promise((resolve, reject) => {
     const timeout = window.setTimeout(() => {
       pending.delete(requestId);
+      ready = false;
       reject(new Error('Chrome device bridge is not connected.'));
     }, timeoutMs);
     pending.set(requestId, { resolve, reject, timeout });

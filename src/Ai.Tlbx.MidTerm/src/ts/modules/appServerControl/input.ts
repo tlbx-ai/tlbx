@@ -6,15 +6,19 @@ import type {
   AppServerControlTurnStartResponse,
 } from '../../api/types';
 import { $sessions } from '../../stores';
+import { showAlert } from '../../utils/dialog';
+import { t } from '../i18n';
 import { getActiveTab } from '../sessionTabs';
 import {
   acceptAppServerControlQuickSettings,
   createAppServerControlTurnRequestWithQuickSettings,
+  waitForAntigravityQuickSettings,
 } from './quickSettings';
 
 export const APP_SERVER_CONTROL_TURN_SUBMITTED_EVENT = 'midterm:appServerControl-turn-submitted';
 export const APP_SERVER_CONTROL_TURN_ACCEPTED_EVENT = 'midterm:appServerControl-turn-accepted';
 export const APP_SERVER_CONTROL_TURN_FAILED_EVENT = 'midterm:appServerControl-turn-failed';
+export const APP_SERVER_CONTROL_STOP_CHANGED_EVENT = 'midterm:appServerControl-stop-changed';
 
 export interface AppServerControlTurnSubmittedEventDetail {
   optimisticId: string;
@@ -23,7 +27,7 @@ export interface AppServerControlTurnSubmittedEventDetail {
 }
 
 export interface AppServerControlTurnAcceptedEventDetail extends AppServerControlTurnSubmittedEventDetail {
-  response: AppServerControlTurnStartResponse;
+  response: AppServerControlTurnStartResponse | null;
 }
 
 export interface AppServerControlTurnFailedEventDetail extends AppServerControlTurnSubmittedEventDetail {
@@ -98,7 +102,48 @@ export async function submitAppServerControlTurn(
     await maybeInterruptAppServerControlTurnAfterSubmit(sessionId, state);
     return response;
   } catch (error) {
-    state.pendingInterruptAfterSubmit = false;
+    clearQueuedInterrupt(sessionId, state);
+    throw error;
+  } finally {
+    state.submittingTurn = false;
+  }
+}
+
+/** The shared composer API retains native steering, with the same immediate local echo. */
+export async function submitAppServerControlComposerPrompt(
+  sessionId: string,
+  request: AppServerControlTurnRequest,
+  send: (
+    sessionId: string,
+    request: AppServerControlTurnRequest,
+  ) => Promise<AppServerControlTurnStartResponse | null>,
+): Promise<void> {
+  const normalizedRequest = normalizeAppServerControlTurnRequest(request);
+  const optimisticId = dispatchSubmittedAppServerControlTurn(sessionId, normalizedRequest);
+  const state = getOrCreateAppServerControlTurnState(sessionId);
+  state.submittingTurn = true;
+  try {
+    const response = await send(sessionId, normalizedRequest);
+    if (response) {
+      acceptAppServerControlQuickSettings(sessionId, response.provider, response.quickSettings);
+      state.currentTurnId = response.turnId ?? state.currentTurnId;
+      state.currentTurnRunning = true;
+    }
+    dispatchAppServerControlTurnEvent(APP_SERVER_CONTROL_TURN_ACCEPTED_EVENT, {
+      optimisticId,
+      sessionId,
+      request: normalizedRequest,
+      response,
+    });
+    await maybeInterruptAppServerControlTurnAfterSubmit(sessionId, state);
+  } catch (error) {
+    clearQueuedInterrupt(sessionId, state);
+    dispatchAppServerControlTurnEvent(APP_SERVER_CONTROL_TURN_FAILED_EVENT, {
+      optimisticId,
+      sessionId,
+      request: normalizedRequest,
+      errorMessage: String(error),
+    });
     throw error;
   } finally {
     state.submittingTurn = false;
@@ -107,9 +152,11 @@ export async function submitAppServerControlTurn(
 
 export async function handleAppServerControlEscape(sessionId: string): Promise<boolean> {
   const state = getOrCreateAppServerControlTurnState(sessionId);
-  if (state.currentTurnRunning) return requestAppServerControlTurnInterrupt(sessionId, state);
+  if (state.currentTurnRunning && state.currentTurnId)
+    return requestAppServerControlTurnInterrupt(sessionId, state, state.currentTurnId);
   if (state.submittingTurn) {
     state.pendingInterruptAfterSubmit = true;
+    notifyStopChanged(sessionId);
     return true;
   }
   return false;
@@ -120,14 +167,25 @@ export function hasInterruptibleAppServerControlTurnWork(sessionId: string): boo
   return state.currentTurnRunning || state.submittingTurn;
 }
 
+export function isAppServerControlStopPending(sessionId: string): boolean {
+  const state = appServerControlTurnStates.get(sessionId);
+  return Boolean(state?.pendingInterruptAfterSubmit || state?.interruptInFlight);
+}
+
 export function syncAppServerControlTurnExecutionState(
   sessionId: string,
   currentTurn: AppServerControlTurnExecutionSummary | null | undefined,
 ): void {
   const state = getOrCreateAppServerControlTurnState(sessionId);
-  state.currentTurnId = currentTurn?.turnId?.trim() || null;
-  state.currentTurnRunning = isRunningAppServerControlTurnState(currentTurn?.state);
-  if (!state.currentTurnRunning) state.interruptInFlight = false;
+  const turnId = currentTurn?.turnId?.trim() || null;
+  const running = isRunningAppServerControlTurnState(currentTurn?.state);
+  const wasStopping = isAppServerControlStopPending(sessionId);
+  if (state.currentTurnId !== turnId || !running) state.interruptInFlight = false;
+  state.currentTurnId = turnId;
+  state.currentTurnRunning = running;
+  if (wasStopping !== isAppServerControlStopPending(sessionId)) notifyStopChanged(sessionId);
+  if (turnId && running && state.pendingInterruptAfterSubmit)
+    void requestAppServerControlTurnInterrupt(sessionId, state, turnId);
 }
 
 export function clearAppServerControlTurnSessionState(sessionId: string): void {
@@ -189,6 +247,7 @@ async function sendAppServerControlTurnWithLifecycle(
   request: AppServerControlTurnRequest,
 ): Promise<AppServerControlTurnStartResponse> {
   try {
+    await waitForAntigravityQuickSettings(sessionId);
     const response = await sendAppServerControlTurn(sessionId, request);
     acceptAppServerControlQuickSettings(sessionId, response.provider, response.quickSettings);
     dispatchAppServerControlTurnEvent(APP_SERVER_CONTROL_TURN_ACCEPTED_EVENT, {
@@ -225,25 +284,50 @@ function getOrCreateAppServerControlTurnState(
   return created;
 }
 
+function notifyStopChanged(sessionId: string): void {
+  if (typeof window !== 'undefined')
+    window.dispatchEvent(
+      new CustomEvent(APP_SERVER_CONTROL_STOP_CHANGED_EVENT, { detail: sessionId }),
+    );
+}
+
+function clearQueuedInterrupt(sessionId: string, state: AppServerControlTurnExecutionState): void {
+  if (!state.pendingInterruptAfterSubmit) return;
+  state.pendingInterruptAfterSubmit = false;
+  notifyStopChanged(sessionId);
+}
+
 async function requestAppServerControlTurnInterrupt(
   sessionId: string,
   state: AppServerControlTurnExecutionState,
+  turnId: string,
 ): Promise<boolean> {
-  if (state.interruptInFlight) {
-    return true;
-  }
+  if (state.interruptInFlight) return true;
 
+  state.pendingInterruptAfterSubmit = false;
   state.interruptInFlight = true;
-  const request: AppServerControlInterruptRequest = state.currentTurnId
-    ? { turnId: state.currentTurnId }
-    : {};
+  notifyStopChanged(sessionId);
+  const request: AppServerControlInterruptRequest = { turnId };
 
   try {
     await interruptAppServerControlTurn(sessionId, request);
     return true;
-  } catch {
-    state.interruptInFlight = false;
+  } catch (error) {
+    if (
+      appServerControlTurnStates.get(sessionId) === state &&
+      state.currentTurnId === turnId &&
+      state.currentTurnRunning
+    ) {
+      void showAlert(error instanceof Error ? error.message : String(error), {
+        title: t('smartInput.stopFailed'),
+      });
+    }
     return false;
+  } finally {
+    if (appServerControlTurnStates.get(sessionId) === state && state.currentTurnId === turnId) {
+      state.interruptInFlight = false;
+      notifyStopChanged(sessionId);
+    }
   }
 }
 
@@ -251,12 +335,12 @@ async function maybeInterruptAppServerControlTurnAfterSubmit(
   sessionId: string,
   state: AppServerControlTurnExecutionState,
 ): Promise<void> {
-  if (!state.pendingInterruptAfterSubmit) {
-    return;
+  if (!state.pendingInterruptAfterSubmit) return;
+  if (state.currentTurnId && state.currentTurnRunning) {
+    await requestAppServerControlTurnInterrupt(sessionId, state, state.currentTurnId);
+  } else {
+    clearQueuedInterrupt(sessionId, state);
   }
-
-  state.pendingInterruptAfterSubmit = false;
-  await requestAppServerControlTurnInterrupt(sessionId, state);
 }
 
 function isRunningAppServerControlTurnState(state: string | null | undefined): boolean {

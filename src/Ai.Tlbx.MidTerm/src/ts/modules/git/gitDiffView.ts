@@ -41,7 +41,7 @@ export function renderPatchFile(file: GitDiffFileView, options: GitDiffOptions =
               ? renderSideRows(hunk.lines, hunkIndex, options)
               : hunk.lines
                   .map((line, lineIndex) => renderDiffLine(line, hunkIndex, lineIndex, options))
-                  .join('\n');
+                  .join('');
             const lastLine = hunk.lines.reduce(
               (maximum, line) => Math.max(maximum, line.oldLine ?? 0, line.newLine ?? 0),
               0,
@@ -161,7 +161,7 @@ function renderSideRows(lines: GitDiffLine[], hunk: number, options: GitDiffOpti
         : renderDiffLine(row.current.line, hunk, row.current.index, options, 'new');
       return `<span class="git-diff-pair">${old}${current}</span>`;
     })
-    .join('\n');
+    .join('');
 }
 
 function renderPatchHeader(file: GitDiffFileView, options: GitDiffOptions): string {

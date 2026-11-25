@@ -26,6 +26,28 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 
 public sealed class TlbxMcpWorkflowProtocolTests
 {
+    [Theory]
+    [InlineData("""{"steps":["context_get",["sessions_list",{}]],"futureOption":true}""", false)]
+    [InlineData("""{"steps":[{"parallel":["context_get",{"tool":"browser_status"}]}]}""", false)]
+    [InlineData("""{"steps":[["process_run_isolated",{}]]}""", true)]
+    [InlineData("""{"steps":[{"parallel":["context_get","process_wait"]}]}""", true)]
+    [InlineData("""{"steps":[{"tool":"tool_call_from_file","arguments":{"toolName":"sessions_list"}}]}""", true)]
+    [InlineData("""{"steps":["artifact_save"]}""", true)]
+    [InlineData("""{"steps":["tool_call_to_file"]}""", true)]
+    [InlineData("""{"steps":["update_apply"]}""", true)]
+    [InlineData("""{"steps":[{"unclassified":"process_run_isolated"}]}""", true)]
+    public void WorkflowRoutingKeepsCallerFilesProcessesArtifactsAndUpdateRecoveryLocal(string json, bool local)
+    {
+        using var document = JsonDocument.Parse(json);
+        using var properties = document.RootElement.EnumerateObject();
+        var arguments = properties.ToDictionary(property => property.Name,
+            property => property.Value.Clone(), StringComparer.Ordinal);
+        Assert.Equal(local, TlbxMcpNativeWorkflow.RequiresCallerLocalExecution(new CallToolRequestParams
+        {
+            Name = "workflow_run", Arguments = arguments
+        }));
+    }
+
     [Fact]
     public void PreviewScopeCannotRedirectBrowserButPreservesExplicitCrossDomainTargets()
     {
@@ -85,12 +107,16 @@ public sealed class TlbxMcpWorkflowProtocolTests
         var operations = new BrowserPreviewOperations(commands, previews, ui, new BrowserPreviewRegistry(), owners);
         var mutations = new List<BrowserWsMessage>();
         ui.RegisterListener("native-ui", "desktop", (_, _) => { }, (_, _) => { }, (_, _, _, _) => { },
-            (session, name, _, _) => commands.TryRegisterClient("native-preview", session, name, "frame", message =>
+            (session, name, _, _) =>
             {
-                if (message.Command == "fill") mutations.Add(message);
-                commands.ReceiveResult(new BrowserWsResult { Id = message.Id, Success = true, Result = "ready" }, "native-preview");
-            }, browserId: "desktop", targetRevision: previews.GetPreviewSession(session, name)?.TargetRevision,
-                ownershipGeneration: owners.GetGeneration(session, name)), close: (_, _) => commands.UnregisterClient("native-preview"));
+                var documentId = Guid.NewGuid().ToString("N");
+                commands.TryRegisterClient("native-preview", session, name, "frame", message =>
+                {
+                    if (message.Command == "fill") mutations.Add(message);
+                    commands.ReceiveResult(new BrowserWsResult { Id = message.Id, Success = true, Result = "ready", DocumentId = documentId }, "native-preview");
+                }, browserId: "desktop", targetRevision: previews.GetPreviewSession(session, name)?.TargetRevision,
+                    ownershipGeneration: owners.GetGeneration(session, name), documentId: documentId);
+            }, close: (_, _) => commands.UnregisterClient("native-preview"));
         var fail = new EchoTool("intentional_failure", true);
         var builder = WebApplication.CreateSlimBuilder();
         builder.WebHost.ConfigureKestrel(k => k.Listen(IPAddress.Loopback, 0));
@@ -386,7 +412,9 @@ public sealed class TlbxMcpWorkflowProtocolTests
             values.Enqueue(value);
             if (Interlocked.Increment(ref active) == 2) bothStarted.TrySetResult();
             await bothStarted.Task.WaitAsync(TimeSpan.FromSeconds(5), ct);
-            return McpApiResult.Structured(new JsonObject { ["value"] = value });
+            var response = McpApiResult.Structured(new JsonObject { ["value"] = value });
+            response.Content[0] = new TextContentBlock { Text = "{ \"value\": " + JsonSerializer.Serialize(value) + " }" };
+            return response;
         }
         var result = await executor.ExecuteAsync(new CallToolRequestParams
         {

@@ -4,6 +4,7 @@ export const SANDBOX_BASE_FLAGS = [
   'allow-popups',
   'allow-popups-to-escape-sandbox',
   'allow-modals',
+  'allow-pointer-lock',
   'allow-downloads',
   'allow-storage-access-by-user-activation',
 ];

@@ -1,3 +1,6 @@
+import { resolveHistoryWheelMotion } from './historyWheel';
+import { captureHistorySelection, restoreHistorySelection } from './historySelection';
+import { syncQuestionAnswer } from '../smartInput/questionAnswer';
 import { t } from '../i18n';
 import { getHistoryImagePreviewToken } from './userHistoryReading';
 import { showAgentTechnicalDetails } from './historyVisibility';
@@ -26,6 +29,7 @@ import {
 import {
   buildHistoryVirtualWindowKey,
   computeHistoryVirtualWindow,
+  resolveHistoryRenderScrollTop,
   computeHistoryVisibleRange,
   HISTORY_VIRTUALIZE_AFTER,
   APP_SERVER_CONTROL_HISTORY_OVERSCAN_ITEMS,
@@ -69,6 +73,10 @@ function appServerControlText(key: string, fallback: string): string {
 }
 
 const HISTORY_PROGRESS_TOP_ALIGN_THRESHOLD_PX = 1;
+
+function setHistoryAttribute(element: HTMLElement, name: string, value: string): void {
+  if (element.getAttribute(name) !== value) element.setAttribute(name, value);
+}
 
 function resolveHistoryEntryHeight(
   entry: AppServerControlHistoryEntry,
@@ -347,15 +355,28 @@ export function restorePendingHistoryAnchor(
   if (key === 'pendingHistoryPrependAnchor') state.pendingHistoryLayoutAnchor = null;
   setHistoryScrollMode(state, 'browse');
   suppressViewportWindowSync(state);
-  const adjusted = restoreViewportAnchor({
-    viewport,
-    anchor: {
-      key: anchor.entryId,
-      topOffsetPx: anchor.topOffsetPx,
-      absoluteIndex: anchor.absoluteIndex,
-    },
-    resolveNode: (entryId) => state.historyRenderedNodes.get(entryId)?.node,
-  });
+  // Positioned rows already carry their canonical prefix coordinate. Restore
+  // from that coordinate instead of forcing a fresh row layout after hydration.
+  const positionedTop =
+    state.historyCanvas && node.parentElement === state.historyCanvas
+      ? Number.parseFloat(node.style.top)
+      : Number.NaN;
+  const adjusted = Number.isFinite(positionedTop)
+    ? syncViewportScrollPosition(
+        viewport,
+        (Number.parseFloat(getComputedStyle(viewport).paddingTop) || 0) +
+          positionedTop -
+          anchor.topOffsetPx,
+      )
+    : restoreViewportAnchor({
+        viewport,
+        anchor: {
+          key: anchor.entryId,
+          topOffsetPx: anchor.topOffsetPx,
+          absoluteIndex: anchor.absoluteIndex,
+        },
+        resolveNode: (entryId) => state.historyRenderedNodes.get(entryId)?.node,
+      });
   state.historyLastScrollMetrics = readHistoryScrollMetrics(viewport, state);
   confirmHistoryReaderAnchor(state);
   return adjusted;
@@ -389,6 +410,22 @@ export function resolveMeasurementBrowseAnchorIndex(
       })),
     })?.absoluteIndex ?? null
   );
+}
+
+function syncPositionedHistoryRows(state: SessionAppServerControlViewState): void {
+  const canvas = state.historyCanvas;
+  const viewport = state.historyViewport;
+  if (!canvas || !viewport) return;
+  const width = viewport.clientWidth;
+  let top = 0;
+  for (const entry of state.historyEntries) {
+    const node = state.historyRenderedNodes.get(entry.id)?.node;
+    const value = `${top}px`;
+    if (node && node.style.top !== value) node.style.top = value;
+    top += resolveHistoryEntryHeight(entry, state, width);
+  }
+  const height = `${top}px`;
+  if (canvas.style.height !== height) canvas.style.height = height;
 }
 
 function collectHistoryMeasurementChanges(args: {
@@ -464,6 +501,7 @@ export function syncHistoryMeasurementObserver(args: {
     if (measurementChanges.length === 0) {
       return;
     }
+    syncPositionedHistoryRows(current);
 
     if (current.historyPendingJumpTargetIndex != null) {
       suppressViewportWindowSync(current);
@@ -477,10 +515,7 @@ export function syncHistoryMeasurementObserver(args: {
       changes: measurementChanges,
       anchorAbsoluteIndex: browseAnchorIndex ?? undefined,
     });
-    const activelyScrollingEarlier =
-      Date.now() - current.historyLastUserScrollIntentAt <= USER_HISTORY_GAP_RECOVERY_GRACE_MS &&
-      current.historyLastUserScrollDirection < 0;
-    if (!current.historyAutoScrollPinned && !activelyScrollingEarlier && compensationDelta !== 0) {
+    if (!current.historyAutoScrollPinned && compensationDelta !== 0) {
       suppressViewportWindowSync(current);
       syncViewportScrollPosition(viewport, viewport.scrollTop + compensationDelta);
       current.historyLastScrollMetrics = readHistoryScrollMetrics(viewport, current);
@@ -490,13 +525,22 @@ export function syncHistoryMeasurementObserver(args: {
     args.scheduleHistoryRender(args.sessionId);
   });
 
-  args.state.historyMeasurementObserver.disconnect();
+  const observed = (args.state.historyObservedNodes ??= new Set());
+  const next = new Set<HTMLElement>();
   for (const visibleEntry of args.visibleEntries) {
     const node = args.state.historyRenderedNodes.get(visibleEntry.key)?.node;
-    if (node) {
+    if (!node) continue;
+    next.add(node);
+    if (!observed.has(node)) {
       args.state.historyMeasurementObserver.observe(node, { box: 'border-box' });
     }
   }
+  // Reobserving unchanged rows emits fresh initial records on every render,
+  // feeding another measurement/render cycle back into active scrolling.
+  for (const node of observed) {
+    if (!next.has(node)) args.state.historyMeasurementObserver.unobserve(node);
+  }
+  args.state.historyObservedNodes = next;
 }
 
 function buildVisibleHistoryEntries(args: {
@@ -508,6 +552,9 @@ function buildVisibleHistoryEntries(args: {
     entries: readonly AppServerControlHistoryEntry[],
     absoluteIndex: number,
   ) => ArtifactClusterInfo | null;
+  reuseSignatures?: boolean;
+  offsetTopPx: number;
+  resolveEntryHeight: (entry: AppServerControlHistoryEntry) => number;
   buildSignature: (
     entry: AppServerControlHistoryEntry,
     cluster: ArtifactClusterInfo | null,
@@ -516,16 +563,24 @@ function buildVisibleHistoryEntries(args: {
   ) => string;
 }): HistoryVisibleEntry[] {
   const { entries, visibleStart, visibleEnd, state, resolveCluster, buildSignature } = args;
+  let nextTop = args.offsetTopPx;
   return entries.slice(visibleStart, visibleEnd).map((entry, visibleIndex) => {
+    const offsetTopPx = nextTop;
+    nextTop += args.resolveEntryHeight(entry);
     const absoluteIndex = visibleStart + visibleIndex;
     const cluster = resolveCluster(entries, absoluteIndex);
     const showAssistantBadge = shouldShowAssistantBadge(entries, absoluteIndex);
+    const previous = state?.historyRenderedNodes.get(entry.id);
     return {
       key: entry.id,
+      offsetTopPx,
       entry,
       cluster,
       showAssistantBadge,
-      signature: buildSignature(entry, cluster, state, showAssistantBadge),
+      signature:
+        args.reuseSignatures && previous?.entry === entry
+          ? previous.signature
+          : buildSignature(entry, cluster, state, showAssistantBadge),
     };
   });
 }
@@ -705,9 +760,8 @@ function resolveHistoryNavigatorEstimatedAnchorIndex(
   }
 
   const canonicalIds = new Set((state.snapshot?.history ?? []).map((entry) => entry.entryId));
-  const visibleCanonicalEntries = state.historyEntries
-    .slice(visibleRange.start, visibleRange.end)
-    .filter((entry) => canonicalIds.has(entry.id));
+  const visibleEntries = state.historyEntries.slice(visibleRange.start, visibleRange.end);
+  const visibleCanonicalEntries = visibleEntries.filter((entry) => canonicalIds.has(entry.id));
   const firstVisibleEntry = visibleCanonicalEntries[0];
   const lastVisibleEntry = visibleCanonicalEntries[visibleCanonicalEntries.length - 1];
   if (!firstVisibleEntry || !lastVisibleEntry) {
@@ -732,8 +786,8 @@ function resolveHistoryNavigatorEstimatedAnchorIndex(
     return 0;
   }
 
-  let top = -metrics.scrollTop;
-  const rows = state.historyEntries.flatMap((entry) => {
+  let top = visibleRange.topSpacerPx - metrics.scrollTop;
+  const rows = visibleEntries.flatMap((entry) => {
     const height = resolveHistoryEntryHeight(entry, state, metrics.clientWidth);
     const row = { absoluteIndex: entry.order - 1, top, bottom: top + height };
     top += height;
@@ -866,26 +920,27 @@ function prepareHistoryProgressNavigator(
   thumb: HTMLDivElement,
   historyCount: number,
 ): boolean {
-  if (typeof host.removeAttribute === 'function') {
-    host.removeAttribute('hidden');
-  }
-  host.hidden = false;
+  if (host.hidden) host.hidden = false;
 
   const ready = historyCount > 0;
-  host.dataset.ready = ready ? 'true' : 'false';
-  host.tabIndex = ready ? 0 : -1;
-  host.setAttribute('aria-disabled', ready ? 'false' : 'true');
+  const readyValue = ready ? 'true' : 'false';
+  if (host.dataset.ready !== readyValue) host.dataset.ready = readyValue;
+  const tabIndex = ready ? 0 : -1;
+  if (host.tabIndex !== tabIndex) host.tabIndex = tabIndex;
+  setHistoryAttribute(host, 'aria-disabled', ready ? 'false' : 'true');
   if (ready) {
     return false;
   }
 
-  thumb.style.height = '';
+  if (thumb.style.height !== '') thumb.style.height = '';
   thumb.style.top = `${HISTORY_PROGRESS_THUMB_INSET_PX}px`;
+  thumb.style.translate = '0px 0px';
   host.dataset.mode = 'browse';
-  host.setAttribute('aria-valuemin', '0');
-  host.setAttribute('aria-valuemax', '0');
-  host.setAttribute('aria-valuenow', '0');
-  host.setAttribute(
+  setHistoryAttribute(host, 'aria-valuemin', '0');
+  setHistoryAttribute(host, 'aria-valuemax', '0');
+  setHistoryAttribute(host, 'aria-valuenow', '0');
+  setHistoryAttribute(
+    host,
     'aria-valuetext',
     appServerControlText('appServerControl.history.navigator.empty', 'No history'),
   );
@@ -913,21 +968,27 @@ function applyHistoryProgressNavigatorPosition(args: {
     ...(args.mapping ? { renderedThumbHeightPx: args.mapping.geometry.thumbHeightPx } : {}),
   });
 
-  host.dataset.mode = mode;
-  host.setAttribute('aria-valuemin', '1');
-  host.setAttribute('aria-valuemax', String(Math.max(1, historyCount)));
-  host.setAttribute(
+  if (host.dataset.mode !== mode) host.dataset.mode = mode;
+  setHistoryAttribute(host, 'aria-valuemin', '1');
+  setHistoryAttribute(host, 'aria-valuemax', String(Math.max(1, historyCount)));
+  setHistoryAttribute(
+    host,
     'aria-valuenow',
     String(anchorIndex === null ? Math.max(1, historyCount) : anchorIndex + 1),
   );
-  host.setAttribute(
+  setHistoryAttribute(
+    host,
     'aria-valuetext',
     anchorIndex === null
       ? `${historyCount}`
       : `${anchorIndex + 1} ${appServerControlText('appServerControl.history.navigator.of', 'of')} ${historyCount}`,
   );
-  thumb.style.height = `${geometry.thumbHeightPx}px`;
-  thumb.style.top = `${HISTORY_PROGRESS_THUMB_INSET_PX + geometry.topPx}px`;
+  const height = `${geometry.thumbHeightPx}px`;
+  if (thumb.style.height !== height) thumb.style.height = height;
+  const top = `${HISTORY_PROGRESS_THUMB_INSET_PX}px`;
+  if (thumb.style.top !== top) thumb.style.top = top;
+  const translate = `0px ${geometry.topPx}px`;
+  if (thumb.style.translate !== translate) thumb.style.translate = translate;
 }
 
 function syncHistoryProgressNavigatorUi(
@@ -1253,11 +1314,8 @@ function expandHistoryVirtualWindowForPendingAnchor(args: {
     return virtualWindow;
   }
 
-  const corridorStart = Math.max(0, anchorIndex - APP_SERVER_CONTROL_HISTORY_OVERSCAN_ITEMS);
-  const corridorEnd = Math.min(
-    entries.length,
-    anchorIndex + APP_SERVER_CONTROL_HISTORY_OVERSCAN_ITEMS + 1,
-  );
+  const corridorStart = Math.max(0, anchorIndex - 1);
+  const corridorEnd = Math.min(entries.length, anchorIndex + 2);
   const start = Math.min(virtualWindow.start, corridorStart);
   const end = Math.max(virtualWindow.end, corridorEnd);
   if (start === virtualWindow.start && end === virtualWindow.end) {
@@ -1317,6 +1375,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
     panel: HTMLDivElement,
     entries: AppServerControlHistoryEntry[],
     sessionId: string,
+    viewportOnly = false,
   ): void {
     const container = panel.querySelector<HTMLElement>('[data-agent-field="history"]');
     if (!container) {
@@ -1327,6 +1386,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
     const viewport = container as HTMLDivElement;
     if (state) prepareHistoryReaderResize(state);
     const renderAnchor =
+      !viewportOnly &&
       state &&
       !state.historyAutoScrollPinned &&
       state.historyPendingJumpTargetIndex === null &&
@@ -1341,7 +1401,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
       state.historyEntries = entries;
       state.historyLastScrollMetrics ??= readHistoryScrollMetrics(viewport, state);
       retainHistoryMeasurementsAcrossWindowShift(state);
-      deps.pruneHistoryMarkdownCache(state, entries);
+      if (!viewportOnly) deps.pruneHistoryMarkdownCache(state, entries);
       renderScrollToBottomControl(panel, state);
       if (renderAnchor) {
         state.pendingHistoryLayoutAnchor = renderAnchor;
@@ -1349,16 +1409,43 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
     }
 
     const metrics = readHistoryViewportMetrics(viewport, state);
-    const renderPlan = buildHistoryRenderPlan(entries, metrics, state);
+    const renderPlan = buildHistoryRenderPlan(entries, metrics, state, viewportOnly);
+    const observerMeasurements =
+      viewportOnly ||
+      (typeof ResizeObserver === 'function' &&
+        state?.historyCanvas?.isConnected === true &&
+        !state.historyReaderResizeMeasurementPending);
     reconcileHistoryRenderPlan(sessionId, viewport, renderPlan);
-    const measurementChanged = state
-      ? measureRenderedHistoryHeights(
-          sessionId,
-          state,
-          renderPlan.visibleEntries,
-          metrics.clientWidth,
-        )
-      : false;
+    if (state && renderPlan.wheelScrollTopPx !== undefined) {
+      viewport.scrollTop = renderPlan.wheelScrollTopPx;
+      state.historyPendingWheelDeltaPx =
+        (renderPlan.remainingWheelDeltaPx ?? 0) + renderPlan.wheelScrollTopPx - viewport.scrollTop;
+      if (Math.abs(state.historyPendingWheelDeltaPx) < 1) state.historyPendingWheelDeltaPx = 0;
+      state.historyViewportSyncPending ||= state.historyPendingWheelDeltaPx !== 0;
+      state.historyViewportSyncSuppressUntil = 0;
+      state.historyReaderAnchor = null;
+    }
+    const measurementChanged =
+      state && !observerMeasurements
+        ? measureRenderedHistoryHeights(
+            sessionId,
+            state,
+            renderPlan.visibleEntries,
+            metrics.clientWidth,
+          )
+        : false;
+    if (state && observerMeasurements) {
+      // ResizeObserver supplies post-layout sizes before paint. Scrolling must
+      // not force a synchronous measure followed by a second anchor layout.
+      syncHistoryMeasurementObserver({
+        sessionId,
+        state,
+        visibleEntries: renderPlan.visibleEntries,
+        getState: deps.getState,
+        scheduleHistoryRender: deps.scheduleHistoryRender,
+      });
+    }
+    if (state && measurementChanged) syncPositionedHistoryRows(state);
     if (measurementChanged && isVirtualizedHistoryContext(state, entries.length)) {
       // Heights were just read from the concrete rows. Reconcile their updated
       // spacer estimates next frame instead of writing the DOM a second time and
@@ -1374,18 +1461,37 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
         resolveEntryHeight: (entry) => resolveHistoryEntryHeight(entry, state, metrics.clientWidth),
       });
     }
-    finalizeRenderedHistoryState(sessionId, panel, viewport, entries, state);
-    syncHistoryProgressNavigatorUi(state);
+    // Ordinary native scrolling already records its reader and navigator in the
+    // scroll frame. Let layout/ResizeObserver settle new rows before paint rather
+    // than forcing another geometry pass just to confirm that same position.
+    const needsPositionRestore =
+      !viewportOnly ||
+      !state ||
+      state.historyAutoScrollPinned ||
+      state.pendingHistoryPrependAnchor !== null ||
+      state.pendingHistoryLayoutAnchor !== null ||
+      state.historyPendingJumpTargetIndex != null;
+    if (needsPositionRestore) {
+      finalizeRenderedHistoryState(sessionId, panel, viewport, entries, state);
+      syncHistoryProgressNavigatorUi(
+        state,
+        renderPlan.wheelScrollTopPx !== undefined
+          ? { refreshAnchorFromViewport: true, refreshVisibleRange: true }
+          : {},
+      );
+    }
   }
 
   function buildHistoryRenderPlan(
     entries: readonly AppServerControlHistoryEntry[],
     metrics: HistoryViewportMetrics,
     state: SessionAppServerControlViewState | undefined,
+    viewportOnly: boolean,
   ): HistoryRenderPlan {
     if (entries.length === 0) {
       return {
         virtualWindowKey: null,
+        contentHeightPx: 0,
         leadingPlaceholders: [],
         trailingPlaceholders: [],
         visibleEntries: [],
@@ -1394,9 +1500,49 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
 
     const resolveEntryHeight = (entry: AppServerControlHistoryEntry) =>
       resolveHistoryEntryHeight(entry, state, metrics.clientWidth);
-    const virtualWindow = computeHistoryVirtualWindow(
+    const anchor = state?.pendingHistoryPrependAnchor ?? state?.pendingHistoryLayoutAnchor;
+    const paddingTop =
+      state?.historyViewport && typeof getComputedStyle === 'function'
+        ? Number.parseFloat(getComputedStyle(state.historyViewport).paddingTop) || 0
+        : 0;
+    let renderScrollTop = resolveHistoryRenderScrollTop(
       entries,
       metrics.scrollTop,
+      anchor,
+      resolveEntryHeight,
+      paddingTop,
+    );
+    const contentHeightPx = sumHistoryEntryHeights(entries, 0, entries.length, resolveEntryHeight);
+    let wheelMotion: ReturnType<typeof resolveHistoryWheelMotion> | undefined;
+    if (
+      state?.historyViewportCommitPending &&
+      !state.historyAutoScrollPinned &&
+      state.historyPendingJumpTargetIndex === null &&
+      state.historyPendingWheelDeltaPx !== 0
+    ) {
+      const paddingBottom =
+        state.historyViewport && typeof getComputedStyle === 'function'
+          ? Number.parseFloat(getComputedStyle(state.historyViewport).paddingBottom) || 0
+          : 0;
+      wheelMotion = resolveHistoryWheelMotion({
+        scrollTop: renderScrollTop,
+        scrollHeight: contentHeightPx + paddingTop + paddingBottom,
+        clientHeight: metrics.clientHeight,
+        deltaY: state.historyPendingWheelDeltaPx,
+        hasMore:
+          state.historyPendingWheelDeltaPx < 0
+            ? state.snapshot?.hasOlderHistory === true
+            : state.snapshot?.hasNewerHistory === true,
+      });
+      renderScrollTop = wheelMotion.scrollTop;
+      // The carried gesture selects a new reader. Do not mount the entire
+      // corridor back to the old anchor and then scroll away from those rows.
+      state.pendingHistoryPrependAnchor = null;
+      state.pendingHistoryLayoutAnchor = null;
+    }
+    const virtualWindow = computeHistoryVirtualWindow(
+      entries,
+      renderScrollTop,
       metrics.clientHeight,
       metrics.clientWidth,
       resolveEntryHeight,
@@ -1438,6 +1584,13 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
 
     return {
       virtualWindowKey: buildHistoryVirtualWindowKey(renderedWindow),
+      contentHeightPx,
+      ...(wheelMotion
+        ? {
+            wheelScrollTopPx: wheelMotion.scrollTop,
+            remainingWheelDeltaPx: wheelMotion.remainingDeltaPx,
+          }
+        : {}),
       leadingPlaceholders,
       trailingPlaceholders,
       visibleEntries: buildVisibleHistoryEntries({
@@ -1447,6 +1600,9 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
         state,
         resolveCluster: resolveArtifactCluster,
         buildSignature: buildHistoryEntrySignature,
+        reuseSignatures: viewportOnly,
+        offsetTopPx: renderedWindow.topSpacerPx,
+        resolveEntryHeight,
       }),
     };
   }
@@ -1595,6 +1751,9 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
       resolveHistoryBadgeLabel(entry.kind, state?.snapshot?.session.agentName),
       entry.title,
       entry.body,
+      entry.toolActivityEntries
+        ?.map((item) => buildHistoryEntrySignature(item, null, state, false))
+        .join('|') ?? '',
       entry.kind === 'user' && entry.imagePreviews?.length
         ? String(showAgentTechnicalDetails())
         : '',
@@ -1614,6 +1773,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
           ].join(':')
         : '',
       entry.commandText ?? '',
+      JSON.stringify(entry.toolPresentation ?? null),
       (entry.commandOutputTail ?? []).join('\n'),
       entry.kind === 'tool' ? String(resolveToolCallOutputLineLimit()) : '',
       buildHistoryAttachmentToken(entry),
@@ -1658,6 +1818,9 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
       request.state,
       request.decision ?? '',
       request.detail ?? '',
+      request.approvalPurpose ?? '',
+      request.approvalTool ?? '',
+      JSON.stringify(request.permissionOptions ?? null),
       request.updatedAt,
       request.answers.map((answer) => `${answer.questionId}:${answer.answers.join(',')}`).join('|'),
       interactionToken,
@@ -1673,29 +1836,89 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
     if (!state) {
       return;
     }
+    const selection = captureHistorySelection(state);
 
+    let canvas = state.historyCanvas;
+    if (!canvas || canvas.parentElement !== container) {
+      canvas = container.ownerDocument.createElement('div');
+      canvas.className = 'agent-history-canvas';
+      state.historyCanvas = canvas;
+      canvas.style.height = `${plan.contentHeightPx}px`;
+      container.replaceChildren(canvas);
+    }
+    const height = `${plan.contentHeightPx}px`;
+    if (canvas.style.height !== height) canvas.style.height = height;
     const nextChildren: HTMLElement[] = [];
-    nextChildren.push(
-      ...resolveHistoryPlaceholderNodes(state, 'leading', plan.leadingPlaceholders),
-    );
-
-    const visibleKeys = new Set<string>();
-    for (const visibleEntry of plan.visibleEntries) {
-      visibleKeys.add(visibleEntry.key);
-      nextChildren.push(resolveRenderedHistoryNode(sessionId, state, visibleEntry));
+    let placeholderTop = 0;
+    const leading = resolveHistoryPlaceholderNodes(state, 'leading', plan.leadingPlaceholders);
+    for (let i = 0; i < leading.length; i++) {
+      const node = leading[i];
+      if (!node) continue;
+      const top = `${placeholderTop}px`;
+      if (node.style.top !== top) node.style.top = top;
+      placeholderTop += plan.leadingPlaceholders[i]?.heightPx ?? 0;
+      nextChildren.push(node);
     }
 
-    for (const cacheKey of state.historyRenderedNodes.keys()) {
+    const visibleKeys = new Set<string>();
+    const concreteRows: Array<{ node: HTMLElement; order: number }> = [];
+    for (const visibleEntry of plan.visibleEntries) {
+      visibleKeys.add(visibleEntry.key);
+      const selected = selection?.rows.get(visibleEntry.key);
+      const node = selected?.node ?? resolveRenderedHistoryNode(sessionId, state, visibleEntry);
+      if (selected) {
+        state.historyRenderedNodes.set(visibleEntry.key, selected);
+        state.historyRetainedNodes?.delete(visibleEntry.key);
+      }
+      delete node.dataset.historySelectionRetained;
+      node.style.bottom = '';
+      const top = `${visibleEntry.offsetTopPx}px`;
+      if (node.style.top !== top) node.style.top = top;
+      concreteRows.push({ node, order: visibleEntry.entry.order });
+    }
+    for (const [key, row] of selection?.rows ?? []) {
+      if (visibleKeys.has(key)) continue;
+      // Keep selected text connected and copyable, outside the viewport and
+      // without extending the canvas's positive scroll range across page shifts.
+      row.node.dataset.historySelectionRetained = 'true';
+      row.node.style.top = '';
+      row.node.style.bottom = 'calc(100% + 100vh)';
+      concreteRows.push({ node: row.node, order: row.entry.order });
+    }
+    concreteRows.sort((a, b) => a.order - b.order);
+    nextChildren.push(...concreteRows.map((row) => row.node));
+
+    const retained = (state.historyRetainedNodes ??= new Map());
+    for (const [cacheKey, rendered] of state.historyRenderedNodes) {
       if (!visibleKeys.has(cacheKey)) {
+        retained.delete(cacheKey);
+        retained.set(cacheKey, rendered);
         state.historyRenderedNodes.delete(cacheKey);
       }
     }
+    // Detached rows preserve parsed Markdown, interactive state and measured
+    // layout for a nearby reversal without growing the live DOM or archive RAM.
+    while (retained.size > 64) {
+      const oldest = retained.keys().next().value;
+      if (oldest === undefined) break;
+      retained.delete(oldest);
+    }
 
-    nextChildren.push(
-      ...resolveHistoryPlaceholderNodes(state, 'trailing', plan.trailingPlaceholders),
-    );
+    placeholderTop =
+      plan.contentHeightPx -
+      plan.trailingPlaceholders.reduce((sum, block) => sum + block.heightPx, 0);
+    const trailing = resolveHistoryPlaceholderNodes(state, 'trailing', plan.trailingPlaceholders);
+    for (let i = 0; i < trailing.length; i++) {
+      const node = trailing[i];
+      if (!node) continue;
+      const top = `${placeholderTop}px`;
+      if (node.style.top !== top) node.style.top = top;
+      placeholderTop += plan.trailingPlaceholders[i]?.heightPx ?? 0;
+      nextChildren.push(node);
+    }
 
-    syncOrderedChildren(container, nextChildren);
+    syncOrderedChildren(canvas, nextChildren);
+    restoreHistorySelection(selection);
     state.historyLastVirtualWindowKey = plan.virtualWindowKey;
   }
 
@@ -1719,10 +1942,12 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
         label: block.label,
         rangeLabel: block.rangeLabel,
       }) as HTMLDivElement);
-    node.className = 'agent-history-placeholder';
-    node.dataset.direction = block.direction;
-    node.dataset.placeholderKey = block.key;
-    node.style.height = `${Math.max(0, Math.round(block.heightPx))}px`;
+    if (node.className !== 'agent-history-placeholder')
+      node.className = 'agent-history-placeholder';
+    if (node.dataset.direction !== block.direction) node.dataset.direction = block.direction;
+    if (node.dataset.placeholderKey !== block.key) node.dataset.placeholderKey = block.key;
+    const height = `${Math.max(0, Math.round(block.heightPx))}px`;
+    if (node.style.height !== height) node.style.height = height;
     const selectorRoot = node as unknown as Record<string, unknown>;
     if (typeof selectorRoot['querySelector'] !== 'function') {
       store[blockIndex] = node;
@@ -1731,15 +1956,13 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
 
     // Existing placeholder nodes are reused, so refresh their visible labels.
     const title = node.querySelector<HTMLElement>('.agent-history-placeholder-title');
-    if (title) {
-      title.textContent = block.label;
-    }
+    if (title && title.textContent !== block.label) title.textContent = block.label;
 
     const meta = node.querySelector<HTMLElement>('.agent-history-placeholder-meta');
-    if (meta) {
-      meta.textContent = `${block.itemCount} items${block.rangeLabel ? ` • ${block.rangeLabel}` : ''}`;
-    }
-    node.setAttribute(
+    const metaText = `${block.itemCount} items${block.rangeLabel ? ` • ${block.rangeLabel}` : ''}`;
+    if (meta && meta.textContent !== metaText) meta.textContent = metaText;
+    setHistoryAttribute(
+      node,
       'aria-label',
       `${block.label}: ${block.itemCount} items represented by an estimated placeholder block`,
     );
@@ -1766,10 +1989,17 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
     state: SessionAppServerControlViewState,
     visibleEntry: HistoryVisibleEntry,
   ): HTMLElement {
-    const existing = state.historyRenderedNodes.get(visibleEntry.key);
+    const existing =
+      state.historyRenderedNodes.get(visibleEntry.key) ??
+      state.historyRetainedNodes?.get(visibleEntry.key);
+    if (existing) {
+      state.historyRetainedNodes?.delete(visibleEntry.key);
+      state.historyRenderedNodes.set(visibleEntry.key, existing);
+    }
     if (existing && existing.entry.busyIndicator && visibleEntry.entry.busyIndicator) {
       deps.syncBusyIndicatorEntry?.(existing.node, visibleEntry.entry);
-      existing.node.dataset.appServerControlEntryId = visibleEntry.key;
+      if (existing.node.dataset.appServerControlEntryId !== visibleEntry.key)
+        existing.node.dataset.appServerControlEntryId = visibleEntry.key;
       existing.signature = visibleEntry.signature;
       existing.entry = visibleEntry.entry;
       existing.cluster = visibleEntry.cluster;
@@ -1778,7 +2008,8 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
     }
 
     if (existing && existing.signature === visibleEntry.signature) {
-      existing.node.dataset.appServerControlEntryId = visibleEntry.key;
+      if (existing.node.dataset.appServerControlEntryId !== visibleEntry.key)
+        existing.node.dataset.appServerControlEntryId = visibleEntry.key;
       return existing.node;
     }
 
@@ -1787,7 +2018,8 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
         artifactCluster: visibleEntry.cluster,
         showAssistantBadge: visibleEntry.showAssistantBadge,
       });
-      existing.node.dataset.appServerControlEntryId = visibleEntry.key;
+      if (existing.node.dataset.appServerControlEntryId !== visibleEntry.key)
+        existing.node.dataset.appServerControlEntryId = visibleEntry.key;
       existing.signature = visibleEntry.signature;
       existing.entry = visibleEntry.entry;
       existing.cluster = visibleEntry.cluster;
@@ -1921,6 +2153,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
       return;
     }
 
+    syncQuestionAnswer(sessionId);
     const activeRequest = findActiveComposerRequest(requests);
     if (!activeRequest) {
       shell.hidden = true;

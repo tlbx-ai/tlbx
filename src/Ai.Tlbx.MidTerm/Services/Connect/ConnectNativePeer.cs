@@ -11,7 +11,7 @@ namespace Ai.Tlbx.MidTerm.Services.Connect;
 internal sealed class ConnectNativePeer : IAsyncDisposable
 {
     internal const int MaximumFrameSize = 65536;
-    internal const int MaximumBufferedBytes = 1024 * 1024;
+    internal const int MaximumBufferedBytes = 8 * 1024;
     private static readonly ConcurrentDictionary<nint, ConnectNativePeer> Owners = new();
     private static int _nextToken;
     private static ConnectNativeApi? _loadedApi;
@@ -26,24 +26,27 @@ internal sealed class ConnectNativePeer : IAsyncDisposable
     private readonly Channel<byte[]> _frames = Channel.CreateBounded<byte[]>(32);
     [SuppressMessage("Usage", "CA2213:Disposable fields should be disposed", Justification = "ReleaseManagedResources disposes these gates after pending operations and callbacks have drained.")]
     private readonly SemaphoreSlim _sender = new(1, 1), _signals = new(1, 1), _bufferedLow = new(0, 1);
+    [SuppressMessage("Usage", "CA2213:Disposable fields should be disposed", Justification = "ReleaseManagedResources disposes these gates after pending operations and callbacks have drained.")]
+    private readonly SemaphoreSlim _bulkSender = new(1, 1), _bulkBufferedLow = new(0, 1);
     private readonly List<ConnectSignal> _pending = [];
     private readonly Func<ConnectSignal, Task> _onSignal;
     private readonly Func<ReadOnlyMemory<byte>, Task> _onFrame;
-    private readonly Func<Task> _onOpen;
+    private readonly Func<Task> _onOpen, _onBulkOpen;
     private readonly Action _onFailure;
     private readonly nint _ownerToken;
     private readonly Task _eventWorker, _receiveWorker;
     private readonly TaskCompletionSource _operationsDrained = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly Lock _nativeGate = new();
     private int _peer = -1, _channel = -1, _closed, _failed, _operations, _openedOnce;
+    private int _bulkChannel = -1, _bulkOpenedOnce;
     private bool _offered;
     private Task? _disposeTask;
 
     private ConnectNativePeer(ConnectNativeApi api, ConnectTurnProxy proxy, Func<ConnectSignal, Task> onSignal,
-        Func<ReadOnlyMemory<byte>, Task> onFrame, Func<Task> onOpen, Action onFailure, CancellationToken ct)
+        Func<ReadOnlyMemory<byte>, Task> onFrame, Func<Task> onOpen, Func<Task> onBulkOpen, Action onFailure, CancellationToken ct)
     {
         _api = api; _loadedApi = api; _proxy = proxy;
-        _onSignal = onSignal; _onFrame = onFrame; _onOpen = onOpen; _onFailure = onFailure;
+        _onSignal = onSignal; _onFrame = onFrame; _onOpen = onOpen; _onBulkOpen = onBulkOpen; _onFailure = onFailure;
         _lifetime = CancellationTokenSource.CreateLinkedTokenSource(ct); _token = _lifetime.Token;
         do { _ownerToken = Interlocked.Increment(ref _nextToken); } while (_ownerToken == 0 || !Owners.TryAdd(_ownerToken, this));
         _eventWorker = RunEventsAsync(); _receiveWorker = RunFramesAsync();
@@ -51,7 +54,7 @@ internal sealed class ConnectNativePeer : IAsyncDisposable
 
     public static async Task<ConnectNativePeer> CreateAsync(string settingsDirectory, ConnectSignal configuration,
         Func<ConnectSignal, Task> onSignal, Func<ReadOnlyMemory<byte>, Task> onFrame, Func<Task> onOpen,
-        Action onFailure, CancellationToken ct)
+        Func<Task> onBulkOpen, Action onFailure, CancellationToken ct)
     {
         var servers = configuration.IceServers ?? [];
         _ = NativeServerUrls(servers); // Validate before starting proxy DNS/network work.
@@ -59,7 +62,7 @@ internal sealed class ConnectNativePeer : IAsyncDisposable
         ConnectNativePeer? transport = null;
         try
         {
-            transport = new ConnectNativePeer(ConnectNativeLoader.GetApi(settingsDirectory), proxy, onSignal, onFrame, onOpen, onFailure, ct);
+            transport = new ConnectNativePeer(ConnectNativeLoader.GetApi(settingsDirectory), proxy, onSignal, onFrame, onOpen, onBulkOpen, onFailure, ct);
             ct.ThrowIfCancellationRequested();
             var peer = transport._api.Create(NativeServerUrls(proxy.NativeServers, expanded: true), proxy.ProxyUrl,
                 configuration.RelayOnly == true, transport._ownerToken);
@@ -112,33 +115,36 @@ internal sealed class ConnectNativePeer : IAsyncDisposable
         finally { if (entered) _signals.Release(); ExitOperation(); }
     }
 
-    public async Task SendAsync(ReadOnlyMemory<byte> frame, CancellationToken ct)
+    public async Task SendAsync(ReadOnlyMemory<byte> frame, CancellationToken ct, bool bulk = false)
     {
         if (frame.Length is 0 or > MaximumFrameSize) throw new InvalidDataException("Invalid Connect binary frame size.");
         EnterOperation();
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct, _token);
         deadline.CancelAfter(TimeSpan.FromSeconds(30));
+        var sender = bulk ? _bulkSender : _sender;
+        var bufferedLow = bulk ? _bulkBufferedLow : _bufferedLow;
         var entered = false;
         try
         {
-            await _sender.WaitAsync(deadline.Token); entered = true;
+            await sender.WaitAsync(deadline.Token); entered = true;
             while (true)
             {
                 ObjectDisposedException.ThrowIf(Volatile.Read(ref _closed) != 0, this);
-                var channel = Volatile.Read(ref _channel);
+                var channel = bulk ? Volatile.Read(ref _bulkChannel) : Volatile.Read(ref _channel);
                 if (channel < 0 || !_api.IsOpen(channel)) throw new IOException("The Connect data channel is not open.");
-                if (_api.BufferedAmount(channel) <= MaximumBufferedBytes - frame.Length)
+                // A larger legacy frame may still enter when the pending queue is empty.
+                if (_api.BufferedAmount(channel) <= Math.Max(MaximumBufferedBytes, frame.Length) - frame.Length)
                 {
                     _api.Send(channel, frame.Span);
                     return;
                 }
-                await _bufferedLow.WaitAsync(deadline.Token);
+                await bufferedLow.WaitAsync(deadline.Token);
             }
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested && !_token.IsCancellationRequested)
         { Fail(); throw new IOException("Connect data-channel backpressure exceeded its deadline."); }
         catch (IOException) { Fail(); throw; }
-        finally { if (entered) _sender.Release(); ExitOperation(); }
+        finally { if (entered) sender.Release(); ExitOperation(); }
     }
 
     private void AddCandidate(ConnectSignal candidate)
@@ -186,6 +192,7 @@ internal sealed class ConnectNativePeer : IAsyncDisposable
             await foreach (var signal in _events.Reader.ReadAllAsync(_token))
             {
                 if (signal.Type == "open") await _onOpen();
+                else if (signal.Type == "bulk-open") await _onBulkOpen();
                 else await _onSignal(signal);
             }
         }
@@ -269,11 +276,14 @@ internal sealed class ConnectNativePeer : IAsyncDisposable
             if (owner is null) { _loadedApi?.DeleteChannel(channel); return; }
             lock (owner._nativeGate)
             {
-                if (Volatile.Read(ref owner._closed) != 0 || owner._channel >= 0 || !owner._api.ReliableTlbxChannel(channel))
-                { owner._api.DeleteChannel(channel); owner.Fail(); return; }
-                owner._channel = channel;
+                if (Volatile.Read(ref owner._closed) == 0 && owner._channel < 0 && owner._api.IsReliableChannel(channel, "tlbx\0"u8))
+                    Volatile.Write(ref owner._channel, channel);
+                else if (Volatile.Read(ref owner._closed) == 0 && owner._channel >= 0 && owner._bulkChannel < 0
+                    && owner._api.IsReliableChannel(channel, "tlbx-bulk\0"u8))
+                    Volatile.Write(ref owner._bulkChannel, channel);
+                else { owner._api.DeleteChannel(channel); owner.Fail(); return; }
                 owner._api.AttachChannel(channel, token);
-                if (owner._api.IsOpen(channel)) owner.MarkOpened();
+                if (owner._api.IsOpen(channel)) owner.MarkChannelOpened(channel);
             }
         }
         catch (Exception) { owner?.Fail(); }
@@ -282,15 +292,23 @@ internal sealed class ConnectNativePeer : IAsyncDisposable
     internal static void NativeOpen(int id, nint token)
     {
         var owner = Owner(token); if (owner is null) return;
-        try { owner.MarkOpened(); } catch (Exception) { owner.Fail(); }
+        try { owner.MarkChannelOpened(id); } catch (Exception) { owner.Fail(); }
     }
+
+    private void MarkChannelOpened(int id)
+    {
+        if (id == Volatile.Read(ref _channel)) MarkOpened();
+        else if (id == Volatile.Read(ref _bulkChannel) && Interlocked.Exchange(ref _bulkOpenedOnce, 1) == 0)
+            Emit(new ConnectSignal { Type = "bulk-open" });
+    }
+
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
     internal static unsafe void NativeMessage(int id, byte* message, int size, nint token)
     {
         var owner = Owner(token); if (owner is null) return;
         try
         {
-            if (size is <= 0 or > MaximumFrameSize || message is null) { owner.Fail(); return; }
+            if (id != Volatile.Read(ref owner._channel) || size is <= 0 or > MaximumFrameSize || message is null) { owner.Fail(); return; }
             // Native owns the callback buffer only until this callback returns.
             if (!owner._frames.Writer.TryWrite(new ReadOnlySpan<byte>(message, size).ToArray())) owner.Fail();
         }
@@ -303,7 +321,14 @@ internal sealed class ConnectNativePeer : IAsyncDisposable
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
     internal static void NativeBufferedLow(int id, nint token)
     {
-        try { Owner(token)?._bufferedLow.Release(); } catch (Exception) { }
+        var owner = Owner(token);
+        if (owner is null) return;
+        try
+        {
+            var low = id == Volatile.Read(ref owner._bulkChannel) ? owner._bulkBufferedLow : owner._bufferedLow;
+            low.Release();
+        }
+        catch (Exception) { }
     }
 
     public ValueTask DisposeAsync()
@@ -320,6 +345,7 @@ internal sealed class ConnectNativePeer : IAsyncDisposable
         _lifetime.Cancel();
         _events.Writer.TryComplete(); _frames.Writer.TryComplete();
         await _operationsDrained.Task;
+        if (_bulkChannel >= 0) _api.DeleteChannel(_bulkChannel);
         if (_channel >= 0) _api.DeleteChannel(_channel);
         if (_peer >= 0) _api.DeletePeer(_peer);
         Owners.TryRemove(_ownerToken, out _);
@@ -336,7 +362,7 @@ internal sealed class ConnectNativePeer : IAsyncDisposable
     }
     private void ReleaseManagedResources()
     {
-        _lifetime.Dispose(); _sender.Dispose(); _signals.Dispose(); _bufferedLow.Dispose();
+        _lifetime.Dispose(); _bulkSender.Dispose(); _bulkBufferedLow.Dispose(); _sender.Dispose(); _signals.Dispose(); _bufferedLow.Dispose();
     }
     private void EnterOperation()
     {

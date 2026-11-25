@@ -4,11 +4,12 @@
 . "$PSScriptRoot/release-pr.ps1"
 
 function Select-AdvisoryBaselineRelease {
-    param([object[]]$Releases, [bool]$Development)
+    param([object[]]$Releases, [bool]$Development, [string]$CandidateTag)
     $eligible = @($Releases | Where-Object {
         -not $_.draft -and $_.published_at -and
         ($_.tag_name -match '^v\d+\.\d+\.\d+(-dev)?$') -and
-        ($_.tag_name.EndsWith('-dev') -eq $Development)
+        ($_.tag_name.EndsWith('-dev') -eq $Development) -and
+        (-not $CandidateTag -or [version]($_.tag_name -replace '^v|-dev$', '') -lt [version]($CandidateTag -replace '^v|-dev$', ''))
     } | Sort-Object { [DateTimeOffset]$_.published_at } -Descending)
     if ($eligible.Count -eq 0) { throw 'No published release is available for the advisory baseline.' }
     return $eligible[0]
@@ -18,7 +19,10 @@ function Get-AdvisoryBaseline {
     param([string]$RepoRoot)
     $version = Get-Content (Join-Path $RepoRoot 'src/version.json') -Raw | ConvertFrom-Json
     $output = Invoke-ReleaseGh api 'repos/tlbx-ai/tlbx/releases?per_page=100'
-    $release = Select-AdvisoryBaselineRelease ($output | ConvertFrom-Json) $version.web.EndsWith('-dev')
+    # A post-publication test must not use its exact tagged candidate as baseline.
+    $candidateTag = (& git -C $RepoRoot describe --tags --exact-match HEAD 2>$null)
+    if ($LASTEXITCODE -ne 0 -or $candidateTag -cnotmatch '^v\d+\.\d+\.\d+(-dev)?$') { $candidateTag = $null }
+    $release = Select-AdvisoryBaselineRelease ($output | ConvertFrom-Json) $version.web.EndsWith('-dev') $candidateTag
     $tag = $release.tag_name
     & git -C $RepoRoot fetch origin tag $tag --no-tags --quiet
     if ($LASTEXITCODE -ne 0) { throw "Could not fetch advisory baseline $tag." }

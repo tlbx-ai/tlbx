@@ -1,7 +1,9 @@
+import { beginQuestionAnswer, getQuestionAnswer } from '../smartInput/questionAnswer';
 import { showDevErrorDialog } from '../../utils/devErrorDialog';
 import {
   approveAppServerControlRequest,
   declineAppServerControlRequest,
+  selectAppServerControlPermissionOption,
   resolveAppServerControlUserInput,
   type AppServerControlHistoryRequestSummary,
 } from '../../api/client';
@@ -27,35 +29,86 @@ export type ApprovalDetailPresentation = {
   tool: string | null;
 };
 
-export function parseApprovalDetail(detail: string | null | undefined): ApprovalDetailPresentation {
-  const value = detail?.trim();
-  if (!value) {
-    return { summary: null, technicalDetail: null, tool: null };
+export function parseApprovalDetail(
+  detail: string | null | undefined,
+  purpose?: string | null,
+  approvalTool?: string | null,
+): ApprovalDetailPresentation {
+  const value = detail?.trim() || null;
+  const summary = purpose?.trim() || null;
+  const tool = approvalTool?.trim() || null;
+  if (!value || summary || tool) {
+    return { summary, technicalDetail: value === summary ? null : value, tool };
   }
 
-  const match = /^([^:\r\n]{1,80}):\s*(\{[\s\S]*\})$/.exec(value);
-  if (!match) {
-    return { summary: value, technicalDetail: null, tool: null };
-  }
-  const [, rawTool = '', rawInput = ''] = match;
-  const tool = rawTool.trim();
-  if (!tool || !rawInput) {
-    return { summary: value, technicalDetail: null, tool: null };
+  return parseStoredApprovalDetail(value);
+}
+
+function parseStoredApprovalDetail(value: string): ApprovalDetailPresentation {
+  const legacyAcp = /^([^\r\n]{1,160})\r?\n(\{[\s\S]*\})$/.exec(value);
+  const structured = legacyAcp ?? /^([^:\r\n]{1,80}):\s*(\{[\s\S]*\})$/.exec(value);
+  if (structured) {
+    const [, rawTool = '', rawInput = ''] = structured;
+    return parseStoredApprovalInput(rawTool.trim(), rawInput, Boolean(legacyAcp));
   }
 
+  const legacyReason = /^Reason:[ \t]*(.+)$/m.exec(value)?.[1]?.trim() ?? null;
+  return { summary: legacyReason, technicalDetail: value, tool: null };
+}
+
+function parseStoredApprovalInput(
+  tool: string,
+  rawInput: string,
+  legacyAcp: boolean,
+): ApprovalDetailPresentation {
   try {
-    const input = JSON.parse(rawInput) as Record<string, unknown>;
-    const summary = readApprovalString(input, 'description', 'file_path', 'url', 'pattern');
+    const parsed = JSON.parse(rawInput) as Record<string, unknown>;
+    const input = (parsed.rawInput ?? parsed) as Record<string, unknown>;
+    const summary = readApprovalString(
+      input,
+      'toolSummary',
+      'ToolSummary',
+      'purpose',
+      'description',
+      'reason',
+      'file_path',
+      'url',
+      'pattern',
+    );
+    const command = readApprovalString(
+      input,
+      'CommandLine',
+      'commandLine',
+      'command',
+      'cmd',
+      'script',
+    );
     const technicalDetail =
-      readApprovalString(input, 'command', 'cmd', 'path', 'file_path', 'url') ??
+      command ??
+      readApprovalString(input, 'path', 'file_path', 'url') ??
       JSON.stringify(input, null, 2);
     return {
       summary,
       technicalDetail: technicalDetail === summary ? null : technicalDetail,
-      tool,
+      tool: command ? null : tool,
     };
   } catch {
-    return { summary: value, technicalDetail: null, tool: null };
+    return {
+      summary: legacyAcp ? readRetainedApprovalPurpose(rawInput) : null,
+      technicalDetail: rawInput,
+      tool: legacyAcp ? null : tool,
+    };
+  }
+}
+
+function readRetainedApprovalPurpose(rawInput: string): string | null {
+  // Older hosts can compact the serialized request inside the script value.
+  const capture = /"(?:toolSummary|ToolSummary|purpose)"\s*:\s*("(?:[^"\\]|\\.)*")/.exec(rawInput);
+  if (!capture?.[1]) return null;
+  try {
+    return (JSON.parse(capture[1]) as string).trim() || null;
+  } catch {
+    return null;
   }
 }
 
@@ -136,6 +189,10 @@ function createUserInputRequestForm(args: {
   const activeQuestion = request.questions[activeQuestionIndex];
   const form = document.createElement('form');
   form.className = 'agent-request-form';
+  form.dataset.questionRequestId = request.requestId;
+  form.dataset.questionAnswerActive = String(
+    getQuestionAnswer(sessionId)?.requestId === request.requestId,
+  );
   if (!activeQuestion) {
     return form;
   }
@@ -244,6 +301,24 @@ function createApprovalButtonRow(
   const buttonRow = document.createElement('div');
   buttonRow.className = 'agent-request-button-row';
 
+  if (request.permissionOptions?.length) {
+    for (const option of request.permissionOptions) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className =
+        option.kind === 'allow_once' ? 'agent-view-btn agent-view-btn-primary' : 'agent-view-btn';
+      button.disabled = busy;
+      button.textContent = option.name;
+      button.addEventListener('click', () => {
+        void runRequestAction(deps, appServerControlText, sessionId, request.requestId, () =>
+          selectAppServerControlPermissionOption(sessionId, request.requestId, option.optionId),
+        );
+      });
+      buttonRow.appendChild(button);
+    }
+    return buttonRow;
+  }
+
   const approve = document.createElement('button');
   approve.type = 'button';
   approve.className = 'agent-view-btn agent-view-btn-primary';
@@ -268,7 +343,8 @@ function createApprovalButtonRow(
     );
   });
 
-  buttonRow.append(decline, approve);
+  buttonRow.appendChild(decline);
+  if (request.permissionOptions == null) buttonRow.appendChild(approve);
   return buttonRow;
 }
 
@@ -287,8 +363,11 @@ function createRequestPanelHeader(
   eyebrow.textContent = summarizeRequestEyebrow(request, appServerControlText);
   topRow.appendChild(eyebrow);
 
-  const approvalDetail = request.kind === 'interview' ? null : parseApprovalDetail(request.detail);
-  if (approvalDetail?.tool) {
+  const approvalDetail =
+    request.kind === 'interview'
+      ? { summary: null, technicalDetail: null, tool: null }
+      : parseApprovalDetail(request.detail, request.approvalPurpose, request.approvalTool);
+  if (approvalDetail.tool) {
     const tool = document.createElement('span');
     tool.className = 'agent-request-tool';
     tool.textContent = approvalDetail.tool;
@@ -300,9 +379,9 @@ function createRequestPanelHeader(
   const summary = document.createElement('p');
   summary.className = 'agent-request-summary';
   summary.textContent =
-    request.state === 'open' && approvalDetail
-      ? (approvalDetail.summary ??
-        appServerControlFormat(
+    approvalDetail.summary ??
+    (request.state === 'open' && request.kind !== 'interview'
+      ? appServerControlFormat(
           'appServerControl.request.toolAction',
           '{tool} wants to perform an action.',
           {
@@ -310,13 +389,13 @@ function createRequestPanelHeader(
               approvalDetail.tool ??
               appServerControlText('appServerControl.request.toolFallback', 'The agent'),
           },
-        ))
-      : summarizeRequestInterruption(request, appServerControlText, appServerControlFormat);
+        )
+      : summarizeRequestInterruption(request, appServerControlText, appServerControlFormat));
   if (!isCancelledRequest(request)) {
     header.appendChild(summary);
   }
 
-  if (approvalDetail?.technicalDetail) {
+  if (approvalDetail.technicalDetail) {
     const disclosure = document.createElement('details');
     disclosure.className = 'agent-request-technical';
     const label = document.createElement('summary');
@@ -325,7 +404,10 @@ function createRequestPanelHeader(
       'Technical details',
     );
     const detail = document.createElement('pre');
-    detail.textContent = approvalDetail.technicalDetail;
+    detail.tabIndex = 0;
+    const code = document.createElement('code');
+    code.textContent = approvalDetail.technicalDetail;
+    detail.appendChild(code);
     disclosure.append(label, detail);
     header.appendChild(disclosure);
   } else if (
@@ -592,12 +674,14 @@ function createQuestionField(args: {
     return wrapper;
   }
 
-  const input = document.createElement('input');
-  input.type = question.isSecret ? 'password' : 'text';
-  if (question.isSecret) {
-    input.autocomplete = 'off';
-    input.spellcheck = false;
+  if (!question.isSecret) {
+    appendPromptAnswer(wrapper, args, draftValue);
+    return wrapper;
   }
+  const input = document.createElement('input');
+  input.type = 'password';
+  input.autocomplete = 'off';
+  input.spellcheck = false;
   input.name = question.id;
   input.className = 'agent-request-input';
   input.placeholder = appServerControlText('appServerControl.request.typeAnswer', 'Type answer');
@@ -608,7 +692,7 @@ function createQuestionField(args: {
       sessionId,
       request.requestId,
       question.id,
-      [question.isSecret ? input.value : input.value.trim()],
+      [input.value],
       false,
     );
   });
@@ -680,6 +764,15 @@ function createQuestionChoiceList(args: {
       const custom = options.querySelector<HTMLInputElement>('.agent-request-custom-input');
       if (custom?.value.trim())
         nextAnswers.push(question.isSecret ? custom.value : custom.value.trim());
+      if (!custom)
+        nextAnswers.push(
+          ...(
+            deps.getState(sessionId)?.requestDraftAnswersById[request.requestId]?.[question.id] ??
+            []
+          ).filter(
+            (value) => !question.options.some((option) => (option.value ?? option.label) === value),
+          ),
+        );
       updateRequestDraftAnswers(deps, sessionId, request.requestId, question.id, nextAnswers);
     });
     optionLabel.appendChild(input);
@@ -708,9 +801,11 @@ function createQuestionChoiceList(args: {
     options.appendChild(optionLabel);
   }
 
-  if (question.allowCustomAnswer) {
+  if (question.allowCustomAnswer && !question.isSecret) {
+    appendPromptAnswer(options, args, selectedAnswers);
+  } else if (question.allowCustomAnswer) {
     const custom = document.createElement('input');
-    custom.type = question.isSecret ? 'password' : 'text';
+    custom.type = 'password';
     custom.name = question.id + ':custom';
     if (question.isSecret) {
       custom.autocomplete = 'off';
@@ -737,6 +832,97 @@ function createQuestionChoiceList(args: {
     options.appendChild(custom);
   }
   return options;
+}
+
+function appendPromptAnswer(
+  host: HTMLElement,
+  args: Parameters<typeof createPromptAnswerButton>[0],
+  answers: readonly string[],
+): void {
+  const custom = answers.filter(
+    (value) => !args.question.options.some((option) => (option.value ?? option.label) === value),
+  );
+  if (custom.length) {
+    const summary = document.createElement('p');
+    summary.className = 'agent-request-custom-answer';
+    summary.textContent = custom.join('\n');
+    host.appendChild(summary);
+  }
+  host.appendChild(createPromptAnswerButton(args));
+}
+
+function createPromptAnswerButton(args: {
+  deps: AgentHistoryRequestDomDeps;
+  appServerControlText: AppServerControlText;
+  question: AppServerControlHistoryRequestSummary['questions'][number];
+  request: AppServerControlHistoryRequestSummary;
+  sessionId: string;
+}): HTMLButtonElement {
+  const { deps, appServerControlText, question, request, sessionId } = args;
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'agent-view-btn agent-request-prompt-answer';
+  button.textContent = appServerControlText(
+    'appServerControl.request.answerInPrompt',
+    'Answer in prompt box',
+  );
+  button.addEventListener('click', () => {
+    const isCurrent = (): boolean => {
+      const current = deps
+        .getState(sessionId)
+        ?.snapshot?.requests.find((item) => item.requestId === request.requestId);
+      return current?.state === 'open' && current.questions.some((item) => item.id === question.id);
+    };
+    beginQuestionAnswer(sessionId, {
+      requestId: request.requestId,
+      questionId: question.id,
+      question: question.question,
+      isCurrent,
+      answer: async (text) => {
+        const state = deps.getState(sessionId);
+        if (!state || !isCurrent() || state.requestBusyIds.has(request.requestId))
+          throw new Error(
+            appServerControlText(
+              'appServerControl.request.noLongerOpen',
+              'This question is no longer open.',
+            ),
+          );
+        const draft = ensureRequestDraftAnswers(state, request);
+        const choices = question.multiSelect
+          ? (draft[question.id] ?? []).filter((value) =>
+              question.options.some((option) => (option.value ?? option.label) === value),
+            )
+          : [];
+        updateRequestDraftAnswers(
+          deps,
+          sessionId,
+          request.requestId,
+          question.id,
+          [...choices, text],
+          false,
+        );
+        const unanswered = request.questions.findIndex(
+          (item) => !hasDraftAnswerForQuestion(draft, item),
+        );
+        if (unanswered >= 0) {
+          setActiveRequestQuestionIndex(deps, sessionId, request.requestId, unanswered);
+          return;
+        }
+        state.requestBusyIds.add(request.requestId);
+        deps.renderCurrentAgentView(sessionId);
+        try {
+          await resolveAppServerControlUserInput(sessionId, request.requestId, {
+            answers: collectQuestionAnswers(state, request),
+          });
+          await deps.refreshAppServerControlSnapshot(sessionId);
+        } finally {
+          state.requestBusyIds.delete(request.requestId);
+          deps.renderCurrentAgentView(sessionId);
+        }
+      },
+    });
+  });
+  return button;
 }
 
 function collectQuestionAnswers(

@@ -168,7 +168,7 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime
                 ItemType = NormalizeToolItemType(title),
                 Title = title,
                 IsPlanReview = !string.IsNullOrWhiteSpace(plan),
-                Presentation = AppServerControlToolPresentationProjector.FromClaude(title, "in_progress", Traverse(block, "input"))
+                Presentation = AppServerControlToolPresentationProjector.FromClaude(title, "in_progress", Traverse(block, "input"), _mcpTools.Resolve)
             };
             _tools[id] = tool;
             _emit(CreateEvent("item.started", _activeTurnId, id, null, "claude.agent-sdk", "history", entry,

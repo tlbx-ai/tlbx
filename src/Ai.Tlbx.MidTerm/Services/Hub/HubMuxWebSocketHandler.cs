@@ -41,7 +41,10 @@ public sealed class HubMuxWebSocketHandler
             return;
         }
 
-        using var localSocket = await context.WebSockets.AcceptWebSocketAsync();
+        using var localSocket = await context.WebSockets.AcceptWebSocketAsync(new WebSocketAcceptContext
+        {
+            DangerousEnableCompression = true
+        });
         using var remoteSocket = new ClientWebSocket();
         var machine = _hubService.GetMachine(machineId);
         if (machine is null)

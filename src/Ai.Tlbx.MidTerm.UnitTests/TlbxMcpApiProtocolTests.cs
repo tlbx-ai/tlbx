@@ -77,6 +77,25 @@ public sealed class TlbxMcpApiProtocolTests
     }
 
     [Fact]
+    public void NotificationPriorityIsOptionalAndOffersOnlyNamedValues()
+    {
+        var operation = Operation("notification_send");
+        var schema = operation.BuildSchema();
+        var priority = schema["properties"]!["priority"]!;
+        Assert.Equal("string", priority["type"]!.GetValue<string>());
+        Assert.Equal(
+            ["normal", "important"],
+            priority["enum"]!.AsArray().Select(value => value!.GetValue<string>()),
+            StringComparer.Ordinal);
+        Assert.DoesNotContain(schema["required"]!.AsArray(), value => value!.GetValue<string>() == "priority");
+
+        var explicitNull = operation.Bind(Args("""{"body":"hello","priority":null}"""), "self");
+        var body = JsonNode.Parse(explicitNull.Body!)!.AsObject();
+        Assert.True(body.ContainsKey("priority"));
+        Assert.Null(body["priority"]);
+    }
+
+    [Fact]
     public void OmittedBodyFieldsRemainOmittedAndFixedPromptModeCannotBeOverridden()
     {
         var operation = Operation("board_update");
@@ -160,5 +179,116 @@ public sealed class TlbxMcpApiProtocolTests
             Assert.Equal("TLBX_MCP_CLIENT_LOCAL_REQUIRED", localWait.StructuredContent!.Value.GetProperty("errorCode").GetString());
         }
         finally { await app.StopAsync(ct); }
+    }
+
+    [Fact]
+    public void AgentHistoryAndRepoWriteOperationsDefaultToCompactPayloads()
+    {
+        var historyDefault = Operation("agent_history").Bind(Args("""{"targetSessionId":"s1","count":5}"""), "self");
+        Assert.Equal("false", Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(historyDefault.Query.Value!)["includeMetadata"].ToString());
+
+        var historyFull = Operation("agent_history").Bind(Args("""{"targetSessionId":"s1","includeMetadata":true}"""), "self");
+        Assert.Equal("true", Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(historyFull.Query.Value!)["includeMetadata"].ToString());
+
+        var bindDefault = Operation("repo_bind").Bind(Args("""{"path":"Q:\\repos\\tlbx-1"}"""), "self");
+        Assert.Equal("false", Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(bindDefault.Query.Value!)["details"].ToString());
+
+        var refreshDefault = Operation("repo_refresh").Bind(Args("""{}"""), "self");
+        Assert.Equal("false", Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(refreshDefault.Query.Value!)["details"].ToString());
+    }
+
+    [Fact]
+    public void ProjectHistoryWindowOmitsLargeMetadataWhenIncludeMetadataIsFalse()
+    {
+        var full = new AppServerControlHistoryWindowResponse
+        {
+            SessionId = "s1",
+            Provider = "antigravity",
+            LatestSequence = 12,
+            HistoryCount = 1,
+            HistoryWindowStart = 0,
+            HistoryWindowEnd = 1,
+            Session = new()
+            {
+                AgentName = "Google Antigravity",
+                State = "ready",
+                AvailableCommands = [new() { Name = "goal", Description = "Long description" }]
+            },
+            Thread = new() { ThreadId = "t1", State = "active" },
+            CurrentTurn = new() { TurnId = "turn-1", State = "completed" },
+            QuickSettings = new()
+            {
+                Model = "gemini-3.8-flash",
+                Effort = "low",
+                ModelOptions = [new() { Value = "gemini-3.8-flash", Label = "Flash" }],
+                EffortOptions = [new() { Value = "low", Label = "Low" }],
+                ConfigOptions = [JsonElement.Parse("""{"id":"mode","name":"Mode"}""")]
+            },
+            Streams = new() { AssistantText = "hello" },
+            History = [new() { EntryId = "e1", Order = 1, Kind = "assistant", Body = "hello" }],
+            Items = [new() { ItemId = "i1", ItemType = "assistant_message", Detail = "hello" }],
+            Requests = [new() { RequestId = "r1", TurnId = "turn-1", State = "open", Detail = "Approve" }],
+            Notices = [new() { EventId = "n1", Type = "agent.state", Message = "metadata", Detail = new string('x', 5000) }]
+        };
+
+        Assert.Same(full, SessionApiEndpoints.ProjectHistoryWindow(full, includeMetadata: true));
+
+        var compact = SessionApiEndpoints.ProjectHistoryWindow(full, includeMetadata: false);
+        Assert.True(compact.Session.AvailableCommandsOmitted);
+        Assert.Empty(compact.Session.AvailableCommands);
+        Assert.True(compact.QuickSettings.OptionsOmitted);
+        Assert.Empty(compact.QuickSettings.ModelOptions);
+        Assert.Empty(compact.QuickSettings.EffortOptions);
+        Assert.Empty(compact.QuickSettings.ConfigOptions);
+        Assert.Equal("gemini-3.8-flash", compact.QuickSettings.Model);
+        Assert.True(compact.Streams.StreamsOmitted);
+        Assert.Empty(compact.Streams.AssistantText);
+        Assert.Empty(compact.Items);
+        Assert.Empty(compact.Notices);
+        Assert.Equal("hello", Assert.Single(compact.History).Body);
+        Assert.Equal("r1", Assert.Single(compact.Requests).RequestId);
+    }
+
+    [Fact]
+    public void SupervisorTreatsCatalogAcpSessionsAsIdleInsteadOfMissingCli()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "tlbx-sup-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+        try
+        {
+            var settings = new Settings.SettingsService(tempDir);
+            var catalog = new AcpAgentCatalogService(settings);
+            var heatService = new SessionHeatService(new SessionTelemetryService(), new EmptyHeatSource());
+            var supervisor = new SessionSupervisorService(
+                heatService,
+                new AiCliProfileService(),
+                appServerControlHostRuntime: null,
+                acpAgentCatalog: catalog);
+
+            var session = new Models.Sessions.SessionInfoDto
+            {
+                Id = "agy-1",
+                IsRunning = true,
+                AgentControlled = true,
+                AppServerControlOnly = true,
+                ProfileHint = "antigravity",
+                ForegroundName = "shell"
+            };
+
+            var info = supervisor.Describe(session);
+            Assert.Equal(SessionSupervisorService.IdlePromptState, info.State);
+            Assert.False(info.NeedsAttention);
+            Assert.Null(info.AttentionReason);
+        }
+        finally
+        {
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    private sealed class EmptyHeatSource : ISessionAppServerControlHeatSource
+    {
+        public event Action<string>? TextActivity { add { } remove { } }
+        public SessionAppServerControlHeatSnapshot GetHeatSnapshot(string sessionId) => new();
     }
 }
