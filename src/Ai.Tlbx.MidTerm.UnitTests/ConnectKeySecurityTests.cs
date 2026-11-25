@@ -20,7 +20,7 @@ public sealed class ConnectKeySecurityTests
 
     internal static ConnectPeerAuthentication CreateAuthenticatedPeer()
     {
-        var generated = ConnectKeyProtocol.Generate("https://connect.tlbx.ai", "fixture");
+        var generated = ConnectKeyProtocol.Generate("https://lnk.tlbx.ai", "fixture");
         var peer = new ConnectPeerAuthentication(generated.Configuration, "fixture-connection");
         peer.SetOffer(Sdp('a')); peer.SetAnswer(Sdp('b'));
         var challenge = peer.CreateChallenge();
@@ -31,7 +31,7 @@ public sealed class ConnectKeySecurityTests
 
     internal static ConnectPeerAuthentication CreateUnauthenticatedPeer(out Func<string, string> signChallenge)
     {
-        var generated = ConnectKeyProtocol.Generate("https://connect.tlbx.ai", "fixture");
+        var generated = ConnectKeyProtocol.Generate("https://lnk.tlbx.ai", "fixture");
         var peer = new ConnectPeerAuthentication(generated.Configuration, "fixture-connection");
         peer.SetOffer(Sdp('a')); peer.SetAnswer(Sdp('b'));
         var privateKey = generated.Downloads.AccessKey.PrivateKey;
@@ -46,7 +46,7 @@ public sealed class ConnectKeySecurityTests
     [Fact]
     public void GeneratedRegistrationHasStandardP256SignatureAndSeparateAccessPrivateKey()
     {
-        var (configuration, downloads) = ConnectKeyProtocol.Generate("https://connect.tlbx.ai", "fixture");
+        var (configuration, downloads) = ConnectKeyProtocol.Generate("https://lnk.tlbx.ai", "fixture");
         var payload = ConnectKeyProtocol.Decode(downloads.Registration.Payload);
         var registration = JsonSerializer.Deserialize(payload, ConnectJsonContext.Default.ConnectRegistrationPayload)!;
         using var host = ConnectKeyProtocol.PublicKey(registration.HostPublicKey);
@@ -57,14 +57,14 @@ public sealed class ConnectKeySecurityTests
         Assert.Equal(Convert.ToHexStringLower(SHA256.HashData(host.ExportSubjectPublicKeyInfo()))[..32], configuration.DeviceId);
         Assert.NotEqual(configuration.HostPrivateKey, downloads.AccessKey.PrivateKey, StringComparer.Ordinal);
         Assert.DoesNotContain(configuration.HostPrivateKey, JsonSerializer.Serialize(downloads, ConnectJsonContext.Default.ConnectGenerateResponse), StringComparison.Ordinal);
-        var replacement = ConnectKeyProtocol.Generate("https://connect.tlbx.ai", "fixture");
+        var replacement = ConnectKeyProtocol.Generate("https://lnk.tlbx.ai", "fixture");
         Assert.NotEqual(configuration.DeviceId, replacement.Configuration.DeviceId, StringComparer.Ordinal);
     }
 
     [Fact]
     public void PeerChallengePinsBothFingerprintsAndAcceptsOnlyOneCorrectProof()
     {
-        var generated = ConnectKeyProtocol.Generate("https://connect.tlbx.ai", "fixture");
+        var generated = ConnectKeyProtocol.Generate("https://lnk.tlbx.ai", "fixture");
         var peer = new ConnectPeerAuthentication(generated.Configuration, "connection-one");
         peer.SetOffer(Sdp('a')); peer.SetAnswer(Sdp('b'));
         var challenge = peer.CreateChallenge();
@@ -96,7 +96,7 @@ public sealed class ConnectKeySecurityTests
     public void ConflictingFingerprintsAndRepeatedOfferAreRejected()
     {
         Assert.Throws<InvalidDataException>(() => ConnectKeyProtocol.Fingerprint(Sdp('a') + Sdp('b')));
-        var generated = ConnectKeyProtocol.Generate("https://connect.tlbx.ai", "fixture");
+        var generated = ConnectKeyProtocol.Generate("https://lnk.tlbx.ai", "fixture");
         var peer = new ConnectPeerAuthentication(generated.Configuration, "connection");
         peer.SetOffer(Sdp('a'));
         Assert.Throws<InvalidDataException>(() => peer.SetOffer(Sdp('b')));
@@ -105,7 +105,7 @@ public sealed class ConnectKeySecurityTests
     [Fact]
     public void ExpiredProofAndProofFromAnotherAccessKeyAreRejected()
     {
-        var generated = ConnectKeyProtocol.Generate("https://connect.tlbx.ai", "fixture");
+        var generated = ConnectKeyProtocol.Generate("https://lnk.tlbx.ai", "fixture");
         var clock = new FakeTimeProvider();
         var peer = new ConnectPeerAuthentication(generated.Configuration, "connection", clock);
         peer.SetOffer(Sdp('a')); peer.SetAnswer(Sdp('b'));
@@ -123,13 +123,13 @@ public sealed class ConnectKeySecurityTests
     }
 
     [Theory]
-    [InlineData("browser", "https://connect.tlbx.ai", 60)]
+    [InlineData("browser", "https://lnk.tlbx.ai", 60)]
     [InlineData("host", "https://other.test", 60)]
-    [InlineData("host", "https://connect.tlbx.ai", -1)]
-    [InlineData("host", "https://connect.tlbx.ai", 600)]
+    [InlineData("host", "https://lnk.tlbx.ai", -1)]
+    [InlineData("host", "https://lnk.tlbx.ai", 600)]
     public void HostNeverSignsAnUnboundOrExpiredPortalChallenge(string role, string origin, int expiry)
     {
-        var generated = ConnectKeyProtocol.Generate("https://connect.tlbx.ai", "fixture");
+        var generated = ConnectKeyProtocol.Generate("https://lnk.tlbx.ai", "fixture");
         var payload = new ConnectAuthenticationPayload("tlbx-connect-auth", 1, role, origin, generated.Configuration.DeviceId,
             ConnectKeyProtocol.Encode(RandomNumberGenerator.GetBytes(32)), DateTimeOffset.UtcNow.AddSeconds(expiry).ToUnixTimeSeconds());
         var encoded = ConnectKeyProtocol.Encode(JsonSerializer.SerializeToUtf8Bytes(payload, ConnectJsonContext.Default.ConnectAuthenticationPayload));
@@ -259,7 +259,7 @@ public sealed class ConnectKeySecurityTests
         try
         {
             var settings = new SettingsService(directory); var auth = new AuthService(settings, new ApiKeyService(settings));
-            var generated = ConnectKeyProtocol.Generate("https://connect.tlbx.ai", "fixture");
+            var generated = ConnectKeyProtocol.Generate("https://lnk.tlbx.ai", "fixture");
             var peer = new ConnectPeerAuthentication(generated.Configuration, "connection"); peer.SetOffer(Sdp('a')); peer.SetAnswer(Sdp('b'));
             var envelopes = new List<ConnectEnvelope>(); var receive = new ConnectFrames();
             using var envelopeSignal = new SemaphoreSlim(0);
