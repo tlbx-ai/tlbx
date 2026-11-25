@@ -106,6 +106,7 @@ import {
 import { linkAndReplayRemoteBookmark } from './modules/history/remoteBookmarkLaunch';
 import { buildLocalBookmarkLaunchRequest } from './modules/history/bookmarkLaunch';
 import {
+  getAgentDisplayName,
   isAppServerControlHistoryEntry,
   normalizeHistoryAppServerControlProfile,
 } from './modules/history/launchMode';
@@ -387,8 +388,8 @@ async function init(): Promise<void> {
       void spawnFromHistory(entry);
     },
     (entryId, newLabel) => {
-      const session = $sessionList.get().find((candidate) => candidate.bookmarkId === entryId);
-      if (session) {
+      const sessions = $sessionList.get().filter((candidate) => candidate.bookmarkId === entryId);
+      for (const session of sessions) {
         renameSession(session.id, newLabel || null);
       }
     },
@@ -973,8 +974,14 @@ async function spawnFromHistory(
   try {
     const { cols, rows } = await resolveLaunchDimensions($currentSettings.get(), 'history');
     const appServerControlBookmark = isAppServerControlHistoryEntry(entry);
+    const normalizedProfile = normalizeHistoryAppServerControlProfile(entry.profile);
     pendingSessionId = createPendingSession(cols, rows, {
-      name: entry.label || entry.foregroundProcessDisplayName || entry.executable || 'Starting…',
+      name:
+        entry.label ||
+        (appServerControlBookmark
+          ? getAgentDisplayName(normalizedProfile)
+          : entry.foregroundProcessDisplayName || entry.executable || entry.shellType) ||
+        'Starting…',
       currentDirectory: entry.workingDirectory,
       shellType: entry.shellType,
       bookmarkId: entry.id,
@@ -1009,16 +1016,15 @@ async function spawnFromHistory(
     }
 
     if (appServerControlBookmark) {
-      const profile = normalizeHistoryAppServerControlProfile(entry.profile);
-      if (profile) {
+      if (normalizedProfile) {
         const { data } = await bootstrapWorker({
           cols,
           rows,
-          shell: resolveLauncherShell(),
+          shell: entry.shellType || resolveLauncherShell(),
           workingDirectory: entry.workingDirectory || null,
           agentControlled: false,
           injectGuidance: true,
-          profile,
+          profile: normalizedProfile,
           appServerControlOnly: true,
           launchDelayMs: 0,
           slashCommands: [],

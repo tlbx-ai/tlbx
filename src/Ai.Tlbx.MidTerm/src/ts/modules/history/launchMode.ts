@@ -43,12 +43,10 @@ export function resolveSessionHistoryMode(session: HistoryModeSessionLike): {
     const profile = normalizeHistoryAppServerControlProfile(
       session.profileHint ?? session.supervisor?.profile,
     );
-    if (profile) {
-      return {
-        launchMode: 'appServerControl',
-        profile,
-      };
-    }
+    return {
+      launchMode: 'appServerControl',
+      profile,
+    };
   }
 
   return {
@@ -110,8 +108,10 @@ export function getHistoryModeBadgeText(entry: HistoryModeEntry): string {
   return getAgentBadge(profile);
 }
 
-function getAgentDisplayName(profile: HistoryAppServerControlProfile | null): string {
+export function getAgentDisplayName(profile: HistoryAppServerControlProfile | null): string {
   if (profile === 'codex') return t('sessionLauncher.codexTitle');
+  if (profile === 'claude') return t('sessionLauncher.claudeTitle');
+  if (profile === 'antigravity' || profile === 'agy') return 'Antigravity';
   if (profile === 'grok') return 'Grok Build';
   if (profile === 'opencode') return 'OpenCode';
   if (profile === 'gemini') return 'Gemini CLI';
@@ -119,8 +119,10 @@ function getAgentDisplayName(profile: HistoryAppServerControlProfile | null): st
   return profile || t('sessionTabs.agent');
 }
 
-function getAgentBadge(profile: HistoryAppServerControlProfile | null): string {
+export function getAgentBadge(profile: HistoryAppServerControlProfile | null): string {
   if (profile === 'codex') return 'CDX';
+  if (profile === 'claude') return 'CLD';
+  if (profile === 'antigravity' || profile === 'agy') return 'AGY';
   if (profile === 'grok') return 'GRK';
   if (profile === 'opencode') return 'OPC';
   if (profile === 'gemini') return 'GEM';
