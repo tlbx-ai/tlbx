@@ -176,10 +176,10 @@ public sealed class ConnectProtocolTests
         Assert.False(ConnectRequestPolicy.AllowHeader(header));
 
     [Theory]
-    [InlineData("http://connect.tlbx.ai")]
-    [InlineData("https://user:password@connect.tlbx.ai")]
-    [InlineData("https://connect.tlbx.ai/another/path")]
-    [InlineData("https://connect.tlbx.ai/?token=secret")]
+    [InlineData("http://lnk.tlbx.ai")]
+    [InlineData("https://user:password@lnk.tlbx.ai")]
+    [InlineData("https://lnk.tlbx.ai/another/path")]
+    [InlineData("https://lnk.tlbx.ai/?token=secret")]
     public void PairingRejectsInsecureOrAmbiguousOrigins(string origin) =>
         Assert.Throws<ArgumentException>(() => ConnectRequestPolicy.NormalizeServerUrl(origin));
 
@@ -195,7 +195,6 @@ public sealed class ConnectProtocolTests
         Assert.Equal("https://lnk.tlbx.ai/", ConnectRequestPolicy.NormalizeServerUrl(origin).AbsoluteUri);
 
     [Theory]
-    [InlineData("https://connect.tlbx.ai")]
     [InlineData("https://lnk.tlbx.ai")]
     [InlineData("https://link.example.test:8443")]
     public void PairingPreservesExplicitConfiguredOrigins(string origin) =>
