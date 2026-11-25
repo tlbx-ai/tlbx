@@ -56,7 +56,11 @@ internal static class ConnectSetupPage
           state = next;
           translateState();
           if (state.name) find('name').value = state.name;
-          if (state.serverUrl) find('server').value = state.serverUrl;
+          let serverUrl = 'https://lnk.tlbx.ai';
+          if (state.serverUrl) {
+            try { const parsed = new URL(state.serverUrl); if (parsed.hostname.toLowerCase() !== 'connect.tlbx.ai') serverUrl = state.serverUrl; } catch {}
+          }
+          find('server').value = serverUrl;
           find('disconnect').hidden = !state.configured;
           find('replacement').hidden = !state.configured;
         }

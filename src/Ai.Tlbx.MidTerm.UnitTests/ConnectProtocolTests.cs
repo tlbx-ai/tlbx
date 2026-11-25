@@ -191,7 +191,8 @@ public sealed class ConnectProtocolTests
     [InlineData(null)]
     [InlineData("")]
     [InlineData("  ")]
-    public void NewPairingDefaultsToLinkOrigin(string? origin) =>
+    [InlineData("https://connect.tlbx.ai")]
+    public void NewPairingDefaultsAndUpgradesObsoleteOriginToLinkOrigin(string? origin) =>
         Assert.Equal("https://lnk.tlbx.ai/", ConnectRequestPolicy.NormalizeServerUrl(origin).AbsoluteUri);
 
     [Theory]
