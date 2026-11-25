@@ -52,6 +52,7 @@ internal sealed class ConnectEnvelope
     public string? AcceptBodyEncoding { get; set; }
     public string? BodyEncoding { get; set; }
     public bool? BulkHttp { get; set; }
+    public bool? BinaryFrames { get; set; }
     public int? Status { get; set; }
     public string[]? Protocols { get; set; }
     public string? Protocol { get; set; }

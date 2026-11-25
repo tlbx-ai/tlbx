@@ -135,6 +135,41 @@ public sealed class ConnectWebSocketRelayTests
         Assert.Equal(repeated, targetSocket.LastSentBytes);
     }
 
+    [Fact]
+    public async Task BinaryModeRelaySendsRawCompressedBytesAndDispatchesRawInboundBytes()
+    {
+        using var socket = new FakeSocket();
+        var repeated = System.Text.Encoding.UTF8.GetBytes(new string('B', 2048));
+        socket.EnqueueData(repeated, end: true);
+        socket.EnqueueClose(WebSocketCloseStatus.NormalClosure);
+        var jsonMessages = new ConcurrentQueue<ConnectEnvelope>();
+        var binaryMessages = new ConcurrentQueue<(ConnectEnvelope Meta, byte[] Payload)>();
+        await using var relay = new ConnectWebSocketRelay(
+            socket,
+            "socket",
+            (message, _) => { jsonMessages.Enqueue(message); return Task.CompletedTask; },
+            maximumBody: 8192,
+            gzipOutbound: true,
+            sendBinary: (meta, payload, _) => { binaryMessages.Enqueue((meta, payload.ToArray())); return Task.CompletedTask; });
+        relay.ReceiveTask = relay.ReceiveAsync(TestContext.Current.CancellationToken);
+        await relay.ReceiveTask.WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
+
+        var (meta, payload) = Assert.Single(binaryMessages);
+        Assert.Equal("ws-data", meta.Type);
+        Assert.Null(meta.Data);
+        Assert.Equal("gzip", meta.BodyEncoding);
+        Assert.True(payload.Length < repeated.Length / 4);
+
+        using var targetSocket = new FakeSocket();
+        await using var inboundRelay = new ConnectWebSocketRelay(
+            targetSocket,
+            "socket",
+            (_, _) => Task.CompletedTask,
+            maximumBody: 8192);
+        await inboundRelay.DispatchAsync(meta, TestContext.Current.CancellationToken, payload);
+        Assert.Equal(repeated, targetSocket.LastSentBytes);
+    }
+
     private static ConnectWebSocketRelay Create(FakeSocket socket, ConcurrentQueue<ConnectEnvelope> messages) =>
         new(socket, "socket", (message, _) => { messages.Enqueue(message); return Task.CompletedTask; }, maximumBody: 1024);
 

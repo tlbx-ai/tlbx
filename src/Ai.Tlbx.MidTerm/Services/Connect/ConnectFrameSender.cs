@@ -5,7 +5,7 @@ internal sealed class ConnectFrameSender(
     Func<ReadOnlyMemory<byte>, CancellationToken, Task> send,
     CancellationToken lifetime) : IDisposable
 {
-    internal const int FragmentPayloadSize = 1024;
+    internal const int FragmentPayloadSize = 8192;
     internal const int BulkFragmentPayloadSize = 8192;
     internal const int InteractiveMessageSize = 16 * 1024;
     private const int InteractiveBurst = 8;
@@ -17,7 +17,7 @@ internal sealed class ConnectFrameSender(
     private TaskCompletionSource? _bulkTurn;
     private int _interactivePending, _interactiveAllowance;
 
-    public async Task SendAsync(byte[] message, CancellationToken ct)
+    public async Task SendAsync(byte[] message, CancellationToken ct, byte version = ConnectFrames.JsonFrameVersion)
     {
         // Only one message per lane may be partially delivered. Together they stay
         // below the existing receiver's eight-assembly / 64 MiB limits, even when
@@ -37,7 +37,7 @@ internal sealed class ConnectFrameSender(
             // cannot monopolize the shared incoming-frame dispatcher.
             await Task.Yield();
             var started = false;
-            foreach (var frame in _frames.Encode(message, FragmentPayloadSize))
+            foreach (var frame in _frames.Encode(message, FragmentPayloadSize, version))
             {
                 // Once the first fragment is sent, finish its assembly unless the
                 // entire peer ends. A caller timeout must not strand half a message.
@@ -59,13 +59,13 @@ internal sealed class ConnectFrameSender(
         }
     }
 
-    public async Task SendBulkAsync(byte[] message, Func<ReadOnlyMemory<byte>, CancellationToken, Task> sendBulk, CancellationToken ct)
+    public async Task SendBulkAsync(byte[] message, Func<ReadOnlyMemory<byte>, CancellationToken, Task> sendBulk, CancellationToken ct, byte version = ConnectFrames.JsonFrameVersion)
     {
         await _bulkGate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
             var token = ct;
-            foreach (var frame in _frames.Encode(message, BulkFragmentPayloadSize))
+            foreach (var frame in _frames.Encode(message, BulkFragmentPayloadSize, version))
             {
                 await sendBulk(frame, token).ConfigureAwait(false);
                 token = lifetime;

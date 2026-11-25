@@ -29,6 +29,20 @@ public sealed class ConnectKeySecurityTests
         return peer;
     }
 
+    internal static ConnectPeerAuthentication CreateUnauthenticatedPeer(out Func<string, string> signChallenge)
+    {
+        var generated = ConnectKeyProtocol.Generate("https://connect.tlbx.ai", "fixture");
+        var peer = new ConnectPeerAuthentication(generated.Configuration, "fixture-connection");
+        peer.SetOffer(Sdp('a')); peer.SetAnswer(Sdp('b'));
+        var privateKey = generated.Downloads.AccessKey.PrivateKey;
+        signChallenge = challengeData =>
+        {
+            using var access = ConnectKeyProtocol.PrivateKey(privateKey);
+            return ConnectKeyProtocol.Encode(ConnectKeyProtocol.Sign(access, ConnectKeyProtocol.Decode(challengeData)));
+        };
+        return peer;
+    }
+
     [Fact]
     public void GeneratedRegistrationHasStandardP256SignatureAndSeparateAccessPrivateKey()
     {
@@ -248,13 +262,25 @@ public sealed class ConnectKeySecurityTests
             var generated = ConnectKeyProtocol.Generate("https://connect.tlbx.ai", "fixture");
             var peer = new ConnectPeerAuthentication(generated.Configuration, "connection"); peer.SetOffer(Sdp('a')); peer.SetAnswer(Sdp('b'));
             var envelopes = new List<ConnectEnvelope>(); var receive = new ConnectFrames();
+            using var envelopeSignal = new SemaphoreSlim(0);
+            async Task<ConnectEnvelope> NextEnvelopeAsync()
+            {
+                Assert.True(await envelopeSignal.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken));
+                var nextEnvelope = Assert.Single(envelopes);
+                envelopes.Clear();
+                return nextEnvelope;
+            }
             using var handler = new CountingHandler();
             using var http = new HttpClient(handler, disposeHandler: false);
             await using var tunnel = new ConnectTunnel(new ServerBindingInfo(2100, "127.0.0.1"), new BrowserPreviewOriginService(2100),
                 new BrowserPreviewRegistry(), auth, http, (signal, _) =>
                 {
                     var bytes = receive.Receive(signal.Span);
-                    if (bytes is not null) envelopes.Add(JsonSerializer.Deserialize(bytes, ConnectJsonContext.Default.ConnectEnvelope)!);
+                    if (bytes is not null)
+                    {
+                        envelopes.Add(JsonSerializer.Deserialize(bytes, ConnectJsonContext.Default.ConnectEnvelope)!);
+                        envelopeSignal.Release();
+                    }
                     return Task.CompletedTask;
                 }, peer, TestContext.Current.CancellationToken);
             var frames = new ConnectFrames();
@@ -264,28 +290,23 @@ public sealed class ConnectKeySecurityTests
             await Assert.ThrowsAsync<InvalidDataException>(() => tunnel.ReceiveFrameAsync(oversized));
             Assert.Equal(0, handler.RequestCount);
             await tunnel.BeginAuthenticationAsync();
-            var challenge = Assert.Single(envelopes); Assert.Equal("authChallenge", challenge.Type); envelopes.Clear();
+            var challenge = await NextEnvelopeAsync(); Assert.Equal("authChallenge", challenge.Type);
             using var access = ConnectKeyProtocol.PrivateKey(generated.Downloads.AccessKey.PrivateKey);
             var proof = new ConnectEnvelope { Type = "authProof", Data = ConnectKeyProtocol.Encode(ConnectKeyProtocol.Sign(access, ConnectKeyProtocol.Decode(challenge.Data!))) };
             foreach (var frame in frames.Encode(JsonSerializer.SerializeToUtf8Bytes(proof, ConnectJsonContext.Default.ConnectEnvelope))) await tunnel.ReceiveFrameAsync(frame);
-            Assert.Equal("authOk", Assert.Single(envelopes).Type); envelopes.Clear();
+            Assert.Equal("authOk", (await NextEnvelopeAsync()).Type);
             var denied = new ConnectEnvelope { Type = "http", Id = "denied", Method = "POST", Path = "/api/connect/generate", Body = "bm90LWpzb24=" };
             foreach (var frame in frames.Encode(JsonSerializer.SerializeToUtf8Bytes(denied, ConnectJsonContext.Default.ConnectEnvelope))) await tunnel.ReceiveFrameAsync(frame);
-            await Task.Yield();
-            Assert.Equal(403, Assert.Single(envelopes).Status); Assert.Equal(0, handler.RequestCount);
-            envelopes.Clear();
+            Assert.Equal(403, (await NextEnvelopeAsync()).Status); Assert.Equal(0, handler.RequestCount);
             var allowed = new ConnectEnvelope { Type = "http", Id = "allowed", Method = "GET", Path = "/api/version" };
             foreach (var frame in frames.Encode(JsonSerializer.SerializeToUtf8Bytes(allowed, ConnectJsonContext.Default.ConnectEnvelope))) await tunnel.ReceiveFrameAsync(frame);
-            await Task.Yield();
-            Assert.Equal(200, Assert.Single(envelopes).Status); Assert.Equal(1, handler.RequestCount);
+            Assert.Equal(200, (await NextEnvelopeAsync()).Status); Assert.Equal(1, handler.RequestCount);
             Assert.True(auth.ValidateSessionToken(handler.SessionToken));
             var browserClientId = handler.BrowserClientId;
             Assert.True(Guid.TryParse(browserClientId, out _));
-            envelopes.Clear();
             var next = new ConnectEnvelope { Type = "http", Id = "allowed-next", Method = "GET", Path = "/api/version" };
             foreach (var frame in frames.Encode(JsonSerializer.SerializeToUtf8Bytes(next, ConnectJsonContext.Default.ConnectEnvelope))) await tunnel.ReceiveFrameAsync(frame);
-            await Task.Yield();
-            Assert.Equal(200, Assert.Single(envelopes).Status);
+            Assert.Equal(200, (await NextEnvelopeAsync()).Status);
             Assert.Equal(2, handler.RequestCount);
             Assert.Equal(browserClientId, handler.BrowserClientId);
             Assert.True(auth.ValidateSessionToken(handler.SessionToken));

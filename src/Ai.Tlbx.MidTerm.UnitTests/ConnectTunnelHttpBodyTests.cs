@@ -140,6 +140,94 @@ public sealed class ConnectTunnelHttpBodyTests
         Assert.Null(result.BodyEncoding);
     }
 
+    [Fact]
+    [SuppressMessage("Usage", "IDISP014:Use a single instance of HttpClient", Justification = "Each protocol fixture owns one isolated capturing handler and client.")]
+    public async Task BinaryEnvelopeRoundTripSkipsBase64AndSupportsPingPong()
+    {
+        if (!OperatingSystem.IsWindows()) Assert.Skip("This host fixture uses the Windows settings/DPAPI build.");
+        var directory = Path.Combine(Path.GetTempPath(), "tlbx-connect-binary-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            var settings = new SettingsService(directory);
+            var auth = new AuthService(settings, new ApiKeyService(settings));
+            var response = new byte[4096];
+            for (var i = 0; i < response.Length; i++) response[i] = (byte)(i % 251);
+            using var handler = new CaptureHandler(response);
+            using var http = new HttpClient(handler, disposeHandler: false);
+
+            var received = new ConnectFrames();
+            var completed = new System.Collections.Concurrent.ConcurrentQueue<(byte Version, byte[] Payload)>();
+            var authDone = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var pongDone = new TaskCompletionSource<ConnectEnvelope>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var httpDone = new TaskCompletionSource<(byte Version, ConnectEnvelope Meta, byte[] Body)>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            var peer = ConnectKeySecurityTests.CreateUnauthenticatedPeer(out var signProof);
+            await using var tunnel = new ConnectTunnel(new ServerBindingInfo(2100, "127.0.0.1"),
+                new BrowserPreviewOriginService(2100), new BrowserPreviewRegistry(), auth, http,
+                (signal, _) =>
+                {
+                    var frame = received.ReceiveFrame(signal.Span);
+                    if (frame is not { } done) return Task.CompletedTask;
+                    completed.Enqueue(done);
+                    if (done.Version == ConnectFrames.JsonFrameVersion)
+                    {
+                        var env = JsonSerializer.Deserialize(done.Payload, ConnectJsonContext.Default.ConnectEnvelope)!;
+                        if (env.Type == "authOk") authDone.TrySetResult();
+                        else if (env.Type == "pong") pongDone.TrySetResult(env);
+                    }
+                    else if (done.Version == ConnectFrames.BinaryEnvelopeVersion)
+                    {
+                        var (metaUtf8, payload) = ConnectFrames.UnpackBinaryEnvelope(done.Payload);
+                        var env = JsonSerializer.Deserialize(metaUtf8.Span, ConnectJsonContext.Default.ConnectEnvelope)!;
+                        if (env.Type == "http-result") httpDone.TrySetResult((done.Version, env, payload.ToArray()));
+                    }
+                    return Task.CompletedTask;
+                }, peer, TestContext.Current.CancellationToken);
+
+            await tunnel.BeginAuthenticationAsync();
+            Assert.True(completed.TryDequeue(out var challengeFrame));
+            var challenge = JsonSerializer.Deserialize(challengeFrame.Payload, ConnectJsonContext.Default.ConnectEnvelope)!;
+
+            var sender = new ConnectFrames();
+            var proof = new ConnectEnvelope { Type = "authProof", Data = signProof(challenge.Data!), BinaryFrames = true };
+            foreach (var f in sender.Encode(JsonSerializer.SerializeToUtf8Bytes(proof, ConnectJsonContext.Default.ConnectEnvelope)))
+                await tunnel.ReceiveFrameAsync(f);
+            await authDone.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+
+            var authOkFrame = Assert.Single(completed, static x => x.Version == ConnectFrames.JsonFrameVersion);
+            var authOk = JsonSerializer.Deserialize(authOkFrame.Payload, ConnectJsonContext.Default.ConnectEnvelope)!;
+            Assert.True(authOk.BinaryFrames);
+
+            // Ping -> Pong without HTTP loopback
+            var ping = new ConnectEnvelope { Type = "ping", Id = "p-1" };
+            foreach (var f in sender.Encode(JsonSerializer.SerializeToUtf8Bytes(ping, ConnectJsonContext.Default.ConnectEnvelope)))
+                await tunnel.ReceiveFrameAsync(f);
+            var pong = await pongDone.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+            Assert.Equal("p-1", pong.Id);
+            Assert.Equal(0, handler.RequestCount);
+
+            // Binary HTTP POST upload + binary HTTP response (no Base64)
+            byte[] uploadBody = [9, 8, 7, 0, 255, 42, 13];
+            var httpMeta = JsonSerializer.SerializeToUtf8Bytes(new ConnectEnvelope
+            {
+                Type = "http", Id = "bin-http-1", Method = "POST", Path = "/api/sessions/12345678/upload",
+                Headers = new(StringComparer.OrdinalIgnoreCase) { ["Content-Type"] = "application/octet-stream" }
+            }, ConnectJsonContext.Default.ConnectEnvelope);
+            var packedReq = ConnectFrames.PackBinaryEnvelope(httpMeta, uploadBody);
+            foreach (var f in sender.Encode(packedReq, version: ConnectFrames.BinaryEnvelopeVersion))
+                await tunnel.ReceiveFrameAsync(f);
+
+            var (version, resultMeta, resultBody) = await httpDone.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+            Assert.Equal(ConnectFrames.BinaryEnvelopeVersion, version);
+            Assert.Equal(200, resultMeta.Status);
+            Assert.Null(resultMeta.Body);
+            Assert.Equal(uploadBody, handler.Body);
+            Assert.Equal(response, resultBody);
+        }
+        finally { Directory.Delete(directory, recursive: true); }
+    }
+
     [SuppressMessage("Usage", "IDISP014:Use a single instance of HttpClient", Justification = "Each protocol fixture owns one isolated capturing handler and client.")]
     private static async Task<ConnectEnvelope> RoundTripAsync(CaptureHandler handler, ConnectEnvelope request)
     {
