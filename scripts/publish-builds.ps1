@@ -11,6 +11,20 @@ $PSNativeCommandUseErrorActionPreference = $false
 $script:BuildRepository = 'tlbx-ai/tlbx'
 $script:BuildAudience = 'https://builds.tlbx.ai'
 $script:BuildPlatforms = @('linux-arm64','linux-x64','osx-arm64','osx-x64','win-x64','win-x86')
+$script:MaxBuildReleaseNotesLength = 32768
+
+function Format-BuildReleaseNotes([string]$Notes) {
+    if ($null -eq $Notes) { return '' }
+    if ($Notes.Length -le $script:MaxBuildReleaseNotesLength) { return $Notes }
+    $notice = "[Older release notes omitted to fit HTTPS build catalog limit; see the full changelog on GitHub.]`n`n"
+    $keepLength = $script:MaxBuildReleaseNotesLength - $notice.Length
+    $tail = $Notes.Substring($Notes.Length - $keepLength)
+    $newline = $tail.IndexOf("`n")
+    if ($newline -ge 0 -and $newline -lt ($tail.Length - 1)) {
+        $tail = $tail.Substring($newline + 1)
+    }
+    return $notice + $tail
+}
 
 function Invoke-BuildGhJson([string[]]$Arguments) {
     $output = & gh @Arguments
@@ -239,7 +253,7 @@ function Publish-BuildRelease($Release, [uri]$Base) {
         foreach ($asset in $inventory) {
             Invoke-BuildRequest -Base $Base -Method PUT -RelativePath "api/v1/releases/$releaseTag/assets/$($asset.name)" -FilePath (Join-Path $root $asset.name)
         }
-        $payload=[ordered]@{sourceCommit=$source;releaseNotes=[string]$Release.body;assets=$inventory}|ConvertTo-Json -Depth 10 -Compress
+        $payload=[ordered]@{sourceCommit=$source;releaseNotes=(Format-BuildReleaseNotes ([string]$Release.body));assets=$inventory}|ConvertTo-Json -Depth 10 -Compress
         Invoke-BuildRequest -Base $Base -Method POST -RelativePath "api/v1/releases/$releaseTag/publish" -Json $payload
         Write-Host "Published $releaseTag to the HTTPS build catalog ($($pairs.Count) verified platform pairs)."
     } finally {
