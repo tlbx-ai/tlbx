@@ -839,6 +839,125 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         }
     }
 
+    public async Task<AppServerControlSessionForkResponse> ForkAgentSessionAsync(
+        string sessionId,
+        AppServerControlSessionForkRequest? request = null,
+        CancellationToken ct = default)
+    {
+        var state = GetRequiredState(sessionId);
+        await state.Gate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            var result = await SendCommandAsync(
+                state,
+                commandId => new AppServerControlHostCommandEnvelope
+                {
+                    CommandId = commandId,
+                    SessionId = sessionId,
+                    Type = "session.fork",
+                    ForkSession = request ?? new AppServerControlSessionForkRequest()
+                },
+                ct).ConfigureAwait(false);
+
+            return result.ForkedSession ?? throw new InvalidOperationException("Agent runtime did not return forked session metadata.");
+        }
+        finally
+        {
+            state.Gate.Release();
+        }
+    }
+
+    public async Task<AppServerControlCommandAcceptedResponse> SetAgentSessionTitleAsync(
+        string sessionId,
+        AppServerControlSessionTitleRequest request,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var state = GetRequiredState(sessionId);
+        await state.Gate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            var result = await SendCommandAsync(
+                state,
+                commandId => new AppServerControlHostCommandEnvelope
+                {
+                    CommandId = commandId,
+                    SessionId = sessionId,
+                    Type = "session.set_title",
+                    SessionTitle = request
+                },
+                ct).ConfigureAwait(false);
+
+            return result.Accepted ?? new AppServerControlCommandAcceptedResponse { SessionId = sessionId, Status = result.Status };
+        }
+        finally
+        {
+            state.Gate.Release();
+        }
+    }
+
+    public async Task<AppServerControlCommandAcceptedResponse> ArchiveAgentSessionAsync(
+        string sessionId,
+        string providerSessionId,
+        bool unarchive,
+        CancellationToken ct = default)
+    {
+        var state = GetRequiredState(sessionId);
+        await state.Gate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            var result = await SendCommandAsync(
+                state,
+                commandId => new AppServerControlHostCommandEnvelope
+                {
+                    CommandId = commandId,
+                    SessionId = sessionId,
+                    Type = unarchive ? "session.unarchive" : "session.archive",
+                    SessionTarget = new AppServerControlSessionTargetRequest { ProviderSessionId = providerSessionId }
+                },
+                ct).ConfigureAwait(false);
+
+            return result.Accepted ?? new AppServerControlCommandAcceptedResponse { SessionId = sessionId, Status = result.Status };
+        }
+        finally
+        {
+            state.Gate.Release();
+        }
+    }
+
+    public async Task<JsonElement> ExecuteRawAgentCommandAsync(
+        string sessionId,
+        string commandType,
+        Action<AppServerControlHostCommandEnvelope>? configure = null,
+        CancellationToken ct = default)
+    {
+        var state = GetRequiredState(sessionId);
+        await state.Gate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            var result = await SendCommandAsync(
+                state,
+                commandId =>
+                {
+                    var env = new AppServerControlHostCommandEnvelope
+                    {
+                        CommandId = commandId,
+                        SessionId = sessionId,
+                        Type = commandType
+                    };
+                    configure?.Invoke(env);
+                    return env;
+                },
+                ct).ConfigureAwait(false);
+
+            return result.RawPayload ?? JsonElement.Parse("{}");
+        }
+        finally
+        {
+            state.Gate.Release();
+        }
+    }
+
     public async Task<AppServerControlConfigureResponse> ConfigureAsync(
         string sessionId, AppServerControlConfigureRequest request, CancellationToken ct = default)
     {

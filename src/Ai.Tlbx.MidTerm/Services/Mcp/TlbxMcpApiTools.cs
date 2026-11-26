@@ -151,6 +151,18 @@ internal static partial class TlbxMcpApiTools
             .With(Q("cwd"), Q("cursor"), Q("archived"));
         yield return Target("agent_session_delete", "DELETE", "/api/sessions/{id}/agent-control/sessions/{providerSessionId}", "Delete a saved ACP provider session via session/delete when advertised by the agent.")
             .Path("providerSessionId", "providerSessionId");
+        yield return Target("agent_session_fork", "POST", "/api/sessions/{id}/agent-control/sessions/fork", "Fork an ACP session (optionally from a cursorId and with initial configOptions) when session.fork is advertised.", AppJsonContext.Default.AppServerControlSessionForkRequest);
+        yield return Target("agent_session_set_title", "PUT", "/api/sessions/{id}/agent-control/sessions/title", "Rename an ACP provider session via session/set_title when advertised.", AppJsonContext.Default.AppServerControlSessionTitleRequest);
+        yield return Target("agent_session_archive", "POST", "/api/sessions/{id}/agent-control/sessions/{providerSessionId}/archive", "Archive an ACP provider session via session/archive when advertised.")
+            .Path("providerSessionId", "providerSessionId");
+        yield return Target("agent_session_unarchive", "POST", "/api/sessions/{id}/agent-control/sessions/{providerSessionId}/unarchive", "Unarchive an ACP provider session via session/unarchive when advertised.")
+            .Path("providerSessionId", "providerSessionId");
+        yield return Target("agent_session_status", "GET", "/api/sessions/{id}/agent-control/sessions/{providerSessionId}/status", "Read ACP provider session status via session/status when advertised.")
+            .Path("providerSessionId", "providerSessionId");
+        yield return Target("agent_session_options", "GET", "/api/sessions/{id}/agent-control/options", "Read pre-session ACP configOptions and availableCommands via session/options when advertised.")
+            .With(Q("cwd"));
+        yield return Target("agent_auth_status", "GET", "/api/sessions/{id}/agent-control/auth/status", "Read ACP agent authentication status and accounts via auth/status when advertised.");
+        yield return Target("agent_providers_list", "GET", "/api/sessions/{id}/agent-control/providers", "List ACP agent model providers via providers/list when advertised.");
         yield return Target("agent_steer", "POST", "/api/sessions/{id}/agent-control/steer", "Steer the exact expected active turn with text/attachments, retaining concurrency checks.", AppJsonContext.Default.AppServerControlSteerRequest);
         yield return Target("agent_compact", "POST", "/api/sessions/{id}/agent-control/compact", "Compact the dedicated structured agent runtime.");
         yield return Target("agent_request_decide", "POST", "/api/sessions/{id}/agent-control/requests/{requestId}/decision", "Accept or decline exactly one open approval from agent_history in the expected turn, optionally selecting an explicit native ACP optionId. Read its exact requested action first; never replay an uncertain decision.")

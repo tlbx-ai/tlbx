@@ -1178,6 +1178,138 @@ public static partial class SessionApiEndpoints
             catch (IOException) { return Results.Conflict("Agent Controller runtime disconnected while deleting agent session."); }
         });
 
+        app.MapPost("/api/sessions/{id}/agent-control/sessions/fork", async (
+            string id,
+            AppServerControlSessionForkRequest request,
+            CancellationToken ct = default) =>
+        {
+            if (sessionManager.GetSession(id) is null) return Results.NotFound();
+            if (!appServerControlRuntime.IsAttached(id))
+                return Results.Conflict("Agent Controller runtime is not attached.");
+            try
+            {
+                var response = await appServerControlRuntime.ForkAgentSessionAsync(id, request, ct).ConfigureAwait(false);
+                return Results.Json(response, AppJsonContext.Default.AppServerControlSessionForkResponse);
+            }
+            catch (InvalidOperationException ex) { return Results.Conflict(ex.Message); }
+            catch (IOException) { return Results.Conflict("Agent Controller runtime disconnected while forking agent session."); }
+        });
+
+        app.MapPut("/api/sessions/{id}/agent-control/sessions/title", async (
+            string id,
+            AppServerControlSessionTitleRequest request,
+            CancellationToken ct = default) =>
+        {
+            if (sessionManager.GetSession(id) is null) return Results.NotFound();
+            if (!appServerControlRuntime.IsAttached(id))
+                return Results.Conflict("Agent Controller runtime is not attached.");
+            try
+            {
+                var response = await appServerControlRuntime.SetAgentSessionTitleAsync(id, request, ct).ConfigureAwait(false);
+                return Results.Json(response, AppJsonContext.Default.AppServerControlCommandAcceptedResponse);
+            }
+            catch (InvalidOperationException ex) { return Results.Conflict(ex.Message); }
+            catch (IOException) { return Results.Conflict("Agent Controller runtime disconnected while setting session title."); }
+        });
+
+        app.MapPost("/api/sessions/{id}/agent-control/sessions/{providerSessionId}/archive", async (
+            string id,
+            string providerSessionId,
+            CancellationToken ct = default) =>
+        {
+            if (sessionManager.GetSession(id) is null) return Results.NotFound();
+            if (!appServerControlRuntime.IsAttached(id))
+                return Results.Conflict("Agent Controller runtime is not attached.");
+            try
+            {
+                var response = await appServerControlRuntime.ArchiveAgentSessionAsync(id, providerSessionId, unarchive: false, ct).ConfigureAwait(false);
+                return Results.Json(response, AppJsonContext.Default.AppServerControlCommandAcceptedResponse);
+            }
+            catch (InvalidOperationException ex) { return Results.Conflict(ex.Message); }
+            catch (IOException) { return Results.Conflict("Agent Controller runtime disconnected while archiving session."); }
+        });
+
+        app.MapPost("/api/sessions/{id}/agent-control/sessions/{providerSessionId}/unarchive", async (
+            string id,
+            string providerSessionId,
+            CancellationToken ct = default) =>
+        {
+            if (sessionManager.GetSession(id) is null) return Results.NotFound();
+            if (!appServerControlRuntime.IsAttached(id))
+                return Results.Conflict("Agent Controller runtime is not attached.");
+            try
+            {
+                var response = await appServerControlRuntime.ArchiveAgentSessionAsync(id, providerSessionId, unarchive: true, ct).ConfigureAwait(false);
+                return Results.Json(response, AppJsonContext.Default.AppServerControlCommandAcceptedResponse);
+            }
+            catch (InvalidOperationException ex) { return Results.Conflict(ex.Message); }
+            catch (IOException) { return Results.Conflict("Agent Controller runtime disconnected while unarchiving session."); }
+        });
+
+        app.MapGet("/api/sessions/{id}/agent-control/sessions/{providerSessionId}/status", async (
+            string id,
+            string providerSessionId,
+            CancellationToken ct = default) =>
+        {
+            if (sessionManager.GetSession(id) is null) return Results.NotFound();
+            if (!appServerControlRuntime.IsAttached(id))
+                return Results.Conflict("Agent Controller runtime is not attached.");
+            try
+            {
+                var payload = await appServerControlRuntime.ExecuteRawAgentCommandAsync(
+                    id, "session.status", env => env.SessionTarget = new() { ProviderSessionId = providerSessionId }, ct).ConfigureAwait(false);
+                return Results.Json(payload, AppJsonContext.Default.JsonElement);
+            }
+            catch (InvalidOperationException ex) { return Results.Conflict(ex.Message); }
+            catch (IOException) { return Results.Conflict("Agent Controller runtime disconnected while reading session status."); }
+        });
+
+        app.MapGet("/api/sessions/{id}/agent-control/options", async (
+            string id,
+            string? cwd = null,
+            CancellationToken ct = default) =>
+        {
+            if (sessionManager.GetSession(id) is null) return Results.NotFound();
+            if (!appServerControlRuntime.IsAttached(id))
+                return Results.Conflict("Agent Controller runtime is not attached.");
+            try
+            {
+                var payload = await appServerControlRuntime.ExecuteRawAgentCommandAsync(
+                    id, "session.options", env => env.ListSessions = new() { Cwd = cwd }, ct).ConfigureAwait(false);
+                return Results.Json(payload, AppJsonContext.Default.JsonElement);
+            }
+            catch (InvalidOperationException ex) { return Results.Conflict(ex.Message); }
+            catch (IOException) { return Results.Conflict("Agent Controller runtime disconnected while reading session options."); }
+        });
+
+        app.MapGet("/api/sessions/{id}/agent-control/auth/status", async (string id, CancellationToken ct = default) =>
+        {
+            if (sessionManager.GetSession(id) is null) return Results.NotFound();
+            if (!appServerControlRuntime.IsAttached(id))
+                return Results.Conflict("Agent Controller runtime is not attached.");
+            try
+            {
+                var payload = await appServerControlRuntime.ExecuteRawAgentCommandAsync(id, "auth.status", null, ct).ConfigureAwait(false);
+                return Results.Json(payload, AppJsonContext.Default.JsonElement);
+            }
+            catch (InvalidOperationException ex) { return Results.Conflict(ex.Message); }
+            catch (IOException) { return Results.Conflict("Agent Controller runtime disconnected while reading auth status."); }
+        });
+
+        app.MapGet("/api/sessions/{id}/agent-control/providers", async (string id, CancellationToken ct = default) =>
+        {
+            if (sessionManager.GetSession(id) is null) return Results.NotFound();
+            if (!appServerControlRuntime.IsAttached(id))
+                return Results.Conflict("Agent Controller runtime is not attached.");
+            try
+            {
+                var payload = await appServerControlRuntime.ExecuteRawAgentCommandAsync(id, "providers.list", null, ct).ConfigureAwait(false);
+                return Results.Json(payload, AppJsonContext.Default.JsonElement);
+            }
+            catch (InvalidOperationException ex) { return Results.Conflict(ex.Message); }
+            catch (IOException) { return Results.Conflict("Agent Controller runtime disconnected while listing providers."); }
+        });
+
         app.MapPost("/api/sessions/{id}/agent-control/steer", async (
             string id,
             AppServerControlSteerRequest request,

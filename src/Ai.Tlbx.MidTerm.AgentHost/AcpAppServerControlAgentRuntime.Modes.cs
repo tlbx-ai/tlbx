@@ -76,7 +76,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime
         }
 
         // Configure model before effort because a model switch can replace the native effort catalogue.
-        foreach (var field in new[] { "model", "effort", "permissionMode", "planMode" })
+        foreach (var field in new[] { "model", "effort", "permissionMode", "planMode", "fastMode" })
         {
             if (!request.Settings.TryGetValue(field, out var value)) continue;
             var setting = value.ValueKind == JsonValueKind.String ? value.GetString() : null;
@@ -108,6 +108,9 @@ internal sealed partial class AcpAppServerControlAgentRuntime
                     case "planMode" when UsesAntigravityModes && setting is "on" or "off":
                         await ApplyAntigravityModeAsync(setting, null, ct).ConfigureAwait(false);
                         break;
+                    case "fastMode" when setting is "on" or "off":
+                        await ApplySpeedSettingAsync(setting == "on", ct).ConfigureAwait(false);
+                        break;
                     default:
                         response.UnconfirmedFields.Add(field);
                         break;
@@ -122,7 +125,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime
 
         foreach (var field in request.Settings.Keys)
         {
-            if (field is not ("model" or "effort" or "permissionMode" or "planMode"))
+            if (field is not ("model" or "effort" or "permissionMode" or "planMode" or "fastMode"))
                 response.UnconfirmedFields.Add(field);
         }
         var applied = response.UnconfirmedFields.Count < request.Settings.Count;
@@ -134,13 +137,41 @@ internal sealed partial class AcpAppServerControlAgentRuntime
         foreach (var (field, effective) in new (string, string?)[]
         {
             ("model", _quickSettings.Model), ("effort", _quickSettings.Effort),
-            ("planMode", _quickSettings.PlanMode), ("permissionMode", _quickSettings.PermissionMode)
+            ("planMode", _quickSettings.PlanMode), ("permissionMode", _quickSettings.PermissionMode),
+            ("fastMode", _quickSettings.FastMode)
         })
         {
             if (!response.UnconfirmedFields.Contains(field))
                 response.EffectiveSettings[field] = JsonSerializer.SerializeToElement(effective, AppServerControlHostJsonContext.Default.String);
         }
         return ConfigurationOutcome(command, response);
+    }
+
+    private async Task ApplySpeedSettingAsync(bool fast, CancellationToken ct)
+    {
+        if (!_configOptionIds.TryGetValue("speed", out var speedId))
+        {
+            throw new InvalidOperationException($"{_agentName} does not expose an ACP speed configuration option.");
+        }
+
+        var option = FindNativeConfigOption(speedId);
+        var optionType = GetString(option, "type");
+        if (optionType == "boolean")
+        {
+            await SetConfigOptionAsync(speedId, JsonElement.Parse(fast ? "true" : "false"), ct).ConfigureAwait(false);
+            return;
+        }
+
+        var choices = ReadConfigValueOptions(option);
+        var match = fast
+            ? choices.FirstOrDefault(static c => c.Value.Contains("fast", StringComparison.OrdinalIgnoreCase) || string.Equals(c.Value, "on", StringComparison.OrdinalIgnoreCase))
+            : choices.FirstOrDefault(static c => !c.Value.Contains("fast", StringComparison.OrdinalIgnoreCase) && !string.Equals(c.Value, "on", StringComparison.OrdinalIgnoreCase));
+        if (match is null)
+        {
+            throw new InvalidOperationException($"{_agentName} does not advertise a matching ACP speed option for fastMode={(fast ? "on" : "off")}.");
+        }
+
+        await SetConfigOptionAsync(speedId, match.Value, ct).ConfigureAwait(false);
     }
 
     private static HostCommandOutcome ConfigurationOutcome(

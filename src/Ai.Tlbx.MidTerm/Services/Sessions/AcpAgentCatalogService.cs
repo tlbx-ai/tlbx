@@ -12,11 +12,11 @@ public sealed partial class AcpAgentCatalogService(SettingsService settingsServi
 
     private static readonly IReadOnlyList<AcpAgentDefinition> BuiltInDefinitions =
     [
-        new("grok", "Grok Build", "grok", ["agent", "stdio"]),
-        new("opencode", "OpenCode", "opencode", [], RuntimeKind: "opencode-http"),
-        new("antigravity", "Google Antigravity", "agy", ["acp"]),
-        new("gemini", "Gemini CLI", "gemini", ["--acp"]),
-        new("copilot", "GitHub Copilot CLI", "copilot", ["--acp"])
+        new("grok", "Grok Build", "grok", ["agent", "stdio"], RegistryId: "grok-build"),
+        new("opencode", "OpenCode", "opencode", [], RuntimeKind: "opencode-http", RegistryId: "opencode"),
+        new("antigravity", "Google Antigravity", "agy", ["acp"], RegistryId: "antigravity-acp"),
+        new("gemini", "Gemini CLI", "gemini", ["--acp"], RegistryId: "gemini"),
+        new("copilot", "GitHub Copilot CLI", "copilot", ["--acp"], RegistryId: "github-copilot-cli")
     ];
 
     public string ManifestPath => Path.Combine(settingsService.SettingsDirectory, ManifestFileName);
@@ -179,7 +179,8 @@ public sealed record AcpAgentDefinition(
     IReadOnlyList<string> Arguments,
     IReadOnlyDictionary<string, string?>? EnvironmentVariables = null,
     string? AuthenticationMethodId = null,
-    string RuntimeKind = "acp-v1");
+    string RuntimeKind = "acp-v1",
+    string? RegistryId = null);
 
 public sealed record ResolvedAcpAgentDefinition(
     string Profile,

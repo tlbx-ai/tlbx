@@ -764,4 +764,209 @@ rl.on('line', (line) => {
             try { Directory.Delete(tempDir, recursive: true); } catch { }
         }
     }
+
+    [Fact]
+    public async Task V2Campaign5UnstableFeaturesWorkEndToEnd()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var tempDir = Path.Combine(Path.GetTempPath(), "tlbx-acp-c5-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+        var scriptPath = Path.Combine(tempDir, "fake-acp-c5.mjs");
+        var logPath = Path.Combine(tempDir, "rpc-log.jsonl");
+
+        var fakeServerJs = """
+import readline from 'node:readline';
+import fs from 'node:fs';
+
+const logPath = process.argv[2];
+const rl = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
+let speedVal = 'normal';
+
+function send(obj) {
+  process.stdout.write(JSON.stringify(obj) + '\n');
+}
+
+function log(obj) {
+  fs.appendFileSync(logPath, JSON.stringify(obj) + '\n');
+}
+
+function configOptions() {
+  return [
+    {
+      id: 'speed',
+      name: 'Speed',
+      category: 'speed',
+      type: 'select',
+      currentValue: speedVal,
+      options: [{ value: 'normal', name: 'Normal' }, { value: 'fast', name: 'Fast' }]
+    }
+  ];
+}
+
+rl.on('line', (line) => {
+  if (!line.trim()) return;
+  const msg = JSON.parse(line);
+  log(msg);
+  if (msg.method === 'initialize') {
+    send({
+      jsonrpc: '2.0',
+      id: msg.id,
+      result: {
+        protocolVersion: 2,
+        info: { name: 'fake-acp-c5', version: '2.0.0' },
+        capabilities: {
+          auth: { status: {} },
+          providers: {},
+          session: {
+            prompt: {},
+            mcp: { stdio: {}, http: {}, acp: {} },
+            fork: {},
+            archive: {},
+            status: {},
+            options: {},
+            title: {}
+          }
+        }
+      }
+    });
+  } else if (msg.method === 'session/new') {
+    send({ jsonrpc: '2.0', id: msg.id, result: { sessionId: 'ses-c5-root', configOptions: configOptions() } });
+    send({ jsonrpc: '2.0', method: 'session/update', params: { sessionId: 'ses-c5-root', update: { sessionUpdate: 'prompt_suggestions_update', suggestions: ['Run tests', 'Review diff'] } } });
+    send({ jsonrpc: '2.0', method: 'session/update', params: { sessionId: 'ses-c5-root', update: { sessionUpdate: 'cursor_update', cursorId: 'cur-42', capabilities: { fork: {} } } } });
+    send({ jsonrpc: '2.0', method: 'auth/status_update', params: { state: 'authenticated', accounts: [{ id: 'acc-1', label: 'user@example.com' }] } });
+    send({ jsonrpc: '2.0', id: 'mcp-in-1', method: 'mcp/message', params: { serverId: 'client-srv', requestId: 'req-1', method: 'tools/list', sessionId: 'ses-c5-root', toolCallId: 'tc-9' } });
+  } else if (msg.method === 'session/set_config_option') {
+    speedVal = msg.params.value;
+    send({ jsonrpc: '2.0', id: msg.id, result: { configOptions: configOptions() } });
+  } else if (msg.method === 'session/fork') {
+    send({ jsonrpc: '2.0', id: msg.id, result: { sessionId: 'ses-c5-fork-1', configOptions: configOptions(), availableCommands: [] } });
+  } else if (msg.method === 'session/set_title' || msg.method === 'session/archive' || msg.method === 'session/unarchive' || msg.method === 'session/close') {
+    send({ jsonrpc: '2.0', id: msg.id, result: {} });
+  } else if (msg.method === 'session/status') {
+    send({ jsonrpc: '2.0', id: msg.id, result: { status: 'active', state: { state: 'idle' } } });
+  } else if (msg.method === 'session/options') {
+    send({ jsonrpc: '2.0', id: msg.id, result: { configOptions: configOptions(), availableCommands: [] } });
+  } else if (msg.method === 'auth/status') {
+    send({ jsonrpc: '2.0', id: msg.id, result: { state: 'authenticated', accounts: [{ id: 'acc-1' }] } });
+  } else if (msg.method === 'providers/list') {
+    send({ jsonrpc: '2.0', id: msg.id, result: { providers: [{ providerId: 'openai', enabled: true }] } });
+  } else if (msg.method === 'providers/set' || msg.method === 'providers/disable') {
+    send({ jsonrpc: '2.0', id: msg.id, result: { ok: true } });
+  } else if (msg.method === 'mcp/message') {
+    send({ jsonrpc: '2.0', id: msg.id, result: { result: { tools: [] } } });
+  }
+});
+""";
+
+        await File.WriteAllTextAsync(scriptPath, fakeServerJs, Encoding.UTF8, ct);
+        var node = ResolveNodeExecutable();
+        try
+        {
+            var events = new ConcurrentQueue<AppServerControlProviderEvent>();
+            await using (var runtime = new AcpAppServerControlAgentRuntime(
+                "fake-c5",
+                "Fake ACP C5",
+                [scriptPath, logPath],
+                events.Enqueue))
+            {
+                await runtime.ExecuteAsync(new AppServerControlHostCommandEnvelope
+                {
+                    CommandId = "c5-attach",
+                    SessionId = "s-c5",
+                    Type = "runtime.attach",
+                    AttachRuntime = new AppServerControlAttachRuntimeRequest
+                    {
+                        SessionId = "s-c5",
+                        Provider = "fake-c5",
+                        RuntimeKind = "acp-v1",
+                        WorkingDirectory = tempDir,
+                        ExecutablePath = node,
+                        ExecutableArguments = [scriptPath, logPath]
+                    }
+                }, ct);
+
+                await WaitUntilAsync(() => events.Any(e => e.Raw?.Method == "cursor_update") && events.Any(e => e.Raw?.Method == "mcp/message"), ct);
+
+                // Configure fastMode -> ACP speed config option
+                var cfgOutcome = await runtime.ExecuteAsync(new AppServerControlHostCommandEnvelope
+                {
+                    CommandId = "c5-speed",
+                    SessionId = "s-c5",
+                    Type = "runtime.configure",
+                    Configure = new AppServerControlConfigureRequest
+                    {
+                        ExpectedThreadId = "ses-c5-root",
+                        Settings = new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+                        {
+                            ["fastMode"] = JsonElement.Parse("\"on\"")
+                        }
+                    }
+                }, ct);
+                Assert.Equal("applied", cfgOutcome.Result.Configured!.Status);
+                Assert.Equal("on", cfgOutcome.Result.Configured.EffectiveSettings["fastMode"].GetString());
+
+                // Fork using captured cursor_update cursorId + initial configOptions
+                var forkOutcome = await runtime.ExecuteAsync(new AppServerControlHostCommandEnvelope
+                {
+                    CommandId = "c5-fork",
+                    SessionId = "s-c5",
+                    Type = "session.fork",
+                    ForkSession = new AppServerControlSessionForkRequest
+                    {
+                        ConfigOptions = new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+                        {
+                            ["speed"] = JsonElement.Parse("\"fast\"")
+                        }
+                    }
+                }, ct);
+                Assert.Equal("ses-c5-fork-1", forkOutcome.Result.ForkedSession!.SessionId);
+
+                await runtime.ExecuteAsync(new AppServerControlHostCommandEnvelope { CommandId = "c5-title", SessionId = "s-c5", Type = "session.set_title", SessionTitle = new() { Title = "Forked Plan" } }, ct);
+                await runtime.ExecuteAsync(new AppServerControlHostCommandEnvelope { CommandId = "c5-arch", SessionId = "s-c5", Type = "session.archive", SessionTarget = new() { ProviderSessionId = "ses-c5-fork-1" } }, ct);
+                await runtime.ExecuteAsync(new AppServerControlHostCommandEnvelope { CommandId = "c5-unarch", SessionId = "s-c5", Type = "session.unarchive", SessionTarget = new() { ProviderSessionId = "ses-c5-fork-1" } }, ct);
+
+                var statusRes = await runtime.ExecuteAsync(new AppServerControlHostCommandEnvelope { CommandId = "c5-status", SessionId = "s-c5", Type = "session.status", SessionTarget = new() { ProviderSessionId = "ses-c5-root" } }, ct);
+                Assert.Equal("active", statusRes.Result.RawPayload!.Value.GetProperty("status").GetString());
+
+                var optsRes = await runtime.ExecuteAsync(new AppServerControlHostCommandEnvelope { CommandId = "c5-opts", SessionId = "s-c5", Type = "session.options" }, ct);
+                Assert.True(optsRes.Result.RawPayload!.Value.TryGetProperty("configOptions", out _));
+
+                var authRes = await runtime.ExecuteAsync(new AppServerControlHostCommandEnvelope { CommandId = "c5-auth", SessionId = "s-c5", Type = "auth.status" }, ct);
+                Assert.Equal("authenticated", authRes.Result.RawPayload!.Value.GetProperty("state").GetString());
+
+                var provList = await runtime.ExecuteAsync(new AppServerControlHostCommandEnvelope { CommandId = "c5-plist", SessionId = "s-c5", Type = "providers.list" }, ct);
+                Assert.Equal(1, provList.Result.RawPayload!.Value.GetProperty("providers").GetArrayLength());
+
+                await runtime.ExecuteAsync(new AppServerControlHostCommandEnvelope { CommandId = "c5-pset", SessionId = "s-c5", Type = "providers.set", ProviderConfig = new() { ProviderId = "openai", ApiType = "openai", BaseUrl = "https://api.example.invalid/v1" } }, ct);
+                await runtime.ExecuteAsync(new AppServerControlHostCommandEnvelope { CommandId = "c5-pdis", SessionId = "s-c5", Type = "providers.disable", ProviderConfig = new() { ProviderId = "openai" } }, ct);
+
+                var mcpOut = await runtime.ExecuteAsync(new AppServerControlHostCommandEnvelope
+                {
+                    CommandId = "c5-mcp",
+                    SessionId = "s-c5",
+                    Type = "mcp.message",
+                    McpMessage = new() { ServerId = "srv-1", RequestId = "m-1", Method = "tools/list", ProviderSessionId = "ses-c5-root", ToolCallId = "tc-1" }
+                }, ct);
+                Assert.True(mcpOut.Result.RawPayload!.Value.TryGetProperty("result", out _));
+            }
+
+            var rpcLines = (await File.ReadAllLinesAsync(logPath, ct)).Select(l => JsonDocument.Parse(l)).ToList();
+            try
+            {
+                var forkRpc = rpcLines.First(d => d.RootElement.TryGetProperty("method", out var m) && m.GetString() == "session/fork").RootElement;
+                Assert.Equal("cur-42", forkRpc.GetProperty("params").GetProperty("cursorId").GetString());
+                Assert.Contains(rpcLines, d => d.RootElement.TryGetProperty("id", out var id) && id.GetString() == "mcp-in-1");
+                Assert.Contains(rpcLines, d => d.RootElement.TryGetProperty("method", out var m) && m.GetString() == "providers/set");
+                Assert.Contains(rpcLines, d => d.RootElement.TryGetProperty("method", out var m) && m.GetString() == "providers/disable");
+            }
+            finally
+            {
+                foreach (var doc in rpcLines) doc.Dispose();
+            }
+        }
+        finally
+        {
+            try { Directory.Delete(tempDir, recursive: true); } catch { }
+        }
+    }
 }

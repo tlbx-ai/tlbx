@@ -1,0 +1,50 @@
+name: ACP Spec & Registry Drift Watch
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check-acp-drift:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Verify pinned ACP schemas and detect upstream updates
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $pin = Get-Content docs/acp-spec/acp-spec-pin.json -Raw | ConvertFrom-Json
+          Write-Host "Pinned ACP v1=$($pin.v1Tag), v2=$($pin.v2Tag)"
+
+          # Verify pinned files are intact against pinned tags
+          ./scripts/sync-acp-spec.ps1 -CheckOnly
+
+          # Query latest upstream schema-v1.* and schema-v2.* tags (read-only)
+          $tags = Invoke-RestMethod -Uri 'https://api.github.com/repos/agentclientprotocol/agent-client-protocol/tags?per_page=100' -Headers @{ 'User-Agent' = 'tlbx-acp-spec-watch' }
+          $latestV1 = ($tags | Where-Object { $_.name -like 'schema-v1.*' } | Select-Object -First 1).name
+          $latestV2 = ($tags | Where-Object { $_.name -like 'schema-v2.*' } | Select-Object -First 1).name
+
+          $summary = @(
+            '## ACP Upstream Drift Watch',
+            '',
+            "| Track | Pinned | Latest Upstream | Status |",
+            "| --- | --- | --- | --- |",
+            "| ACP v1 | `$($pin.v1Tag)` | `$latestV1` | $(if ($latestV1 -eq $pin.v1Tag) { 'Up to date' } else { 'UPDATE AVAILABLE' }) |",
+            "| ACP v2 | `$($pin.v2Tag)` | `$latestV2` | $(if ($latestV2 -eq $pin.v2Tag) { 'Up to date' } else { 'UPDATE AVAILABLE' }) |"
+          )
+
+          if ($latestV1 -ne $pin.v1Tag -or $latestV2 -ne $pin.v2Tag) {
+            $summary += ''
+            $summary += 'Run `./scripts/sync-acp-spec.ps1 -V1Tag ' + $latestV1 + ' -V2Tag ' + $latestV2 + '` and execute `AcpSchemaContractTests` to review new/changed methods and types.'
+            Write-Warning "ACP upstream schema drift detected: v1=$latestV1 (pinned $($pin.v1Tag)), v2=$latestV2 (pinned $($pin.v2Tag))."
+          } else {
+            Write-Host "ACP v1 and v2 pinned schemas match latest upstream tags."
+          }
+
+          $summary -join "`n" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
