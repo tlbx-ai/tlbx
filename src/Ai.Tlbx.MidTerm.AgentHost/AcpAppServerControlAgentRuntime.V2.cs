@@ -22,6 +22,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime
         _earlyUserMessages.Clear();
         _nativeTerminals.Clear();
         _nativeCompactions.Clear();
+        ResetSubagentState();
         _loadedStateSnapshot = null;
         _lastPlanMarkdown = null;
         _tools.Clear();
@@ -125,6 +126,13 @@ internal sealed partial class AcpAppServerControlAgentRuntime
             case "compaction_update":
             case "compaction_summary_chunk":
                 HandleV2Compaction(type, update, root, raw, turnId);
+                return true;
+            case "subagent_update":
+                HandleSubagentUpdate(update, root, raw, turnId);
+                return true;
+            case "session_message":
+            case "session_message_chunk":
+                HandleSessionMessageUpdate(type, update, root, raw, turnId);
                 return true;
             default:
                 return false;

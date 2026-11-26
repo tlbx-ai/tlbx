@@ -566,4 +566,202 @@ rl.on('line', (line) => {
             try { Directory.Delete(tempDir, recursive: true); } catch { }
         }
     }
+
+    [Fact]
+    public async Task V2Campaign4SubagentsSessionMessagesAndCancelPropagationWorkEndToEnd()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var tempDir = Path.Combine(Path.GetTempPath(), "tlbx-acp-c4-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+        var scriptPath = Path.Combine(tempDir, "fake-acp-c4.mjs");
+        var logPath = Path.Combine(tempDir, "rpc-log.jsonl");
+
+        var fakeServerJs = """
+import readline from 'node:readline';
+import fs from 'node:fs';
+
+const logPath = process.argv[2];
+const rl = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
+
+function send(obj) {
+  process.stdout.write(JSON.stringify(obj) + '\n');
+}
+
+function log(obj) {
+  fs.appendFileSync(logPath, JSON.stringify(obj) + '\n');
+}
+
+rl.on('line', (line) => {
+  if (!line.trim()) return;
+  const msg = JSON.parse(line);
+  log(msg);
+  if (msg.method === 'initialize') {
+    send({
+      jsonrpc: '2.0',
+      id: msg.id,
+      result: {
+        protocolVersion: 2,
+        info: { name: 'fake-acp-c4', version: '2.0.0' },
+        capabilities: { session: { prompt: {} } }
+      }
+    });
+  } else if (msg.method === 'session/new') {
+    send({ jsonrpc: '2.0', id: msg.id, result: { sessionId: 'ses-parent', configOptions: [] } });
+  } else if (msg.method === 'session/prompt') {
+    send({ jsonrpc: '2.0', id: msg.id, result: { messageId: 'u-p-1' } });
+    send({ jsonrpc: '2.0', method: 'session/update', params: { sessionId: 'ses-parent', update: { sessionUpdate: 'state_update', state: 'running' } } });
+    // Announce subagent with cancel capability
+    send({
+      jsonrpc: '2.0',
+      method: 'session/update',
+      params: {
+        sessionId: 'ses-parent',
+        update: {
+          sessionUpdate: 'subagent_update',
+          sessionId: 'ses-child-1',
+          title: 'Security Auditor',
+          description: 'Checks auth flows',
+          capabilities: { cancel: {} },
+          state: { state: 'running' }
+        }
+      }
+    });
+    // Tool call referencing the child session
+    send({
+      jsonrpc: '2.0',
+      method: 'session/update',
+      params: {
+        sessionId: 'ses-parent',
+        update: {
+          sessionUpdate: 'tool_call_update',
+          toolCallId: 'tc-sub-1',
+          title: 'Spawn Auditor',
+          kind: 'agent',
+          status: 'in_progress',
+          content: [{ type: 'session', sessionId: 'ses-child-1' }]
+        }
+      }
+    });
+    // Child session sends streaming update automatically without separate subscribe
+    send({
+      jsonrpc: '2.0',
+      method: 'session/update',
+      params: {
+        sessionId: 'ses-child-1',
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          messageId: 'c-msg-1',
+          content: { type: 'text', text: 'Auditing OAuth token refresh...' }
+        }
+      }
+    });
+    // Inter-session message + streamed chunk
+    send({
+      jsonrpc: '2.0',
+      method: 'session/update',
+      params: {
+        sessionId: 'ses-parent',
+        update: {
+          sessionUpdate: 'session_message',
+          messageId: 'sm-1',
+          senderSessionId: 'ses-child-1',
+          recipientSessionId: 'ses-parent',
+          content: [{ type: 'text', text: 'Found 0 critical issues.' }]
+        }
+      }
+    });
+    send({
+      jsonrpc: '2.0',
+      method: 'session/update',
+      params: {
+        sessionId: 'ses-parent',
+        update: {
+          sessionUpdate: 'session_message_chunk',
+          messageId: 'sm-1',
+          content: { type: 'text', text: ' Verified PKCE.' }
+        }
+      }
+    });
+  } else if (msg.method === 'session/cancel' && msg.params.sessionId === 'ses-child-1') {
+    send({ jsonrpc: '2.0', method: 'session/update', params: { sessionId: 'ses-child-1', update: { sessionUpdate: 'state_update', state: 'idle', stopReason: 'cancelled' } } });
+    send({ jsonrpc: '2.0', method: 'session/update', params: { sessionId: 'ses-parent', update: { sessionUpdate: 'state_update', state: 'idle', stopReason: 'cancelled' } } });
+  } else if (msg.method === 'session/close') {
+    send({ jsonrpc: '2.0', id: msg.id, result: {} });
+  }
+});
+""";
+
+        await File.WriteAllTextAsync(scriptPath, fakeServerJs, Encoding.UTF8, ct);
+        var node = ResolveNodeExecutable();
+        try
+        {
+            var events = new ConcurrentQueue<AppServerControlProviderEvent>();
+            var history = new Ai.Tlbx.MidTerm.Services.Sessions.SessionAppServerControlHistoryService();
+            await using (var runtime = new AcpAppServerControlAgentRuntime(
+                "fake-c4",
+                "Fake ACP C4",
+                [scriptPath, logPath],
+                e => { history.Append(e); events.Enqueue(e); }))
+            {
+                await runtime.ExecuteAsync(new AppServerControlHostCommandEnvelope
+                {
+                    CommandId = "c4-attach",
+                    SessionId = "s-c4",
+                    Type = "runtime.attach",
+                    AttachRuntime = new AppServerControlAttachRuntimeRequest
+                    {
+                        SessionId = "s-c4",
+                        Provider = "fake-c4",
+                        RuntimeKind = "acp-v1",
+                        WorkingDirectory = tempDir,
+                        ExecutablePath = node,
+                        ExecutableArguments = [scriptPath, logPath]
+                    }
+                }, ct);
+
+                await runtime.ExecuteAsync(new AppServerControlHostCommandEnvelope
+                {
+                    CommandId = "c4-turn",
+                    SessionId = "s-c4",
+                    Type = "turn.start",
+                    StartTurn = new AppServerControlTurnRequest { Text = "Run security audit" }
+                }, ct);
+
+                await WaitUntilAsync(() => events.Any(e => e.ItemId == "acp:session-msg:ses-parent:sm-1" && e.Item?.Detail?.Contains("Verified PKCE.", StringComparison.Ordinal) == true), ct);
+
+                // Interrupt parent turn -> must propagate session/cancel to cancellable active child subagent!
+                await runtime.ExecuteAsync(new AppServerControlHostCommandEnvelope
+                {
+                    CommandId = "c4-interrupt",
+                    SessionId = "s-c4",
+                    Type = "turn.interrupt",
+                    InterruptTurn = new AppServerControlInterruptRequest()
+                }, ct);
+
+                await WaitUntilAsync(() => events.Any(e => e.ItemId == "acp:subagent:ses-child-1" && e.Item?.Status == "cancelled"), ct);
+
+                // Verify structured visibility in history snapshot (child output, session reference tool content, session message)
+                var snapshot = history.GetSnapshot("s-c4")!;
+                Assert.Contains(snapshot.History, h => h.ItemId == "acp:subagent:ses-child-1" && h.ToolPresentation?.Evidence?.Contains("Auditing OAuth token refresh", StringComparison.Ordinal) == true);
+                Assert.Contains(snapshot.History, h => h.ItemId == "tc-sub-1" && h.ToolPresentation?.Evidence?.Contains("[subagent session: ses-child-1]", StringComparison.Ordinal) == true);
+                Assert.Contains(snapshot.History, h => h.ItemId == "acp:session-msg:ses-parent:sm-1" && h.ToolPresentation?.Evidence?.Contains("Found 0 critical issues. Verified PKCE.", StringComparison.Ordinal) == true);
+            }
+
+            var rpcLines = (await File.ReadAllLinesAsync(logPath, ct)).Select(l => JsonDocument.Parse(l)).ToList();
+            try
+            {
+                Assert.Contains(rpcLines, d =>
+                    d.RootElement.TryGetProperty("method", out var m) && m.GetString() == "session/cancel" &&
+                    d.RootElement.GetProperty("params").GetProperty("sessionId").GetString() == "ses-child-1");
+            }
+            finally
+            {
+                foreach (var doc in rpcLines) doc.Dispose();
+            }
+        }
+        finally
+        {
+            try { Directory.Delete(tempDir, recursive: true); } catch { }
+        }
+    }
 }

@@ -258,9 +258,9 @@ public sealed class AcpSchemaContractTests
             ["compaction_summary_chunk"] = SupportStatus.Implemented,
             ["prompt_suggestions_update"] = SupportStatus.PlannedCampaign5,
             ["cursor_update"] = SupportStatus.PlannedCampaign5,
-            ["subagent_update"] = SupportStatus.PlannedCampaign4,
-            ["session_message"] = SupportStatus.PlannedCampaign4,
-            ["session_message_chunk"] = SupportStatus.PlannedCampaign4
+            ["subagent_update"] = SupportStatus.Implemented,
+            ["session_message"] = SupportStatus.Implemented,
+            ["session_message_chunk"] = SupportStatus.Implemented
         };
 
         var v2Updates = new Dictionary<string, SupportStatus>(StringComparer.Ordinal)
@@ -288,9 +288,9 @@ public sealed class AcpSchemaContractTests
             ["replay_complete"] = SupportStatus.Implemented,
             ["prompt_suggestions_update"] = SupportStatus.PlannedCampaign5,
             ["cursor_update"] = SupportStatus.PlannedCampaign5,
-            ["subagent_update"] = SupportStatus.PlannedCampaign4,
-            ["session_message"] = SupportStatus.PlannedCampaign4,
-            ["session_message_chunk"] = SupportStatus.PlannedCampaign4
+            ["subagent_update"] = SupportStatus.Implemented,
+            ["session_message"] = SupportStatus.Implemented,
+            ["session_message_chunk"] = SupportStatus.Implemented
         };
 
         var v1ContentBlocks = new Dictionary<string, SupportStatus>(StringComparer.Ordinal)

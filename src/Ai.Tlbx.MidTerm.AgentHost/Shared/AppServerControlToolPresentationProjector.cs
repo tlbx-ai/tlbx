@@ -183,6 +183,36 @@ public static class AppServerControlToolPresentationProjector
                 continue;
             }
 
+            if (string.Equals(type, "session", StringComparison.OrdinalIgnoreCase))
+            {
+                var sessionId = GetString(block, "sessionId");
+                if (!string.IsNullOrWhiteSpace(sessionId))
+                {
+                    output.Append($"[subagent session: {sessionId}]");
+                }
+                continue;
+            }
+
+            if (string.Equals(type, "terminal", StringComparison.OrdinalIgnoreCase))
+            {
+                var terminalId = GetString(block, "terminalId");
+                if (!string.IsNullOrWhiteSpace(terminalId))
+                {
+                    output.Append($"[terminal: {terminalId}]");
+                }
+                continue;
+            }
+
+            if (type is not null &&
+                !string.Equals(type, "content", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(type, "text", StringComparison.OrdinalIgnoreCase) &&
+                !block.TryGetProperty("content", out _) &&
+                !block.TryGetProperty("text", out _))
+            {
+                output.Append(block.GetRawText());
+                continue;
+            }
+
             AppendTextValue(block, output);
         }
     }
@@ -301,7 +331,8 @@ public static class AppServerControlToolPresentationProjector
         {
             return "network";
         }
-        if (normalizedKind is "task" or "agent" || normalizedTool is "task" or "agent" or "spawnagent")
+        if (normalizedType is "subagent" or "subagentmessage" ||
+            normalizedKind is "task" or "agent" || normalizedTool is "task" or "agent" or "spawnagent")
         {
             return "subagent";
         }
