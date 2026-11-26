@@ -124,6 +124,9 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
                 "tool.cancel" => await CancelToolCallAsync(command, ct).ConfigureAwait(false),
                 "terminal.cancel" => await CancelTerminalAsync(command, ct).ConfigureAwait(false),
                 "auth.logout" => await LogoutAcpAsync(command, ct).ConfigureAwait(false),
+                "session.list" => await ListSessionsAsync(command, ct).ConfigureAwait(false),
+                "session.close" => await CloseSessionCommandAsync(command, ct).ConfigureAwait(false),
+                "session.delete" => await DeleteSessionAsync(command, ct).ConfigureAwait(false),
                 "thread.compact" => await CompactViaNativeCommandAsync(command, ct).ConfigureAwait(false),
                 "request.resolve" => await ResolvePermissionRequestAsync(command, ct).ConfigureAwait(false),
                 "user-input.resolve" => await ResolveUserInputAsync(command, ct).ConfigureAwait(false),
@@ -192,6 +195,10 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
         _userProfileDirectory = attach.UserProfileDirectory;
         _environmentVariables = new Dictionary<string, string?>(attach.EnvironmentVariables, StringComparer.Ordinal);
         _authenticationMethodId = attach.AuthenticationMethodId;
+        _additionalDirectories = attach.AdditionalDirectories.Where(static d => !string.IsNullOrWhiteSpace(d)).Select(static d => d.Trim()).ToList();
+        _systemPromptMode = attach.SystemPromptMode;
+        _systemPromptText = attach.SystemPromptText;
+        _additionalMcpHttpServers = attach.AdditionalMcpHttpServers.ToList();
         _providerThreadId = null;
         _quickSettings = CreateDefaultQuickSettings();
         ResetProtocolState();
@@ -209,6 +216,15 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
                         writer.WriteNumber("protocolVersion", 2);
                         writer.WritePropertyName("capabilities");
                         writer.WriteStartObject();
+                        writer.WritePropertyName("elicitation");
+                        writer.WriteStartObject();
+                        writer.WritePropertyName("form");
+                        writer.WriteStartObject();
+                        writer.WriteEndObject();
+                        writer.WritePropertyName("url");
+                        writer.WriteStartObject();
+                        writer.WriteEndObject();
+                        writer.WriteEndObject();
                         writer.WriteEndObject();
                         writer.WritePropertyName("info");
                         writer.WriteStartObject();
@@ -218,6 +234,15 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
                         writer.WriteEndObject();
                         writer.WritePropertyName("clientCapabilities");
                         writer.WriteStartObject();
+                        writer.WritePropertyName("elicitation");
+                        writer.WriteStartObject();
+                        writer.WritePropertyName("form");
+                        writer.WriteStartObject();
+                        writer.WriteEndObject();
+                        writer.WritePropertyName("url");
+                        writer.WriteStartObject();
+                        writer.WriteEndObject();
+                        writer.WriteEndObject();
                         writer.WritePropertyName("session");
                         writer.WriteStartObject();
                         writer.WritePropertyName("configOptions");
@@ -244,6 +269,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
                     ct)
                 .ConfigureAwait(false);
             _protocolGeneration = ResolveProtocolGeneration(initializeResult);
+            CaptureSessionCapabilities(initializeResult);
             if (_mcpServer is not null && _protocolGeneration == 2 &&
                 Traverse(initializeResult, "capabilities", "session", "mcp", "stdio") is not { ValueKind: JsonValueKind.Object })
                 throw new InvalidOperationException($"{_agentName} does not advertise ACP session.mcp.stdio; tlbx MCP cannot be configured for this runtime.");
@@ -766,6 +792,12 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
             case "session/request_permission":
                 await HandlePermissionRequestAsync(root, line, ct).ConfigureAwait(false);
                 break;
+            case "elicitation/create":
+                await HandleElicitationCreateAsync(root, line, ct).ConfigureAwait(false);
+                break;
+            case "elicitation/complete":
+                HandleElicitationComplete(root, line);
+                break;
             case "x.ai/ask_user_question":
             case "_x.ai/ask_user_question":
                 await HandleGrokUserInputRequestAsync(root, line, ct).ConfigureAwait(false);
@@ -878,6 +910,9 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
             case "usage_update":
                 FinishAntigravityBackgroundReply(root, rawLine);
                 HandleUsageUpdate(updateElement, root, rawLine);
+                return;
+            case "session_info_update":
+                HandleSessionInfoUpdate(updateElement, root, rawLine);
                 return;
             case "plan_update":
                 HandleV2Plan(updateElement, root, rawLine, turnId);
@@ -1046,6 +1081,11 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
                     return;
                 }
             }
+        }
+
+        if (TryCancelElicitationByRpcId(rpcIdKey))
+        {
+            return;
         }
 
         EmitRuntimeMessage("runtime.notice", $"{_agentName} cancelled ACP request '{rpcIdKey}'.", rawLine, timelineVisible: false);
@@ -1492,6 +1532,11 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
 
     private async Task DisposeProcessAsync()
     {
+        if (!_disposingProcess)
+        {
+            await TrySendSessionCloseAsync(_providerThreadId, CancellationToken.None).ConfigureAwait(false);
+        }
+
         _disposingProcess = true;
         foreach (var pending in _pendingRequests.Values)
         {
@@ -1504,6 +1549,8 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
         _antigravityFullAccess = false;
         _pendingUserInputs.Clear();
         _pendingChoiceQuestions.Clear();
+        _pendingElicitations.Clear();
+        _activeUrlElicitations.Clear();
 
         try
         {

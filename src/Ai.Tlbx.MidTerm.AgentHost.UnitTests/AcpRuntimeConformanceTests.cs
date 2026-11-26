@@ -313,4 +313,257 @@ rl.on('line', (line) => {
             try { Directory.Delete(tempDir, recursive: true); } catch { }
         }
     }
+
+    [Fact]
+    public async Task V2Campaign3LifecycleDiscoveryAndElicitationsWorkEndToEnd()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var tempDir = Path.Combine(Path.GetTempPath(), "tlbx-acp-c3-" + Guid.NewGuid().ToString("N"));
+        var extraDir = Path.Combine(tempDir, "extra-workspace");
+        Directory.CreateDirectory(extraDir);
+        var scriptPath = Path.Combine(tempDir, "fake-acp-c3.mjs");
+        var logPath = Path.Combine(tempDir, "rpc-log.jsonl");
+
+        var fakeServerJs = """
+import readline from 'node:readline';
+import fs from 'node:fs';
+
+const logPath = process.argv[2];
+const rl = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
+
+function send(obj) {
+  process.stdout.write(JSON.stringify(obj) + '\n');
+}
+
+function log(obj) {
+  fs.appendFileSync(logPath, JSON.stringify(obj) + '\n');
+}
+
+rl.on('line', (line) => {
+  if (!line.trim()) return;
+  const msg = JSON.parse(line);
+  log(msg);
+  if (msg.method === 'initialize') {
+    send({
+      jsonrpc: '2.0',
+      id: msg.id,
+      result: {
+        protocolVersion: 2,
+        info: { name: 'fake-acp-c3', version: '2.0.0' },
+        capabilities: {
+          session: {
+            prompt: {},
+            mcp: { stdio: {}, http: {} },
+            delete: {},
+            additionalDirectories: {},
+            systemPrompt: { append: {}, override: {} }
+          }
+        }
+      }
+    });
+  } else if (msg.method === 'session/new') {
+    send({ jsonrpc: '2.0', id: msg.id, result: { sessionId: 'ses-c3-main', configOptions: [] } });
+    send({ jsonrpc: '2.0', method: 'session/update', params: { sessionId: 'ses-c3-main', update: { sessionUpdate: 'session_info_update', title: 'Renamed C3 Session', updatedAt: '2026-11-26T19:00:00Z' } } });
+  } else if (msg.method === 'session/list') {
+    send({
+      jsonrpc: '2.0',
+      id: msg.id,
+      result: {
+        sessions: [
+          { sessionId: 'ses-c3-main', cwd: msg.params.cwd || '/tmp', title: 'Renamed C3 Session', updatedAt: '2026-11-26T19:00:00Z', additionalDirectories: ['/extra'] }
+        ],
+        nextCursor: 'cursor-page-2'
+      }
+    });
+  } else if (msg.method === 'session/delete') {
+    send({ jsonrpc: '2.0', id: msg.id, result: {} });
+  } else if (msg.method === 'session/close') {
+    send({ jsonrpc: '2.0', id: msg.id, result: {} });
+  } else if (msg.method === 'session/prompt') {
+    send({ jsonrpc: '2.0', id: msg.id, result: { messageId: 'user-c3-1' } });
+    send({ jsonrpc: '2.0', method: 'session/update', params: { sessionId: 'ses-c3-main', update: { sessionUpdate: 'state_update', state: 'requires_action' } } });
+    send({
+      jsonrpc: '2.0',
+      id: 'elicit-form-1',
+      method: 'elicitation/create',
+      params: {
+        sessionId: 'ses-c3-main',
+        mode: 'form',
+        message: 'Provide release settings',
+        requestedSchema: {
+          type: 'object',
+          properties: {
+            env: { type: 'string', title: 'Environment', enum: ['dev', 'prod'] },
+            dryRun: { type: 'boolean', title: 'Dry Run' },
+            retries: { type: 'integer', title: 'Retries' }
+          },
+          required: ['env']
+        }
+      }
+    });
+  } else if (msg.id === 'elicit-form-1') {
+    send({
+      jsonrpc: '2.0',
+      id: 'elicit-url-2',
+      method: 'elicitation/create',
+      params: {
+        sessionId: 'ses-c3-main',
+        mode: 'url',
+        elicitationId: 'url-auth-77',
+        url: 'https://example.invalid/device-login',
+        message: 'Complete device login'
+      }
+    });
+  } else if (msg.id === 'elicit-url-2') {
+    send({ jsonrpc: '2.0', method: 'elicitation/complete', params: { elicitationId: 'url-auth-77' } });
+    send({ jsonrpc: '2.0', method: 'session/update', params: { sessionId: 'ses-c3-main', update: { sessionUpdate: 'state_update', state: 'idle', stopReason: 'end_turn' } } });
+  }
+});
+""";
+
+        await File.WriteAllTextAsync(scriptPath, fakeServerJs, Encoding.UTF8, ct);
+        var node = ResolveNodeExecutable();
+        try
+        {
+            var events = new ConcurrentQueue<AppServerControlProviderEvent>();
+            await using (var runtime = new AcpAppServerControlAgentRuntime(
+                "fake-c3",
+                "Fake ACP C3",
+                [scriptPath, logPath],
+                events.Enqueue))
+            {
+                await runtime.ExecuteAsync(new AppServerControlHostCommandEnvelope
+                {
+                    CommandId = "c3-attach",
+                    SessionId = "s-c3",
+                    Type = "runtime.attach",
+                    AttachRuntime = new AppServerControlAttachRuntimeRequest
+                    {
+                        SessionId = "s-c3",
+                        Provider = "fake-c3",
+                        RuntimeKind = "acp-v1",
+                        WorkingDirectory = tempDir,
+                        ExecutablePath = node,
+                        ExecutableArguments = [scriptPath, logPath],
+                        AdditionalDirectories = [extraDir],
+                        SystemPromptMode = "append",
+                        SystemPromptText = "Always stay concise.",
+                        AdditionalMcpHttpServers =
+                        [
+                            new AppServerControlHttpMcpServer
+                            {
+                                Name = "docs",
+                                Url = "https://mcp.example.invalid/sse",
+                                Headers = new Dictionary<string, string>(StringComparer.Ordinal) { ["Authorization"] = "Bearer token" }
+                            }
+                        ]
+                    }
+                }, ct);
+
+                // session/list with cwd filter & cursor
+                var listOutcome = await runtime.ExecuteAsync(new AppServerControlHostCommandEnvelope
+                {
+                    CommandId = "c3-list",
+                    SessionId = "s-c3",
+                    Type = "session.list",
+                    ListSessions = new AppServerControlSessionListRequest { Cwd = tempDir }
+                }, ct);
+                Assert.NotNull(listOutcome.Result.SessionList);
+                Assert.Single(listOutcome.Result.SessionList!.Sessions);
+                Assert.Equal("Renamed C3 Session", listOutcome.Result.SessionList.Sessions[0].Title);
+                Assert.Equal("cursor-page-2", listOutcome.Result.SessionList.NextCursor);
+
+                // session/delete
+                await runtime.ExecuteAsync(new AppServerControlHostCommandEnvelope
+                {
+                    CommandId = "c3-delete",
+                    SessionId = "s-c3",
+                    Type = "session.delete",
+                    SessionTarget = new AppServerControlSessionTargetRequest { ProviderSessionId = "ses-old-1" }
+                }, ct);
+
+                // Trigger form elicitation -> respond -> trigger url elicitation -> respond -> elicitation/complete
+                await runtime.ExecuteAsync(new AppServerControlHostCommandEnvelope
+                {
+                    CommandId = "c3-turn",
+                    SessionId = "s-c3",
+                    Type = "turn.start",
+                    StartTurn = new AppServerControlTurnRequest { Text = "Deploy" }
+                }, ct);
+
+                await WaitUntilAsync(() => events.Any(e => e.UserInputRequested is not null && e.Raw?.Method == "elicitation/create"), ct);
+                var formReq = events.First(e => e.UserInputRequested is not null && e.Raw?.Method == "elicitation/create");
+                Assert.Equal(3, formReq.UserInputRequested!.Questions.Count);
+
+                await runtime.ExecuteAsync(new AppServerControlHostCommandEnvelope
+                {
+                    CommandId = "c3-form-answer",
+                    SessionId = "s-c3",
+                    Type = "user-input.resolve",
+                    ResolveUserInput = new AppServerControlUserInputResolutionCommand
+                    {
+                        RequestId = formReq.RequestId!,
+                        Answers =
+                        [
+                            new AppServerControlAnsweredQuestion { QuestionId = "env", Answers = ["prod"] },
+                            new AppServerControlAnsweredQuestion { QuestionId = "dryRun", Answers = ["true"] },
+                            new AppServerControlAnsweredQuestion { QuestionId = "retries", Answers = ["3"] }
+                        ]
+                    }
+                }, ct);
+
+                await WaitUntilAsync(() => events.Count(e => e.UserInputRequested is not null && e.Raw?.Method == "elicitation/create") == 2, ct);
+                var urlReq = events.Last(e => e.UserInputRequested is not null && e.Raw?.Method == "elicitation/create");
+                Assert.Contains("https://example.invalid/device-login", urlReq.UserInputRequested!.Questions[0].Question, StringComparison.Ordinal);
+
+                await runtime.ExecuteAsync(new AppServerControlHostCommandEnvelope
+                {
+                    CommandId = "c3-url-answer",
+                    SessionId = "s-c3",
+                    Type = "user-input.resolve",
+                    ResolveUserInput = new AppServerControlUserInputResolutionCommand
+                    {
+                        RequestId = urlReq.RequestId!,
+                        Answers = [new AppServerControlAnsweredQuestion { QuestionId = "url_action", Answers = ["accept"] }]
+                    }
+                }, ct);
+
+                await WaitUntilAsync(() => events.Any(e => e.Type == "turn.completed" && e.TurnCompleted?.State == "completed"), ct);
+                Assert.Contains(events, e => e.Raw?.Method == "session_info_update");
+                Assert.Contains(events, e => e.Raw?.Method == "elicitation/complete");
+            }
+
+            // DisposeAsync above must have sent session/close cleanly before killing the process!
+            var rpcLines = (await File.ReadAllLinesAsync(logPath, ct)).Select(l => JsonDocument.Parse(l)).ToList();
+            try
+            {
+                var init = rpcLines.First(d => d.RootElement.TryGetProperty("method", out var m) && m.GetString() == "initialize").RootElement;
+                Assert.Contains("\"elicitation\"", init.GetProperty("params").GetProperty("capabilities").GetRawText(), StringComparison.Ordinal);
+
+                var sessionNew = rpcLines.First(d => d.RootElement.TryGetProperty("method", out var m) && m.GetString() == "session/new").RootElement;
+                var newParamsRaw = sessionNew.GetProperty("params").GetRawText();
+                Assert.Contains("\"additionalDirectories\"", newParamsRaw, StringComparison.Ordinal);
+                Assert.Contains("\"systemPrompt\"", newParamsRaw, StringComparison.Ordinal);
+                Assert.Contains("\"type\":\"http\"", newParamsRaw, StringComparison.Ordinal);
+
+                var formReply = rpcLines.First(d => d.RootElement.TryGetProperty("id", out var id) && id.GetString() == "elicit-form-1").RootElement;
+                Assert.Equal("accept", formReply.GetProperty("result").GetProperty("action").GetString());
+                Assert.Equal("prod", formReply.GetProperty("result").GetProperty("content").GetProperty("env").GetString());
+                Assert.True(formReply.GetProperty("result").GetProperty("content").GetProperty("dryRun").GetBoolean());
+                Assert.Equal(3, formReply.GetProperty("result").GetProperty("content").GetProperty("retries").GetInt32());
+
+                Assert.Contains(rpcLines, d => d.RootElement.TryGetProperty("method", out var m) && m.GetString() == "session/list");
+                Assert.Contains(rpcLines, d => d.RootElement.TryGetProperty("method", out var m) && m.GetString() == "session/delete");
+                Assert.Contains(rpcLines, d => d.RootElement.TryGetProperty("method", out var m) && m.GetString() == "session/close");
+            }
+            finally
+            {
+                foreach (var doc in rpcLines) doc.Dispose();
+            }
+        }
+        finally
+        {
+            try { Directory.Delete(tempDir, recursive: true); } catch { }
+        }
+    }
 }

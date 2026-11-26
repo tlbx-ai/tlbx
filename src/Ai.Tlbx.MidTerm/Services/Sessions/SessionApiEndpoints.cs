@@ -1139,6 +1139,45 @@ public static partial class SessionApiEndpoints
             catch (IOException) { return Results.Conflict("Agent Controller runtime disconnected while logging out."); }
         });
 
+        app.MapGet("/api/sessions/{id}/agent-control/sessions", async (
+            string id,
+            string? cwd = null,
+            string? cursor = null,
+            string? archived = null,
+            CancellationToken ct = default) =>
+        {
+            if (sessionManager.GetSession(id) is null) return Results.NotFound();
+            if (!appServerControlRuntime.IsAttached(id))
+                return Results.Conflict("Agent Controller runtime is not attached.");
+            try
+            {
+                var response = await appServerControlRuntime.ListAgentSessionsAsync(
+                    id,
+                    new AppServerControlSessionListRequest { Cwd = cwd, Cursor = cursor, Archived = archived },
+                    ct).ConfigureAwait(false);
+                return Results.Json(response, AppJsonContext.Default.AppServerControlSessionListResponse);
+            }
+            catch (InvalidOperationException ex) { return Results.Conflict(ex.Message); }
+            catch (IOException) { return Results.Conflict("Agent Controller runtime disconnected while listing agent sessions."); }
+        });
+
+        app.MapDelete("/api/sessions/{id}/agent-control/sessions/{providerSessionId}", async (
+            string id,
+            string providerSessionId,
+            CancellationToken ct = default) =>
+        {
+            if (sessionManager.GetSession(id) is null) return Results.NotFound();
+            if (!appServerControlRuntime.IsAttached(id))
+                return Results.Conflict("Agent Controller runtime is not attached.");
+            try
+            {
+                var response = await appServerControlRuntime.DeleteAgentSessionAsync(id, providerSessionId, ct).ConfigureAwait(false);
+                return Results.Json(response, AppJsonContext.Default.AppServerControlCommandAcceptedResponse);
+            }
+            catch (InvalidOperationException ex) { return Results.Conflict(ex.Message); }
+            catch (IOException) { return Results.Conflict("Agent Controller runtime disconnected while deleting agent session."); }
+        });
+
         app.MapPost("/api/sessions/{id}/agent-control/steer", async (
             string id,
             AppServerControlSteerRequest request,

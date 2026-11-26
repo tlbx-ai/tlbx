@@ -147,6 +147,10 @@ internal static partial class TlbxMcpApiTools
         yield return Target("agent_terminal_cancel", "POST", "/api/sessions/{id}/agent-control/terminals/{terminalId}/cancel", "Cancel a single cancellable ACP v2 agent terminal without cancelling the entire session.")
             .Path("terminalId", "terminalId");
         yield return Target("agent_auth_logout", "POST", "/api/sessions/{id}/agent-control/auth/logout", "Log out of the attached ACP agent runtime using v2 auth/logout or v1 logout.");
+        yield return Target("agent_sessions_list", "GET", "/api/sessions/{id}/agent-control/sessions", "List saved ACP provider sessions via session/list with optional cwd, cursor, and archived filters.")
+            .With(Q("cwd"), Q("cursor"), Q("archived"));
+        yield return Target("agent_session_delete", "DELETE", "/api/sessions/{id}/agent-control/sessions/{providerSessionId}", "Delete a saved ACP provider session via session/delete when advertised by the agent.")
+            .Path("providerSessionId", "providerSessionId");
         yield return Target("agent_steer", "POST", "/api/sessions/{id}/agent-control/steer", "Steer the exact expected active turn with text/attachments, retaining concurrency checks.", AppJsonContext.Default.AppServerControlSteerRequest);
         yield return Target("agent_compact", "POST", "/api/sessions/{id}/agent-control/compact", "Compact the dedicated structured agent runtime.");
         yield return Target("agent_request_decide", "POST", "/api/sessions/{id}/agent-control/requests/{requestId}/decision", "Accept or decline exactly one open approval from agent_history in the expected turn, optionally selecting an explicit native ACP optionId. Read its exact requested action first; never replay an uncertain decision.")

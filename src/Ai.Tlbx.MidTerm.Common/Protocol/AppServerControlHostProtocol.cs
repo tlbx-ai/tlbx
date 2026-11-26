@@ -762,9 +762,48 @@ public sealed class AppServerControlAttachRuntimeRequest
     public string? AuthenticationMethodId { get; set; }
     public string? UserProfileDirectory { get; set; }
     public string? ResumeThreadId { get; set; }
+    public List<string> AdditionalDirectories { get; set; } = [];
+    public string? SystemPromptMode { get; set; }
+    public string? SystemPromptText { get; set; }
+    public List<AppServerControlHttpMcpServer> AdditionalMcpHttpServers { get; set; } = [];
     /// <summary>Trusted per-runtime MCP configuration, carried only over the owned host IPC.</summary>
     public AppServerControlMcpServer? McpServer { get; set; }
     public bool McpPrepareOnly { get; set; }
+}
+
+public sealed class AppServerControlHttpMcpServer
+{
+    public string Name { get; set; } = string.Empty;
+    public string Url { get; set; } = string.Empty;
+    public Dictionary<string, string> Headers { get; set; } = new(StringComparer.Ordinal);
+}
+
+public sealed class AppServerControlSessionListRequest
+{
+    public string? Cwd { get; set; }
+    public string? Cursor { get; set; }
+    public string? Archived { get; set; }
+}
+
+public sealed class AppServerControlSessionListEntry
+{
+    public string SessionId { get; set; } = string.Empty;
+    public string Cwd { get; set; } = string.Empty;
+    public string? Title { get; set; }
+    public string? UpdatedAt { get; set; }
+    public bool Archived { get; set; }
+    public List<string> AdditionalDirectories { get; set; } = [];
+}
+
+public sealed class AppServerControlSessionListResponse
+{
+    public List<AppServerControlSessionListEntry> Sessions { get; set; } = [];
+    public string? NextCursor { get; set; }
+}
+
+public sealed class AppServerControlSessionTargetRequest
+{
+    public string ProviderSessionId { get; set; } = string.Empty;
 }
 
 public sealed class AppServerControlMcpServer
@@ -805,6 +844,8 @@ public sealed class AppServerControlHostCommandEnvelope
     public AppServerControlHostHistoryWindowRequest? HistoryWindow { get; set; }
     public AppServerControlHostGitMetadata? GitMetadata { get; set; }
     public AppServerControlCancelTargetRequest? CancelTarget { get; set; }
+    public AppServerControlSessionListRequest? ListSessions { get; set; }
+    public AppServerControlSessionTargetRequest? SessionTarget { get; set; }
 }
 
 public sealed class AppServerControlCancelTargetRequest
@@ -840,6 +881,7 @@ public sealed class AppServerControlHostCommandResultEnvelope
     public AppServerControlUsageSummary? Usage { get; set; }
     public AppServerControlHistoryWindowResponse? HistoryWindow { get; set; }
     public AppServerControlHostGitMetadata? GitMetadata { get; set; }
+    public AppServerControlSessionListResponse? SessionList { get; set; }
 }
 
 public sealed class AppServerControlHostHistoryPatchEnvelope
@@ -913,6 +955,11 @@ public sealed class AppServerControlHostHistoryPatchEnvelope
 [JsonSerializable(typeof(List<AppServerControlRuntimeNotice>))]
 [JsonSerializable(typeof(AppServerControlHostHistoryPatchEnvelope))]
 [JsonSerializable(typeof(AppServerControlCancelTargetRequest))]
+[JsonSerializable(typeof(AppServerControlHttpMcpServer))]
+[JsonSerializable(typeof(AppServerControlSessionListRequest))]
+[JsonSerializable(typeof(AppServerControlSessionListEntry))]
+[JsonSerializable(typeof(AppServerControlSessionListResponse))]
+[JsonSerializable(typeof(AppServerControlSessionTargetRequest))]
 public partial class AppServerControlHostJsonContext : JsonSerializerContext
 {
 }

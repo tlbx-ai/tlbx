@@ -282,6 +282,32 @@ public sealed class SessionAppServerControlRuntimeService : IAsyncDisposable, IS
         return _hostRuntime.LogoutAsync(sessionId, ct);
     }
 
+    public Task<AppServerControlSessionListResponse> ListAgentSessionsAsync(
+        string sessionId,
+        AppServerControlSessionListRequest? request = null,
+        CancellationToken ct = default)
+    {
+        if (!_hostRuntime.OwnsSession(sessionId))
+        {
+            throw new InvalidOperationException("App Server Controller runtime is not attached.");
+        }
+
+        return _hostRuntime.ListAgentSessionsAsync(sessionId, request, ct);
+    }
+
+    public Task<AppServerControlCommandAcceptedResponse> DeleteAgentSessionAsync(
+        string sessionId,
+        string providerSessionId,
+        CancellationToken ct = default)
+    {
+        if (!_hostRuntime.OwnsSession(sessionId))
+        {
+            throw new InvalidOperationException("App Server Controller runtime is not attached.");
+        }
+
+        return _hostRuntime.DeleteAgentSessionAsync(sessionId, providerSessionId, ct);
+    }
+
     public Task<AppServerControlUsageSummary> ReadUsageAsync(string sessionId, CancellationToken ct = default) =>
         _hostRuntime.ReadUsageAsync(sessionId, ct);
 

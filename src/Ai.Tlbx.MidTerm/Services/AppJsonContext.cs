@@ -118,6 +118,8 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(WorkerBootstrapResponse))]
 [JsonSerializable(typeof(ProviderResumeCatalogEntryDto))]
 [JsonSerializable(typeof(List<ProviderResumeCatalogEntryDto>))]
+[JsonSerializable(typeof(AppServerControlSessionListResponse))]
+[JsonSerializable(typeof(AppServerControlSessionListEntry))]
 [JsonSerializable(typeof(AppServerControlTurnRequest))]
 [JsonSerializable(typeof(AppServerControlSteerRequest))]
 [JsonSerializable(typeof(AppServerControlConfigureRequest))]
