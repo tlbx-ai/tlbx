@@ -127,6 +127,17 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
                 "session.list" => await ListSessionsAsync(command, ct).ConfigureAwait(false),
                 "session.close" => await CloseSessionCommandAsync(command, ct).ConfigureAwait(false),
                 "session.delete" => await DeleteSessionAsync(command, ct).ConfigureAwait(false),
+                "session.fork" => await ForkSessionAsync(command, ct).ConfigureAwait(false),
+                "session.set_title" => await SetSessionTitleAsync(command, ct).ConfigureAwait(false),
+                "session.archive" => await ArchiveSessionAsync(command, unarchive: false, ct).ConfigureAwait(false),
+                "session.unarchive" => await ArchiveSessionAsync(command, unarchive: true, ct).ConfigureAwait(false),
+                "session.status" => await GetSessionStatusAsync(command, ct).ConfigureAwait(false),
+                "session.options" => await GetSessionOptionsAsync(command, ct).ConfigureAwait(false),
+                "auth.status" => await GetAuthStatusAsync(command, ct).ConfigureAwait(false),
+                "providers.list" => await ListProvidersAsync(command, ct).ConfigureAwait(false),
+                "providers.set" => await SetProviderAsync(command, ct).ConfigureAwait(false),
+                "providers.disable" => await DisableProviderAsync(command, ct).ConfigureAwait(false),
+                "mcp.message" => await SendMcpMessageAsync(command, ct).ConfigureAwait(false),
                 "thread.compact" => await CompactViaNativeCommandAsync(command, ct).ConfigureAwait(false),
                 "request.resolve" => await ResolvePermissionRequestAsync(command, ct).ConfigureAwait(false),
                 "user-input.resolve" => await ResolveUserInputAsync(command, ct).ConfigureAwait(false),
@@ -270,6 +281,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
                 .ConfigureAwait(false);
             _protocolGeneration = ResolveProtocolGeneration(initializeResult);
             CaptureSessionCapabilities(initializeResult);
+            CaptureUnstableCapabilities(initializeResult);
             if (_mcpServer is not null && _protocolGeneration == 2 &&
                 Traverse(initializeResult, "capabilities", "session", "mcp", "stdio") is not { ValueKind: JsonValueKind.Object })
                 throw new InvalidOperationException($"{_agentName} does not advertise ACP session.mcp.stdio; tlbx MCP cannot be configured for this runtime.");
@@ -800,6 +812,12 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
             case "elicitation/complete":
                 HandleElicitationComplete(root, line);
                 break;
+            case "auth/status_update":
+                HandleAuthStatusUpdate(root, line);
+                break;
+            case "mcp/message":
+                await HandleInboundMcpMessageAsync(root, line, ct).ConfigureAwait(false);
+                break;
             case "x.ai/ask_user_question":
             case "_x.ai/ask_user_question":
                 await HandleGrokUserInputRequestAsync(root, line, ct).ConfigureAwait(false);
@@ -947,6 +965,12 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
             case "session_message":
             case "session_message_chunk":
                 HandleSessionMessageUpdate(updateType, updateElement, root, rawLine, turnId);
+                return;
+            case "prompt_suggestions_update":
+                HandlePromptSuggestionsUpdate(updateElement, root, rawLine);
+                return;
+            case "cursor_update":
+                HandleCursorUpdate(updateElement, root, rawLine);
                 return;
         }
 
@@ -1884,6 +1908,11 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
             {
                 _configOptionIds.TryAdd("effort", id);
             }
+            else if (string.Equals(category, "speed", StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(id, "speed", StringComparison.OrdinalIgnoreCase))
+            {
+                _configOptionIds.TryAdd("speed", id);
+            }
         }
     }
 
@@ -1951,7 +1980,27 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
             next.ConfigOptions.Add(option.Clone());
             var category = GetString(option, "category");
             var id = GetString(option, "id") ?? GetString(option, "configId");
-            if (GetString(option, "type") != "select") continue;
+            var optionType = GetString(option, "type");
+            if (string.Equals(category, "speed", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(id, "speed", StringComparison.OrdinalIgnoreCase))
+            {
+                if (optionType == "boolean" && option.TryGetProperty("currentValue", out var boolVal))
+                {
+                    next.FastMode = boolVal.ValueKind == JsonValueKind.True
+                        ? AppServerControlQuickSettings.FastModeOn
+                        : AppServerControlQuickSettings.FastModeOff;
+                }
+                else
+                {
+                    var speedVal = GetString(option, "currentValue");
+                    next.FastMode = speedVal is not null &&
+                        (speedVal.Contains("fast", StringComparison.OrdinalIgnoreCase) ||
+                         string.Equals(speedVal, "on", StringComparison.OrdinalIgnoreCase))
+                        ? AppServerControlQuickSettings.FastModeOn
+                        : AppServerControlQuickSettings.FastModeOff;
+                }
+            }
+            if (optionType != "select") continue;
             var currentValue = GetString(option, "currentValue");
             if (UsesAntigravityModes && id == "mode" && currentValue is not null)
                 ApplyAntigravityModeReadback(next, currentValue);

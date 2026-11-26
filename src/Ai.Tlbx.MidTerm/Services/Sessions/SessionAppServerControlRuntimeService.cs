@@ -308,6 +308,44 @@ public sealed class SessionAppServerControlRuntimeService : IAsyncDisposable, IS
         return _hostRuntime.DeleteAgentSessionAsync(sessionId, providerSessionId, ct);
     }
 
+    public Task<AppServerControlSessionForkResponse> ForkAgentSessionAsync(
+        string sessionId,
+        AppServerControlSessionForkRequest? request = null,
+        CancellationToken ct = default)
+    {
+        if (!_hostRuntime.OwnsSession(sessionId)) throw new InvalidOperationException("App Server Controller runtime is not attached.");
+        return _hostRuntime.ForkAgentSessionAsync(sessionId, request, ct);
+    }
+
+    public Task<AppServerControlCommandAcceptedResponse> SetAgentSessionTitleAsync(
+        string sessionId,
+        AppServerControlSessionTitleRequest request,
+        CancellationToken ct = default)
+    {
+        if (!_hostRuntime.OwnsSession(sessionId)) throw new InvalidOperationException("App Server Controller runtime is not attached.");
+        return _hostRuntime.SetAgentSessionTitleAsync(sessionId, request, ct);
+    }
+
+    public Task<AppServerControlCommandAcceptedResponse> ArchiveAgentSessionAsync(
+        string sessionId,
+        string providerSessionId,
+        bool unarchive,
+        CancellationToken ct = default)
+    {
+        if (!_hostRuntime.OwnsSession(sessionId)) throw new InvalidOperationException("App Server Controller runtime is not attached.");
+        return _hostRuntime.ArchiveAgentSessionAsync(sessionId, providerSessionId, unarchive, ct);
+    }
+
+    public Task<System.Text.Json.JsonElement> ExecuteRawAgentCommandAsync(
+        string sessionId,
+        string commandType,
+        Action<AppServerControlHostCommandEnvelope>? configure = null,
+        CancellationToken ct = default)
+    {
+        if (!_hostRuntime.OwnsSession(sessionId)) throw new InvalidOperationException("App Server Controller runtime is not attached.");
+        return _hostRuntime.ExecuteRawAgentCommandAsync(sessionId, commandType, configure, ct);
+    }
+
     public Task<AppServerControlUsageSummary> ReadUsageAsync(string sessionId, CancellationToken ct = default) =>
         _hostRuntime.ReadUsageAsync(sessionId, ct);
 

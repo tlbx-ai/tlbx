@@ -14,11 +14,7 @@ public sealed class AcpSchemaContractTests
     private enum SupportStatus
     {
         Implemented,
-        IntentionalOmit,
-        PlannedCampaign2,
-        PlannedCampaign3,
-        PlannedCampaign4,
-        PlannedCampaign5
+        IntentionalOmit
     }
 
     private static string FindSpecRoot()
@@ -139,17 +135,17 @@ public sealed class AcpSchemaContractTests
             ["session/prompt"] = SupportStatus.Implemented,
             ["session/cancel"] = SupportStatus.Implemented,
             // Unstable
-            ["providers/list"] = SupportStatus.PlannedCampaign5,
-            ["providers/set"] = SupportStatus.PlannedCampaign5,
-            ["providers/disable"] = SupportStatus.PlannedCampaign5,
-            ["mcp/message"] = SupportStatus.PlannedCampaign5,
-            ["session/fork"] = SupportStatus.PlannedCampaign5,
-            ["session/archive"] = SupportStatus.PlannedCampaign5,
-            ["session/unarchive"] = SupportStatus.PlannedCampaign5,
-            ["session/status"] = SupportStatus.PlannedCampaign5,
-            ["session/options"] = SupportStatus.PlannedCampaign5,
-            ["session/set_title"] = SupportStatus.PlannedCampaign5,
-            ["auth/status"] = SupportStatus.PlannedCampaign5
+            ["providers/list"] = SupportStatus.Implemented,
+            ["providers/set"] = SupportStatus.Implemented,
+            ["providers/disable"] = SupportStatus.Implemented,
+            ["mcp/message"] = SupportStatus.Implemented,
+            ["session/fork"] = SupportStatus.Implemented,
+            ["session/archive"] = SupportStatus.Implemented,
+            ["session/unarchive"] = SupportStatus.Implemented,
+            ["session/status"] = SupportStatus.Implemented,
+            ["session/options"] = SupportStatus.Implemented,
+            ["session/set_title"] = SupportStatus.Implemented,
+            ["auth/status"] = SupportStatus.Implemented
         };
 
         var v1ClientMethods = new Dictionary<string, SupportStatus>(StringComparer.Ordinal)
@@ -166,8 +162,8 @@ public sealed class AcpSchemaContractTests
             ["elicitation/create"] = SupportStatus.Implemented,
             ["elicitation/complete"] = SupportStatus.Implemented,
             // Unstable
-            ["mcp/message"] = SupportStatus.PlannedCampaign5,
-            ["auth/status_update"] = SupportStatus.PlannedCampaign5
+            ["mcp/message"] = SupportStatus.Implemented,
+            ["auth/status_update"] = SupportStatus.Implemented
         };
 
         var v2AgentMethods = new Dictionary<string, SupportStatus>(StringComparer.Ordinal)
@@ -186,17 +182,17 @@ public sealed class AcpSchemaContractTests
             ["tool_call/cancel"] = SupportStatus.Implemented,
             ["terminal/cancel"] = SupportStatus.Implemented,
             // Unstable
-            ["providers/list"] = SupportStatus.PlannedCampaign5,
-            ["providers/set"] = SupportStatus.PlannedCampaign5,
-            ["providers/disable"] = SupportStatus.PlannedCampaign5,
-            ["mcp/message"] = SupportStatus.PlannedCampaign5,
-            ["session/fork"] = SupportStatus.PlannedCampaign5,
-            ["session/archive"] = SupportStatus.PlannedCampaign5,
-            ["session/unarchive"] = SupportStatus.PlannedCampaign5,
-            ["session/status"] = SupportStatus.PlannedCampaign5,
-            ["session/options"] = SupportStatus.PlannedCampaign5,
-            ["session/set_title"] = SupportStatus.PlannedCampaign5,
-            ["auth/status"] = SupportStatus.PlannedCampaign5
+            ["providers/list"] = SupportStatus.Implemented,
+            ["providers/set"] = SupportStatus.Implemented,
+            ["providers/disable"] = SupportStatus.Implemented,
+            ["mcp/message"] = SupportStatus.Implemented,
+            ["session/fork"] = SupportStatus.Implemented,
+            ["session/archive"] = SupportStatus.Implemented,
+            ["session/unarchive"] = SupportStatus.Implemented,
+            ["session/status"] = SupportStatus.Implemented,
+            ["session/options"] = SupportStatus.Implemented,
+            ["session/set_title"] = SupportStatus.Implemented,
+            ["auth/status"] = SupportStatus.Implemented
         };
 
         var v2ClientMethods = new Dictionary<string, SupportStatus>(StringComparer.Ordinal)
@@ -206,8 +202,8 @@ public sealed class AcpSchemaContractTests
             ["elicitation/create"] = SupportStatus.Implemented,
             ["elicitation/complete"] = SupportStatus.Implemented,
             // Unstable
-            ["mcp/message"] = SupportStatus.PlannedCampaign5,
-            ["auth/status_update"] = SupportStatus.PlannedCampaign5
+            ["mcp/message"] = SupportStatus.Implemented,
+            ["auth/status_update"] = SupportStatus.Implemented
         };
 
         var protocolMethods = new Dictionary<string, SupportStatus>(StringComparer.Ordinal)
@@ -256,8 +252,8 @@ public sealed class AcpSchemaContractTests
             ["notice"] = SupportStatus.Implemented,
             ["compaction_update"] = SupportStatus.Implemented,
             ["compaction_summary_chunk"] = SupportStatus.Implemented,
-            ["prompt_suggestions_update"] = SupportStatus.PlannedCampaign5,
-            ["cursor_update"] = SupportStatus.PlannedCampaign5,
+            ["prompt_suggestions_update"] = SupportStatus.Implemented,
+            ["cursor_update"] = SupportStatus.Implemented,
             ["subagent_update"] = SupportStatus.Implemented,
             ["session_message"] = SupportStatus.Implemented,
             ["session_message_chunk"] = SupportStatus.Implemented
@@ -286,8 +282,8 @@ public sealed class AcpSchemaContractTests
             ["compaction_update"] = SupportStatus.Implemented,
             ["compaction_summary_chunk"] = SupportStatus.Implemented,
             ["replay_complete"] = SupportStatus.Implemented,
-            ["prompt_suggestions_update"] = SupportStatus.PlannedCampaign5,
-            ["cursor_update"] = SupportStatus.PlannedCampaign5,
+            ["prompt_suggestions_update"] = SupportStatus.Implemented,
+            ["cursor_update"] = SupportStatus.Implemented,
             ["subagent_update"] = SupportStatus.Implemented,
             ["session_message"] = SupportStatus.Implemented,
             ["session_message_chunk"] = SupportStatus.Implemented
@@ -313,7 +309,7 @@ public sealed class AcpSchemaContractTests
             ["model"] = SupportStatus.Implemented,
             ["model_config"] = SupportStatus.Implemented,
             ["thought_level"] = SupportStatus.Implemented,
-            ["speed"] = SupportStatus.PlannedCampaign5
+            ["speed"] = SupportStatus.Implemented
         };
 
         var v2PlanVariants = new Dictionary<string, SupportStatus>(StringComparer.Ordinal)
@@ -329,11 +325,11 @@ public sealed class AcpSchemaContractTests
             ["delete"] = SupportStatus.Implemented,
             ["additionalDirectories"] = SupportStatus.Implemented,
             ["systemPrompt"] = SupportStatus.Implemented,
-            ["fork"] = SupportStatus.PlannedCampaign5,
-            ["archive"] = SupportStatus.PlannedCampaign5,
-            ["status"] = SupportStatus.PlannedCampaign5,
-            ["options"] = SupportStatus.PlannedCampaign5,
-            ["title"] = SupportStatus.PlannedCampaign5,
+            ["fork"] = SupportStatus.Implemented,
+            ["archive"] = SupportStatus.Implemented,
+            ["status"] = SupportStatus.Implemented,
+            ["options"] = SupportStatus.Implemented,
+            ["title"] = SupportStatus.Implemented,
             ["_meta"] = SupportStatus.Implemented
         };
 

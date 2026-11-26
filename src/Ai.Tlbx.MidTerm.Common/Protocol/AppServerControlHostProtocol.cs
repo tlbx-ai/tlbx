@@ -806,6 +806,48 @@ public sealed class AppServerControlSessionTargetRequest
     public string ProviderSessionId { get; set; } = string.Empty;
 }
 
+public sealed class AppServerControlSessionForkRequest
+{
+    public string? ProviderSessionId { get; set; }
+    public string? CursorId { get; set; }
+    public string? Cwd { get; set; }
+    public List<string> AdditionalDirectories { get; set; } = [];
+    public string? SystemPromptMode { get; set; }
+    public string? SystemPromptText { get; set; }
+    public Dictionary<string, JsonElement> ConfigOptions { get; set; } = new(StringComparer.Ordinal);
+}
+
+public sealed class AppServerControlSessionForkResponse
+{
+    public string SessionId { get; set; } = string.Empty;
+    public List<JsonElement> ConfigOptions { get; set; } = [];
+    public List<AppServerControlCommand> AvailableCommands { get; set; } = [];
+}
+
+public sealed class AppServerControlSessionTitleRequest
+{
+    public string? ProviderSessionId { get; set; }
+    public string Title { get; set; } = string.Empty;
+}
+
+public sealed class AppServerControlProviderConfigRequest
+{
+    public string ProviderId { get; set; } = string.Empty;
+    public string? ApiType { get; set; }
+    public string? BaseUrl { get; set; }
+    public Dictionary<string, string> Headers { get; set; } = new(StringComparer.Ordinal);
+}
+
+public sealed class AppServerControlMcpMessageRequest
+{
+    public string ServerId { get; set; } = string.Empty;
+    public string RequestId { get; set; } = string.Empty;
+    public string Method { get; set; } = string.Empty;
+    public JsonElement? Params { get; set; }
+    public string? ProviderSessionId { get; set; }
+    public string? ToolCallId { get; set; }
+}
+
 public sealed class AppServerControlMcpServer
 {
     public string? ScopeIdentity { get; set; }
@@ -846,6 +888,10 @@ public sealed class AppServerControlHostCommandEnvelope
     public AppServerControlCancelTargetRequest? CancelTarget { get; set; }
     public AppServerControlSessionListRequest? ListSessions { get; set; }
     public AppServerControlSessionTargetRequest? SessionTarget { get; set; }
+    public AppServerControlSessionForkRequest? ForkSession { get; set; }
+    public AppServerControlSessionTitleRequest? SessionTitle { get; set; }
+    public AppServerControlProviderConfigRequest? ProviderConfig { get; set; }
+    public AppServerControlMcpMessageRequest? McpMessage { get; set; }
 }
 
 public sealed class AppServerControlCancelTargetRequest
@@ -882,6 +928,8 @@ public sealed class AppServerControlHostCommandResultEnvelope
     public AppServerControlHistoryWindowResponse? HistoryWindow { get; set; }
     public AppServerControlHostGitMetadata? GitMetadata { get; set; }
     public AppServerControlSessionListResponse? SessionList { get; set; }
+    public AppServerControlSessionForkResponse? ForkedSession { get; set; }
+    public JsonElement? RawPayload { get; set; }
 }
 
 public sealed class AppServerControlHostHistoryPatchEnvelope
@@ -960,6 +1008,11 @@ public sealed class AppServerControlHostHistoryPatchEnvelope
 [JsonSerializable(typeof(AppServerControlSessionListEntry))]
 [JsonSerializable(typeof(AppServerControlSessionListResponse))]
 [JsonSerializable(typeof(AppServerControlSessionTargetRequest))]
+[JsonSerializable(typeof(AppServerControlSessionForkRequest))]
+[JsonSerializable(typeof(AppServerControlSessionForkResponse))]
+[JsonSerializable(typeof(AppServerControlSessionTitleRequest))]
+[JsonSerializable(typeof(AppServerControlProviderConfigRequest))]
+[JsonSerializable(typeof(AppServerControlMcpMessageRequest))]
 public partial class AppServerControlHostJsonContext : JsonSerializerContext
 {
 }
