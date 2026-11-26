@@ -127,7 +127,7 @@ public sealed class AcpSchemaContractTests
         {
             ["initialize"] = SupportStatus.Implemented,
             ["authenticate"] = SupportStatus.Implemented,
-            ["logout"] = SupportStatus.PlannedCampaign2,
+            ["logout"] = SupportStatus.Implemented,
             ["session/new"] = SupportStatus.Implemented,
             ["session/load"] = SupportStatus.Implemented,
             ["session/resume"] = SupportStatus.Implemented,
@@ -173,8 +173,8 @@ public sealed class AcpSchemaContractTests
         var v2AgentMethods = new Dictionary<string, SupportStatus>(StringComparer.Ordinal)
         {
             ["initialize"] = SupportStatus.Implemented,
-            ["auth/login"] = SupportStatus.PlannedCampaign2,
-            ["auth/logout"] = SupportStatus.PlannedCampaign2,
+            ["auth/login"] = SupportStatus.Implemented,
+            ["auth/logout"] = SupportStatus.Implemented,
             ["session/new"] = SupportStatus.Implemented,
             ["session/resume"] = SupportStatus.Implemented,
             ["session/list"] = SupportStatus.PlannedCampaign3,
@@ -183,8 +183,8 @@ public sealed class AcpSchemaContractTests
             ["session/set_config_option"] = SupportStatus.Implemented,
             ["session/prompt"] = SupportStatus.Implemented,
             ["session/cancel"] = SupportStatus.Implemented,
-            ["tool_call/cancel"] = SupportStatus.PlannedCampaign2,
-            ["terminal/cancel"] = SupportStatus.PlannedCampaign2,
+            ["tool_call/cancel"] = SupportStatus.Implemented,
+            ["terminal/cancel"] = SupportStatus.Implemented,
             // Unstable
             ["providers/list"] = SupportStatus.PlannedCampaign5,
             ["providers/set"] = SupportStatus.PlannedCampaign5,
@@ -212,7 +212,7 @@ public sealed class AcpSchemaContractTests
 
         var protocolMethods = new Dictionary<string, SupportStatus>(StringComparer.Ordinal)
         {
-            ["$/cancel_request"] = SupportStatus.PlannedCampaign2
+            ["$/cancel_request"] = SupportStatus.Implemented
         };
 
         var proxyMethods = new Dictionary<string, SupportStatus>(StringComparer.Ordinal)
@@ -246,16 +246,16 @@ public sealed class AcpSchemaContractTests
             ["tool_call"] = SupportStatus.Implemented,
             ["tool_call_update"] = SupportStatus.Implemented,
             ["plan"] = SupportStatus.Implemented,
-            ["plan_update"] = SupportStatus.PlannedCampaign2,
-            ["plan_removed"] = SupportStatus.PlannedCampaign2,
+            ["plan_update"] = SupportStatus.Implemented,
+            ["plan_removed"] = SupportStatus.Implemented,
             ["available_commands_update"] = SupportStatus.Implemented,
             ["current_mode_update"] = SupportStatus.Implemented,
             ["config_option_update"] = SupportStatus.Implemented,
             ["session_info_update"] = SupportStatus.PlannedCampaign3,
             ["usage_update"] = SupportStatus.Implemented,
-            ["notice"] = SupportStatus.PlannedCampaign2,
-            ["compaction_update"] = SupportStatus.PlannedCampaign2,
-            ["compaction_summary_chunk"] = SupportStatus.PlannedCampaign2,
+            ["notice"] = SupportStatus.Implemented,
+            ["compaction_update"] = SupportStatus.Implemented,
+            ["compaction_summary_chunk"] = SupportStatus.Implemented,
             ["prompt_suggestions_update"] = SupportStatus.PlannedCampaign5,
             ["cursor_update"] = SupportStatus.PlannedCampaign5,
             ["subagent_update"] = SupportStatus.PlannedCampaign4,
@@ -276,8 +276,8 @@ public sealed class AcpSchemaContractTests
             ["tool_call_update"] = SupportStatus.Implemented,
             ["terminal_update"] = SupportStatus.Implemented,
             ["terminal_output_chunk"] = SupportStatus.Implemented,
-            ["plan_update"] = SupportStatus.PlannedCampaign2,
-            ["plan_removed"] = SupportStatus.PlannedCampaign2,
+            ["plan_update"] = SupportStatus.Implemented,
+            ["plan_removed"] = SupportStatus.Implemented,
             ["available_commands_update"] = SupportStatus.Implemented,
             ["config_option_update"] = SupportStatus.Implemented,
             ["session_info_update"] = SupportStatus.PlannedCampaign3,
@@ -285,7 +285,7 @@ public sealed class AcpSchemaContractTests
             ["notice"] = SupportStatus.Implemented,
             ["compaction_update"] = SupportStatus.Implemented,
             ["compaction_summary_chunk"] = SupportStatus.Implemented,
-            ["replay_complete"] = SupportStatus.PlannedCampaign2,
+            ["replay_complete"] = SupportStatus.Implemented,
             ["prompt_suggestions_update"] = SupportStatus.PlannedCampaign5,
             ["cursor_update"] = SupportStatus.PlannedCampaign5,
             ["subagent_update"] = SupportStatus.PlannedCampaign4,
@@ -296,15 +296,15 @@ public sealed class AcpSchemaContractTests
         var v1ContentBlocks = new Dictionary<string, SupportStatus>(StringComparer.Ordinal)
         {
             ["text"] = SupportStatus.Implemented,
-            ["image"] = SupportStatus.PlannedCampaign2,
-            ["audio"] = SupportStatus.PlannedCampaign2,
-            ["resource_link"] = SupportStatus.PlannedCampaign2,
-            ["resource"] = SupportStatus.PlannedCampaign2
+            ["image"] = SupportStatus.Implemented,
+            ["audio"] = SupportStatus.Implemented,
+            ["resource_link"] = SupportStatus.Implemented,
+            ["resource"] = SupportStatus.Implemented
         };
 
         var v2ContentBlocks = new Dictionary<string, SupportStatus>(v1ContentBlocks, StringComparer.Ordinal)
         {
-            ["skill"] = SupportStatus.PlannedCampaign2
+            ["skill"] = SupportStatus.Implemented
         };
 
         var configCategories = new Dictionary<string, SupportStatus>(StringComparer.Ordinal)
@@ -319,7 +319,7 @@ public sealed class AcpSchemaContractTests
         var v2PlanVariants = new Dictionary<string, SupportStatus>(StringComparer.Ordinal)
         {
             ["items"] = SupportStatus.Implemented,
-            ["markdown"] = SupportStatus.PlannedCampaign2
+            ["markdown"] = SupportStatus.Implemented
         };
 
         var v2SessionCapabilities = new Dictionary<string, SupportStatus>(StringComparer.Ordinal)

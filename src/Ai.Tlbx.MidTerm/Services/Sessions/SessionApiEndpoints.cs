@@ -1089,6 +1089,56 @@ public static partial class SessionApiEndpoints
             }
         });
 
+        app.MapPost("/api/sessions/{id}/agent-control/tools/{toolCallId}/cancel", async (
+            string id,
+            string toolCallId,
+            CancellationToken ct) =>
+        {
+            if (sessionManager.GetSession(id) is null) return Results.NotFound();
+            if (!appServerControlRuntime.IsAttached(id))
+                return Results.Conflict("Agent Controller runtime is not attached.");
+            try
+            {
+                var response = await appServerControlRuntime.CancelToolCallAsync(id, toolCallId, ct).ConfigureAwait(false);
+                return Results.Json(response, AppJsonContext.Default.AppServerControlCommandAcceptedResponse);
+            }
+            catch (InvalidOperationException ex) { return Results.Conflict(ex.Message); }
+            catch (IOException) { return Results.Conflict("Agent Controller runtime disconnected while cancelling tool call."); }
+        });
+
+        app.MapPost("/api/sessions/{id}/agent-control/terminals/{terminalId}/cancel", async (
+            string id,
+            string terminalId,
+            CancellationToken ct) =>
+        {
+            if (sessionManager.GetSession(id) is null) return Results.NotFound();
+            if (!appServerControlRuntime.IsAttached(id))
+                return Results.Conflict("Agent Controller runtime is not attached.");
+            try
+            {
+                var response = await appServerControlRuntime.CancelTerminalAsync(id, terminalId, ct).ConfigureAwait(false);
+                return Results.Json(response, AppJsonContext.Default.AppServerControlCommandAcceptedResponse);
+            }
+            catch (InvalidOperationException ex) { return Results.Conflict(ex.Message); }
+            catch (IOException) { return Results.Conflict("Agent Controller runtime disconnected while cancelling terminal."); }
+        });
+
+        app.MapPost("/api/sessions/{id}/agent-control/auth/logout", async (
+            string id,
+            CancellationToken ct) =>
+        {
+            if (sessionManager.GetSession(id) is null) return Results.NotFound();
+            if (!appServerControlRuntime.IsAttached(id))
+                return Results.Conflict("Agent Controller runtime is not attached.");
+            try
+            {
+                var response = await appServerControlRuntime.LogoutAsync(id, ct).ConfigureAwait(false);
+                return Results.Json(response, AppJsonContext.Default.AppServerControlCommandAcceptedResponse);
+            }
+            catch (InvalidOperationException ex) { return Results.Conflict(ex.Message); }
+            catch (IOException) { return Results.Conflict("Agent Controller runtime disconnected while logging out."); }
+        });
+
         app.MapPost("/api/sessions/{id}/agent-control/steer", async (
             string id,
             AppServerControlSteerRequest request,

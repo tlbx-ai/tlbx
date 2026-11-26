@@ -58,6 +58,8 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
     private string? _defaultModeId;
     private bool _supportsLegacyModels;
     private bool _supportsImagePrompts;
+    private bool _supportsAudioPrompts;
+    private bool _supportsResourceLinkPrompts;
     private AppServerControlQuickSettingsSummary _quickSettings = new();
     private List<AppServerControlCommand> _availableCommands = [];
     private int _nextRequestId;
@@ -119,6 +121,9 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
                 "runtime.configure" => await ConfigureQuickSettingsAsync(command, ct).ConfigureAwait(false),
                 "turn.steer" => await SteerTurnAsync(command, ct).ConfigureAwait(false),
                 "turn.interrupt" => await InterruptTurnAsync(command, ct).ConfigureAwait(false),
+                "tool.cancel" => await CancelToolCallAsync(command, ct).ConfigureAwait(false),
+                "terminal.cancel" => await CancelTerminalAsync(command, ct).ConfigureAwait(false),
+                "auth.logout" => await LogoutAcpAsync(command, ct).ConfigureAwait(false),
                 "thread.compact" => await CompactViaNativeCommandAsync(command, ct).ConfigureAwait(false),
                 "request.resolve" => await ResolvePermissionRequestAsync(command, ct).ConfigureAwait(false),
                 "user-input.resolve" => await ResolveUserInputAsync(command, ct).ConfigureAwait(false),
@@ -195,6 +200,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
         {
             await StartAcpProcessAsync(ct).ConfigureAwait(false);
 
+            var clientVersion = Program.GetClientVersion();
             var initializeResult = await SendRequestAsync(
                     "initialize",
                     writer =>
@@ -207,7 +213,8 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
                         writer.WritePropertyName("info");
                         writer.WriteStartObject();
                         writer.WriteString("name", "tlbx");
-                        writer.WriteString("version", "dev");
+                        writer.WriteString("title", "tlbx");
+                        writer.WriteString("version", clientVersion);
                         writer.WriteEndObject();
                         writer.WritePropertyName("clientCapabilities");
                         writer.WriteStartObject();
@@ -229,7 +236,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
                         writer.WriteStartObject();
                         writer.WriteString("name", "tlbx");
                         writer.WriteString("title", "tlbx");
-                        writer.WriteString("version", "dev");
+                        writer.WriteString("version", clientVersion);
                         writer.WriteEndObject();
                         writer.WriteEndObject();
                     },
@@ -242,11 +249,15 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
                 throw new InvalidOperationException($"{_agentName} does not advertise ACP session.mcp.stdio; tlbx MCP cannot be configured for this runtime.");
             await AuthenticateAcpAsync(initializeResult, ct).ConfigureAwait(false);
             _supportsImagePrompts = _protocolGeneration == 2
-                ? Traverse(initializeResult, "capabilities", "session", "prompt", "image") is { ValueKind: JsonValueKind.Object }
-                : Traverse(initializeResult, "agentCapabilities", "promptCapabilities", "image") is
-                {
-                    ValueKind: JsonValueKind.True
-                };
+                ? Traverse(initializeResult, "capabilities", "session", "prompt", "image") is { ValueKind: JsonValueKind.Object or JsonValueKind.True }
+                : Traverse(initializeResult, "agentCapabilities", "promptCapabilities", "image") is { ValueKind: JsonValueKind.True };
+            _supportsAudioPrompts = _protocolGeneration == 2
+                ? Traverse(initializeResult, "capabilities", "session", "prompt", "audio") is { ValueKind: JsonValueKind.Object or JsonValueKind.True }
+                : Traverse(initializeResult, "agentCapabilities", "promptCapabilities", "audio") is { ValueKind: JsonValueKind.True };
+            _supportsResourceLinkPrompts = _protocolGeneration == 2
+                ? Traverse(initializeResult, "capabilities", "session", "prompt", "resourceLink") is { ValueKind: JsonValueKind.Object or JsonValueKind.True }
+                  || Traverse(initializeResult, "capabilities", "session", "prompt", "embeddedContext") is { ValueKind: JsonValueKind.Object or JsonValueKind.True }
+                : Traverse(initializeResult, "agentCapabilities", "promptCapabilities", "embeddedContext") is { ValueKind: JsonValueKind.True };
 
             var resumeThreadId = string.IsNullOrWhiteSpace(attach.ResumeThreadId) ? null : attach.ResumeThreadId.Trim();
             var sessionMethod = ResolveSessionOpenMethod(initializeResult, resumeThreadId);
@@ -763,6 +774,9 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
             case "_x.ai/exit_plan_mode":
                 await HandleGrokExitPlanModeAsync(root, line, ct).ConfigureAwait(false);
                 break;
+            case "$/cancel_request":
+                HandleCancelRequestNotification(root, line);
+                break;
             default:
                 if (root.TryGetProperty("id", out var requestId))
                 {
@@ -864,6 +878,27 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
             case "usage_update":
                 FinishAntigravityBackgroundReply(root, rawLine);
                 HandleUsageUpdate(updateElement, root, rawLine);
+                return;
+            case "plan_update":
+                HandleV2Plan(updateElement, root, rawLine, turnId);
+                return;
+            case "plan_removed":
+                HandlePlanRemoved(updateElement, root, rawLine, turnId);
+                return;
+            case "notice":
+                EmitRuntimeMessage(
+                    GetString(updateElement, "severity") == "error" ? "runtime.error" : "runtime.notice",
+                    GetString(updateElement, "title") ?? "Agent notice",
+                    GetString(updateElement, "description") ?? string.Empty,
+                    "acp",
+                    "notice",
+                    root,
+                    rawLine,
+                    timelineVisible: false);
+                return;
+            case "compaction_update":
+            case "compaction_summary_chunk":
+                HandleV2Compaction(updateType, updateElement, root, rawLine, turnId);
                 return;
         }
 
@@ -969,6 +1004,51 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
             : $"{_agentName} commands available: {FormatNamePreview(names)}.";
         var detail = BuildAvailableCommandsDetail(names, tools);
         EmitRuntimeMessage("agent.state", message, detail, "acp", "available_commands_update", root, rawLine, timelineVisible: false);
+    }
+
+    private void HandleCancelRequestNotification(JsonElement root, string rawLine)
+    {
+        var requestIdElement = Traverse(root, "params", "requestId");
+        if (requestIdElement is not { ValueKind: JsonValueKind.String or JsonValueKind.Number } idVal)
+        {
+            return;
+        }
+
+        var rpcIdKey = idVal.ToString();
+        foreach (var pair in _pendingPermissions.ToArray())
+        {
+            if (string.Equals(pair.Value.RpcId.ToString(), rpcIdKey, StringComparison.Ordinal) &&
+                _pendingPermissions.TryRemove(pair.Key, out var pending))
+            {
+                EmitCancelledRequest(pair.Key, pending.TurnId, "command_execution_approval");
+                return;
+            }
+        }
+
+        foreach (var pair in _pendingChoiceQuestions.ToArray())
+        {
+            if (string.Equals(pair.Value.RpcId.ToString(), rpcIdKey, StringComparison.Ordinal) &&
+                _pendingChoiceQuestions.TryRemove(pair.Key, out var pending))
+            {
+                EmitCancelledRequest(pair.Key, pending.TurnId, "interview");
+                return;
+            }
+        }
+
+        lock (_userInputLock)
+        {
+            foreach (var pair in _pendingUserInputs.ToArray())
+            {
+                if (string.Equals(pair.Value.RpcId.ToString(), rpcIdKey, StringComparison.Ordinal) &&
+                    _pendingUserInputs.TryRemove(pair.Key, out var pending))
+                {
+                    EmitCancelledRequest(pair.Key, pending.TurnId, "interview");
+                    return;
+                }
+            }
+        }
+
+        EmitRuntimeMessage("runtime.notice", $"{_agentName} cancelled ACP request '{rpcIdKey}'.", rawLine, timelineVisible: false);
     }
 
     private void HandleSessionNotification(JsonElement root, string rawLine, string? method)
@@ -1147,11 +1227,20 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
             if (update.TryGetProperty("title", out _)) state.Title = GetString(update, "title") ?? toolCallId;
             if (update.TryGetProperty("kind", out _)) state.ItemType = NormalizeToolItemType(GetString(update, "kind"), state.Title);
             if (!appendContent && update.TryGetProperty("content", out _)) state.Output = new();
+            if (update.TryGetProperty("capabilities", out var capabilities))
+            {
+                state.CanCancel = capabilities.ValueKind == JsonValueKind.Object &&
+                    Traverse(capabilities, "cancel") is { ValueKind: JsonValueKind.Object or JsonValueKind.True };
+            }
             turnId = state.TurnId ??= turnId;
         }
         var status = _protocolGeneration == 2 && !update.TryGetProperty("status", out _)
             ? state.Status : NormalizeToolStatus(GetString(update, "status"));
         state.Status = status;
+        if (IsTerminalToolStatus(status))
+        {
+            state.CanCancel = false;
+        }
         var updatePresentation = AppServerControlToolPresentationProjector.FromAcp(
             state.ItemType,
             status,
@@ -1956,6 +2045,33 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
                 continue;
             }
 
+            if (_supportsAudioPrompts && string.Equals(attachment.Kind, "audio", StringComparison.OrdinalIgnoreCase))
+            {
+                var fileInfo = new FileInfo(attachment.Path);
+                if (fileInfo.Length > MaxInlineImageBytes)
+                {
+                    throw new InvalidOperationException($"ACP audio attachment exceeds {MaxInlineImageBytes.ToString(CultureInfo.InvariantCulture)} bytes: {attachment.Path}");
+                }
+
+                var bytes = File.ReadAllBytes(attachment.Path);
+                blocks.Add(AcpPromptBlock.CreateAudio(
+                    Convert.ToBase64String(bytes),
+                    ResolveAttachmentMimeType(attachment)));
+                continue;
+            }
+
+            if (_supportsResourceLinkPrompts && !string.Equals(attachment.Kind, "image", StringComparison.OrdinalIgnoreCase))
+            {
+                var displayName = string.IsNullOrWhiteSpace(attachment.DisplayName)
+                    ? Path.GetFileName(attachment.Path)
+                    : attachment.DisplayName.Trim();
+                blocks.Add(AcpPromptBlock.CreateResourceLink(
+                    displayName,
+                    new Uri(attachment.Path).AbsoluteUri,
+                    string.IsNullOrWhiteSpace(attachment.MimeType) ? null : attachment.MimeType.Trim().ToLowerInvariant()));
+                continue;
+            }
+
             var label = string.Equals(attachment.Kind, "image", StringComparison.OrdinalIgnoreCase) ? "[image] " : "[file] ";
             var mime = string.IsNullOrWhiteSpace(attachment.MimeType) ? string.Empty : $" ({attachment.MimeType})";
             fileReferences.Add($"- {label}{attachment.Path}{mime}");
@@ -1984,6 +2100,17 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
                 writer.WriteString("data", block.Data);
                 writer.WriteString("mimeType", block.MimeType);
                 if (!string.IsNullOrWhiteSpace(block.Uri)) writer.WriteString("uri", block.Uri);
+            }
+            else if (string.Equals(block.Type, "audio", StringComparison.Ordinal))
+            {
+                writer.WriteString("data", block.Data);
+                writer.WriteString("mimeType", block.MimeType);
+            }
+            else if (string.Equals(block.Type, "resource_link", StringComparison.Ordinal))
+            {
+                writer.WriteString("name", block.Name ?? "resource");
+                writer.WriteString("uri", block.Uri);
+                if (!string.IsNullOrWhiteSpace(block.MimeType)) writer.WriteString("mimeType", block.MimeType);
             }
             else
             {
@@ -2428,6 +2555,40 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
                 return value.GetString() ?? string.Empty;
             case JsonValueKind.Object when string.Equals(GetString(value, "type"), "text", StringComparison.OrdinalIgnoreCase):
                 return GetString(value, "text") ?? string.Empty;
+            case JsonValueKind.Object when string.Equals(GetString(value, "type"), "image", StringComparison.OrdinalIgnoreCase):
+            {
+                var mime = GetString(value, "mimeType") ?? "image";
+                var uri = GetString(value, "uri");
+                return string.IsNullOrWhiteSpace(uri) ? $"[image: {mime}]" : $"[image: {mime} ({uri})]";
+            }
+            case JsonValueKind.Object when string.Equals(GetString(value, "type"), "audio", StringComparison.OrdinalIgnoreCase):
+            {
+                var mime = GetString(value, "mimeType") ?? "audio";
+                return $"[audio: {mime}]";
+            }
+            case JsonValueKind.Object when string.Equals(GetString(value, "type"), "resource_link", StringComparison.OrdinalIgnoreCase):
+            {
+                var name = GetString(value, "title") ?? GetString(value, "name") ?? "resource";
+                var uri = GetString(value, "uri");
+                return string.IsNullOrWhiteSpace(uri) ? $"[{name}]" : $"[{name}]({uri})";
+            }
+            case JsonValueKind.Object when string.Equals(GetString(value, "type"), "resource", StringComparison.OrdinalIgnoreCase):
+            {
+                var resource = Traverse(value, "resource");
+                var uri = GetString(resource, "uri") ?? "resource";
+                var text = GetString(resource, "text");
+                if (!string.IsNullOrEmpty(text))
+                {
+                    return $"[{uri}]\n{text}";
+                }
+                var mime = GetString(resource, "mimeType") ?? "application/octet-stream";
+                return $"[resource: {uri} ({mime})]";
+            }
+            case JsonValueKind.Object when string.Equals(GetString(value, "type"), "skill", StringComparison.OrdinalIgnoreCase):
+            {
+                var name = GetString(value, "name") ?? "skill";
+                return $"[skill: {name}]";
+            }
             case JsonValueKind.Object when value.TryGetProperty("content", out var content):
                 return ExtractText(content);
             case JsonValueKind.Array:
@@ -2640,11 +2801,15 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
         };
     }
 
-    private readonly record struct AcpPromptBlock(string Type, string? Text, string? Data, string? MimeType, string? Uri)
+    private readonly record struct AcpPromptBlock(string Type, string? Text, string? Data, string? MimeType, string? Uri, string? Name = null)
     {
         public static AcpPromptBlock CreateText(string text) => new("text", text, null, null, null);
 
         public static AcpPromptBlock CreateImage(string data, string mimeType, string uri) => new("image", null, data, mimeType, uri);
+
+        public static AcpPromptBlock CreateAudio(string data, string mimeType) => new("audio", null, data, mimeType, null);
+
+        public static AcpPromptBlock CreateResourceLink(string name, string uri, string? mimeType) => new("resource_link", null, null, mimeType, uri, name);
     }
 
     private readonly record struct PendingPermissionRequest(JsonElement RpcId, string TurnId, IReadOnlyList<AppServerControlPermissionOption> Options);
@@ -2656,6 +2821,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
         public string Title { get; set; } = string.Empty;
         public string? TurnId { get; set; }
         public string Status { get; set; } = "in_progress";
+        public bool CanCancel { get; set; }
         public AppServerControlToolPresentation Presentation { get; init; } = new();
         public BoundedToolOutputAccumulator Output { get; set; } = new();
     }

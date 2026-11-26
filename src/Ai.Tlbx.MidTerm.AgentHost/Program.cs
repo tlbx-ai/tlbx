@@ -94,6 +94,20 @@ public static class Program
             """);
     }
 
+    internal static string GetClientVersion()
+    {
+        var version = typeof(Program).Assembly
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
+            .InformationalVersion;
+        if (!string.IsNullOrWhiteSpace(version))
+        {
+            var plus = version.IndexOf('+', StringComparison.Ordinal);
+            return plus > 0 ? version[..plus] : version;
+        }
+
+        return typeof(Program).Assembly.GetName().Version?.ToString() ?? "0.0.0";
+    }
+
     private static string GetVersion()
     {
         var version = typeof(Program).Assembly
