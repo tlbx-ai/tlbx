@@ -804,6 +804,12 @@ public sealed class AppServerControlHostCommandEnvelope
     public AppServerControlConfigureRequest? Configure { get; set; }
     public AppServerControlHostHistoryWindowRequest? HistoryWindow { get; set; }
     public AppServerControlHostGitMetadata? GitMetadata { get; set; }
+    public AppServerControlCancelTargetRequest? CancelTarget { get; set; }
+}
+
+public sealed class AppServerControlCancelTargetRequest
+{
+    public string TargetId { get; set; } = string.Empty;
 }
 
 public sealed class AppServerControlRequestResolutionCommand
@@ -906,6 +912,7 @@ public sealed class AppServerControlHostHistoryPatchEnvelope
 [JsonSerializable(typeof(AppServerControlRuntimeNotice))]
 [JsonSerializable(typeof(List<AppServerControlRuntimeNotice>))]
 [JsonSerializable(typeof(AppServerControlHostHistoryPatchEnvelope))]
+[JsonSerializable(typeof(AppServerControlCancelTargetRequest))]
 public partial class AppServerControlHostJsonContext : JsonSerializerContext
 {
 }

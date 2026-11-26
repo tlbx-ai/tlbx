@@ -244,6 +244,44 @@ public sealed class SessionAppServerControlRuntimeService : IAsyncDisposable, IS
         return await _hostRuntime.InterruptTurnAsync(sessionId, request, ct).ConfigureAwait(false);
     }
 
+    public Task<AppServerControlCommandAcceptedResponse> CancelToolCallAsync(
+        string sessionId,
+        string toolCallId,
+        CancellationToken ct = default)
+    {
+        if (!_hostRuntime.OwnsSession(sessionId))
+        {
+            throw new InvalidOperationException("App Server Controller runtime is not attached.");
+        }
+
+        return _hostRuntime.CancelTargetAsync(sessionId, "tool.cancel", toolCallId, ct);
+    }
+
+    public Task<AppServerControlCommandAcceptedResponse> CancelTerminalAsync(
+        string sessionId,
+        string terminalId,
+        CancellationToken ct = default)
+    {
+        if (!_hostRuntime.OwnsSession(sessionId))
+        {
+            throw new InvalidOperationException("App Server Controller runtime is not attached.");
+        }
+
+        return _hostRuntime.CancelTargetAsync(sessionId, "terminal.cancel", terminalId, ct);
+    }
+
+    public Task<AppServerControlCommandAcceptedResponse> LogoutAsync(
+        string sessionId,
+        CancellationToken ct = default)
+    {
+        if (!_hostRuntime.OwnsSession(sessionId))
+        {
+            throw new InvalidOperationException("App Server Controller runtime is not attached.");
+        }
+
+        return _hostRuntime.LogoutAsync(sessionId, ct);
+    }
+
     public Task<AppServerControlUsageSummary> ReadUsageAsync(string sessionId, CancellationToken ct = default) =>
         _hostRuntime.ReadUsageAsync(sessionId, ct);
 

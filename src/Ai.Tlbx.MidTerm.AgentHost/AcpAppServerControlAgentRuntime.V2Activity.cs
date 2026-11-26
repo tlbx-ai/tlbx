@@ -33,6 +33,15 @@ internal sealed partial class AcpAppServerControlAgentRuntime
                 terminal.ExitCode = exit.ValueKind == JsonValueKind.Object && exit.TryGetProperty("exitCode", out var code) &&
                     code.ValueKind == JsonValueKind.Number && code.TryGetInt32(out var value) ? value : null;
                 terminal.Signal = exit.ValueKind == JsonValueKind.Object ? GetString(exit, "signal") : null;
+                if (terminal.Exited)
+                {
+                    terminal.CanCancel = false;
+                }
+            }
+            if (update.TryGetProperty("capabilities", out var capabilities))
+            {
+                terminal.CanCancel = capabilities.ValueKind == JsonValueKind.Object &&
+                    Traverse(capabilities, "cancel") is { ValueKind: JsonValueKind.Object or JsonValueKind.True };
             }
         }
         else AppendTerminalBytes(terminal, GetString(update, "data"), raw);
@@ -121,6 +130,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime
         public string TurnId { get; init; } = string.Empty;
         public string? Command { get; set; }
         public bool Exited { get; set; }
+        public bool CanCancel { get; set; }
         public int? ExitCode { get; set; }
         public string? Signal { get; set; }
         public Decoder Decoder { get; set; } = Encoding.UTF8.GetDecoder();

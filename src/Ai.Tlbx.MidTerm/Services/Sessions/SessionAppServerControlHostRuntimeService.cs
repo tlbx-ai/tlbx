@@ -712,6 +712,72 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         }
     }
 
+    public async Task<AppServerControlCommandAcceptedResponse> CancelTargetAsync(
+        string sessionId,
+        string commandType,
+        string targetId,
+        CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(commandType);
+        ArgumentException.ThrowIfNullOrWhiteSpace(targetId);
+        var state = GetRequiredState(sessionId);
+
+        await state.Gate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            var result = await SendCommandAsync(
+                state,
+                commandId => new AppServerControlHostCommandEnvelope
+                {
+                    CommandId = commandId,
+                    SessionId = sessionId,
+                    Type = commandType,
+                    CancelTarget = new AppServerControlCancelTargetRequest { TargetId = targetId }
+                },
+                ct).ConfigureAwait(false);
+
+            return result.Accepted ?? new AppServerControlCommandAcceptedResponse
+            {
+                SessionId = sessionId,
+                Status = result.Status
+            };
+        }
+        finally
+        {
+            state.Gate.Release();
+        }
+    }
+
+    public async Task<AppServerControlCommandAcceptedResponse> LogoutAsync(
+        string sessionId,
+        CancellationToken ct = default)
+    {
+        var state = GetRequiredState(sessionId);
+        await state.Gate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            var result = await SendCommandAsync(
+                state,
+                commandId => new AppServerControlHostCommandEnvelope
+                {
+                    CommandId = commandId,
+                    SessionId = sessionId,
+                    Type = "auth.logout"
+                },
+                ct).ConfigureAwait(false);
+
+            return result.Accepted ?? new AppServerControlCommandAcceptedResponse
+            {
+                SessionId = sessionId,
+                Status = result.Status
+            };
+        }
+        finally
+        {
+            state.Gate.Release();
+        }
+    }
+
     public async Task<AppServerControlConfigureResponse> ConfigureAsync(
         string sessionId, AppServerControlConfigureRequest request, CancellationToken ct = default)
     {

@@ -142,6 +142,11 @@ internal static partial class TlbxMcpApiTools
         yield return Target("agent_configure", "POST", "/api/sessions/{id}/agent-control/configure", "Configure a structured agent session's model, reasoning effort, plan mode, permission mode, or native ACP config options.", AppJsonContext.Default.AppServerControlConfigureRequest);
         yield return Target("agent_turn", "POST", "/api/sessions/{id}/agent-control/turn", "Submit a structured agent turn with model/effort/plan/permission options and attachments.", AppJsonContext.Default.AppServerControlTurnRequest);
         yield return Target("agent_interrupt", "POST", "/api/sessions/{id}/agent-control/interrupt", "Interrupt the structured runtime, optionally targeting a specific turnId.", AppJsonContext.Default.AppServerControlInterruptRequest);
+        yield return Target("agent_tool_cancel", "POST", "/api/sessions/{id}/agent-control/tools/{toolCallId}/cancel", "Cancel a single cancellable ACP v2 tool call without cancelling the entire session.")
+            .Path("toolCallId", "toolCallId");
+        yield return Target("agent_terminal_cancel", "POST", "/api/sessions/{id}/agent-control/terminals/{terminalId}/cancel", "Cancel a single cancellable ACP v2 agent terminal without cancelling the entire session.")
+            .Path("terminalId", "terminalId");
+        yield return Target("agent_auth_logout", "POST", "/api/sessions/{id}/agent-control/auth/logout", "Log out of the attached ACP agent runtime using v2 auth/logout or v1 logout.");
         yield return Target("agent_steer", "POST", "/api/sessions/{id}/agent-control/steer", "Steer the exact expected active turn with text/attachments, retaining concurrency checks.", AppJsonContext.Default.AppServerControlSteerRequest);
         yield return Target("agent_compact", "POST", "/api/sessions/{id}/agent-control/compact", "Compact the dedicated structured agent runtime.");
         yield return Target("agent_request_decide", "POST", "/api/sessions/{id}/agent-control/requests/{requestId}/decision", "Accept or decline exactly one open approval from agent_history in the expected turn, optionally selecting an explicit native ACP optionId. Read its exact requested action first; never replay an uncertain decision.")

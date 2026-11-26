@@ -88,6 +88,12 @@ internal sealed partial class AcpAppServerControlAgentRuntime
             case "plan_update":
                 HandleV2Plan(update, root, raw, turnId);
                 return true;
+            case "plan_removed":
+                HandlePlanRemoved(update, root, raw, turnId);
+                return true;
+            case "replay_complete":
+                EmitRuntimeMessage("runtime.notice", $"{_agentName} completed ACP history replay.", string.Empty, "acp", "replay_complete", root, raw, timelineVisible: false);
+                return true;
             case "tool_call_update":
                 HandleToolCallUpdate(ResolveV2ToolTurn(update, turnId), update, root, raw);
                 return true;
@@ -135,32 +141,173 @@ internal sealed partial class AcpAppServerControlAgentRuntime
     private void HandleV2Plan(JsonElement update, JsonElement root, string raw, string? turnId)
     {
         if (Traverse(update, "plan") is not { ValueKind: JsonValueKind.Object } plan ||
-            GetString(plan, "planId") is not { Length: > 0 } id || GetString(plan, "type") != "items" ||
-            Traverse(plan, "entries") is not { ValueKind: JsonValueKind.Array } entries)
+            GetString(plan, "planId") is not { Length: > 0 } id)
         {
-            EmitRuntimeMessage("runtime.notice", "ACP plan variant could not be displayed.", raw, timelineVisible: false);
+            EmitRuntimeMessage("runtime.notice", "ACP plan update omitted plan.planId.", raw, timelineVisible: false);
             return;
         }
+
         if (!_nativeMessages.TryGetValue(("plan", id), out var entity))
         {
             entity = new AcpMessageState { TurnId = turnId ?? _activeTurnId ?? $"acp-background:{id}" };
             _nativeMessages[("plan", id)] = entity;
         }
-        var completed = true;
-        using (var enumerator = entries.EnumerateArray())
+
+        var planType = GetString(plan, "type");
+        string status;
+        string title;
+        string detail;
+        if (string.Equals(planType, "items", StringComparison.Ordinal) &&
+            Traverse(plan, "entries") is { ValueKind: JsonValueKind.Array } entries)
         {
-            while (enumerator.MoveNext())
-                completed &= GetString(enumerator.Current, "status") is "completed" or "cancelled";
+            var completed = true;
+            var hasEntries = false;
+            using (var enumerator = entries.EnumerateArray())
+            {
+                while (enumerator.MoveNext())
+                {
+                    hasEntries = true;
+                    completed &= GetString(enumerator.Current, "status") is "completed" or "cancelled";
+                }
+            }
+
+            status = hasEntries && completed ? "completed" : "in_progress";
+            title = "Plan";
+            detail = BuildPlanMarkdown(plan);
         }
+        else if (string.Equals(planType, "markdown", StringComparison.Ordinal))
+        {
+            var markdown = GetString(plan, "content") ?? string.Empty;
+            var path = GetString(plan, "path");
+            status = "in_progress";
+            title = string.IsNullOrWhiteSpace(path) ? "Plan" : $"Plan ({path})";
+            detail = string.IsNullOrWhiteSpace(path) ? markdown : $"<!-- path: {path} -->\n{markdown}";
+        }
+        else
+        {
+            // Preserve custom/future ("other") plan variants cleanly rather than dropping them.
+            status = "in_progress";
+            title = string.IsNullOrWhiteSpace(planType) ? "Plan" : $"Plan ({planType})";
+            detail = plan.GetRawText();
+        }
+
+        if (!string.IsNullOrWhiteSpace(detail))
+        {
+            _lastPlanMarkdown = detail;
+        }
+
         _emit(CreateEvent("item.updated", entity.TurnId, $"acp:plan:{id}", null, "acp", "plan_update", root,
             e => e.Item = new AppServerControlProviderItemPayload
             {
                 Replace = true,
                 ItemType = "plan",
-                Status = completed ? "completed" : "in_progress",
-                Title = "Plan",
-                Detail = BuildPlanMarkdown(plan)
+                Status = status,
+                Title = title,
+                Detail = detail
             }, raw));
+    }
+
+    private void HandlePlanRemoved(JsonElement update, JsonElement root, string raw, string? turnId)
+    {
+        var id = GetString(update, "planId");
+        if (string.IsNullOrWhiteSpace(id))
+        {
+            return;
+        }
+
+        var resolvedTurnId = _nativeMessages.Remove(("plan", id), out var entity)
+            ? entity.TurnId
+            : turnId ?? _activeTurnId ?? $"acp-background:{id}";
+
+        _emit(CreateEvent("item.completed", resolvedTurnId, $"acp:plan:{id}", null, "acp", "plan_removed", root,
+            e => e.Item = new AppServerControlProviderItemPayload
+            {
+                Replace = true,
+                ItemType = "plan",
+                Status = "cancelled",
+                Title = "Plan (removed)",
+                Detail = string.Empty
+            }, raw));
+    }
+
+    private async Task<HostCommandOutcome> CancelToolCallAsync(AppServerControlHostCommandEnvelope command, CancellationToken ct)
+    {
+        EnsureAttached();
+        if (_protocolGeneration != 2)
+        {
+            throw new InvalidOperationException($"{_agentName} tool_call/cancel requires ACP v2.");
+        }
+
+        var toolCallId = command.CancelTarget?.TargetId?.Trim();
+        if (string.IsNullOrWhiteSpace(toolCallId))
+        {
+            throw new InvalidOperationException("toolCallId is required.");
+        }
+
+        if (!_tools.TryGetValue(toolCallId, out var tool))
+        {
+            throw new InvalidOperationException($"{_agentName} tool call '{toolCallId}' was not found.");
+        }
+
+        if (IsTerminalToolStatus(tool.Status))
+        {
+            throw new InvalidOperationException($"{_agentName} tool call '{toolCallId}' is already {tool.Status}.");
+        }
+
+        if (!tool.CanCancel)
+        {
+            throw new InvalidOperationException($"{_agentName} tool call '{toolCallId}' does not advertise capabilities.cancel.");
+        }
+
+        await SendRequestAsync("tool_call/cancel", writer =>
+        {
+            writer.WriteStartObject();
+            writer.WriteString("sessionId", _providerThreadId);
+            writer.WriteString("toolCallId", toolCallId);
+            writer.WriteEndObject();
+        }, AttachRequestTimeout, ct).ConfigureAwait(false);
+
+        return Accepted(command.CommandId, command.SessionId);
+    }
+
+    private async Task<HostCommandOutcome> CancelTerminalAsync(AppServerControlHostCommandEnvelope command, CancellationToken ct)
+    {
+        EnsureAttached();
+        if (_protocolGeneration != 2)
+        {
+            throw new InvalidOperationException($"{_agentName} terminal/cancel requires ACP v2.");
+        }
+
+        var terminalId = command.CancelTarget?.TargetId?.Trim();
+        if (string.IsNullOrWhiteSpace(terminalId))
+        {
+            throw new InvalidOperationException("terminalId is required.");
+        }
+
+        if (!_nativeTerminals.TryGetValue(terminalId, out var terminal))
+        {
+            throw new InvalidOperationException($"{_agentName} terminal '{terminalId}' was not found.");
+        }
+
+        if (terminal.Exited)
+        {
+            throw new InvalidOperationException($"{_agentName} terminal '{terminalId}' has already exited.");
+        }
+
+        if (!terminal.CanCancel)
+        {
+            throw new InvalidOperationException($"{_agentName} terminal '{terminalId}' does not advertise capabilities.cancel.");
+        }
+
+        await SendRequestAsync("terminal/cancel", writer =>
+        {
+            writer.WriteStartObject();
+            writer.WriteString("sessionId", _providerThreadId);
+            writer.WriteString("terminalId", terminalId);
+            writer.WriteEndObject();
+        }, AttachRequestTimeout, ct).ConfigureAwait(false);
+
+        return Accepted(command.CommandId, command.SessionId);
     }
 
     private void HandleV2Message(string kind, JsonElement update, JsonElement root, string raw, string? turnId)

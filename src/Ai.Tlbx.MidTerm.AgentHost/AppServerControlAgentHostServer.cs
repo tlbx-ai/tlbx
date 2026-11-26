@@ -482,7 +482,7 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
             new AppServerControlHostHello
             {
                 HostKind = "mtagenthost",
-                HostVersion = "dev",
+                HostVersion = Program.GetClientVersion(),
                 McpScopeIdentity = _mcpScope.Identity,
                 Providers = _syntheticProvider is null
                     ? ["codex", "claude-agent-sdk", "opencode-http", "acp-v1"]
@@ -496,6 +496,9 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
                     "runtime.configure",
                     "usage.read",
                     "turn.interrupt",
+                    "tool.cancel",
+                    "terminal.cancel",
+                    "auth.logout",
                     "thread.compact",
                     "thread.goal.set",
                     "thread.goal.get",
