@@ -60,6 +60,8 @@ internal sealed partial class AcpAppServerControlAgentRuntime
     private async Task<HostCommandOutcome> ResolveUserInputAsync(AppServerControlHostCommandEnvelope command, CancellationToken ct)
     {
         var resolution = command.ResolveUserInput ?? throw new InvalidOperationException("user-input.resolve payload is required.");
+        if (_pendingElicitations.ContainsKey(resolution.RequestId))
+            return await ResolveElicitationAsync(command, ct).ConfigureAwait(false);
         if (_pendingChoiceQuestions.ContainsKey(resolution.RequestId))
             return await ResolveAcpChoiceQuestionAsync(command, ct).ConfigureAwait(false);
         if (!_pendingUserInputs.TryGetValue(resolution.RequestId, out var pending) ||
@@ -123,6 +125,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime
 
     private async Task CancelUserInputRequestsAsync(string turnId, CancellationToken ct)
     {
+        await CancelElicitationsAsync(turnId, ct).ConfigureAwait(false);
         await CancelAcpChoiceQuestionsAsync(turnId, ct).ConfigureAwait(false);
         List<KeyValuePair<string, PendingUserInputRequest>> cancelled = [];
         lock (_userInputLock)

@@ -28,7 +28,11 @@ internal static class AppServerControlMcpConfiguration
         writer.WriteEndObject();
     }
 
-    internal static void WriteAcp(Utf8JsonWriter writer, AppServerControlMcpServer? server, int protocolGeneration)
+    internal static void WriteAcp(
+        Utf8JsonWriter writer,
+        AppServerControlMcpServer? server,
+        int protocolGeneration,
+        IReadOnlyList<AppServerControlHttpMcpServer>? httpServers = null)
     {
         writer.WritePropertyName("mcpServers");
         writer.WriteStartArray();
@@ -50,6 +54,29 @@ internal static class AppServerControlMcpConfiguration
             }
             writer.WriteEndArray();
             writer.WriteEndObject();
+        }
+
+        if (httpServers is { Count: > 0 })
+        {
+            foreach (var http in httpServers)
+            {
+                if (string.IsNullOrWhiteSpace(http.Name) || string.IsNullOrWhiteSpace(http.Url)) continue;
+                writer.WriteStartObject();
+                writer.WriteString("type", "http");
+                writer.WriteString("name", http.Name.Trim());
+                writer.WriteString("url", http.Url.Trim());
+                writer.WritePropertyName("headers");
+                writer.WriteStartArray();
+                foreach (var (headerName, headerValue) in http.Headers)
+                {
+                    writer.WriteStartObject();
+                    writer.WriteString("name", headerName);
+                    writer.WriteString("value", headerValue);
+                    writer.WriteEndObject();
+                }
+                writer.WriteEndArray();
+                writer.WriteEndObject();
+            }
         }
         writer.WriteEndArray();
     }
