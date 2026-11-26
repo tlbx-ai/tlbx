@@ -567,6 +567,8 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
                 ct)
             .ConfigureAwait(false);
 
+        await CancelActiveSubagentsAsync(ct).ConfigureAwait(false);
+
         foreach (var pair in _pendingPermissions.Where(pair => string.Equals(pair.Value.TurnId, turnId, StringComparison.Ordinal)).ToList())
         {
             if (_pendingPermissions.TryRemove(pair.Key, out var pending))
@@ -863,6 +865,10 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
         if (!string.IsNullOrWhiteSpace(_providerThreadId) && !string.IsNullOrWhiteSpace(nativeSessionId) &&
             !string.Equals(nativeSessionId, _providerThreadId, StringComparison.Ordinal))
         {
+            if (_subagents.ContainsKey(nativeSessionId))
+            {
+                HandleChildSessionUpdate(nativeSessionId, root, rawLine);
+            }
             return;
         }
 
@@ -934,6 +940,13 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
             case "compaction_update":
             case "compaction_summary_chunk":
                 HandleV2Compaction(updateType, updateElement, root, rawLine, turnId);
+                return;
+            case "subagent_update":
+                HandleSubagentUpdate(updateElement, root, rawLine, turnId);
+                return;
+            case "session_message":
+            case "session_message_chunk":
+                HandleSessionMessageUpdate(updateType, updateElement, root, rawLine, turnId);
                 return;
         }
 
