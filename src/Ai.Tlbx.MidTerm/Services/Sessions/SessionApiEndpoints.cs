@@ -875,8 +875,21 @@ public static partial class SessionApiEndpoints
             int? count = null,
             int? viewportWidth = null,
             bool includeMetadata = true,
+            string? order = null,
+            int? beforeIndex = null,
+            string? kind = null,
             CancellationToken ct = default) =>
         {
+            if (order is not null && !IsValidHistoryOrder(order))
+            {
+                return Results.BadRequest("order must be 'oldestFirst' or 'newestFirst'.");
+            }
+
+            if (beforeIndex is < 0)
+            {
+                return Results.BadRequest("beforeIndex must be non-negative.");
+            }
+
             var session = TryGetSessionDto(sessionManager, sessionSupervisor, appServerControlRuntime, id);
             if (session is null) return Results.NotFound();
 
@@ -889,17 +902,125 @@ public static partial class SessionApiEndpoints
                     : "Agent Controller runtime is not available for this session.");
             }
 
-            var history = await appServerControlRuntime.GetHistoryWindowAsync(
-                id,
-                startIndex,
-                count,
-                viewportWidth,
-                ct: ct).ConfigureAwait(false);
-            return history is null
-                ? Results.NotFound()
-                : Results.Json(
-                    ProjectHistoryWindow(history, includeMetadata),
-                    AppJsonContext.Default.AppServerControlHistoryWindowResponse);
+            var newestFirst = string.Equals(order, "newestFirst", StringComparison.OrdinalIgnoreCase);
+            var kindFilters = ParseHistoryKindFilter(kind);
+            AppServerControlHistoryWindowResponse? history;
+
+            if (kindFilters.Count > 0)
+            {
+                history = await appServerControlRuntime.GetHistoryWindowAsync(
+                    id,
+                    startIndex: 0,
+                    count: int.MaxValue,
+                    viewportWidth: viewportWidth,
+                    updateCache: false,
+                    ct: ct).ConfigureAwait(false);
+                if (history is null) return Results.NotFound();
+                history = FilterAndOrderHistoryWindow(history, kindFilters, startIndex, beforeIndex, count, newestFirst);
+            }
+            else if (beforeIndex is { } cursor)
+            {
+                var effectiveCount = Math.Max(1, count ?? 20);
+                var sliceStart = Math.Max(0, cursor - effectiveCount);
+                var fetchCount = cursor - sliceStart;
+                if (fetchCount == 0)
+                {
+                    history = await appServerControlRuntime.GetHistoryWindowAsync(
+                        id,
+                        startIndex: null,
+                        count: 1,
+                        viewportWidth: viewportWidth,
+                        updateCache: false,
+                        ct: ct).ConfigureAwait(false);
+                    if (history is null) return Results.NotFound();
+                    history = CreateEmptyHistoryWindow(history, hasNewerHistory: history.HistoryCount > 0);
+                }
+                else
+                {
+                    history = await appServerControlRuntime.GetHistoryWindowAsync(
+                        id,
+                        startIndex: sliceStart,
+                        count: fetchCount,
+                        viewportWidth: viewportWidth,
+                        updateCache: false,
+                        ct: ct).ConfigureAwait(false);
+                    if (history is null) return Results.NotFound();
+                    if (sliceStart >= history.HistoryCount)
+                    {
+                        history = CreateEmptyHistoryWindow(history, hasNewerHistory: false, hasOlderHistory: history.HistoryCount > 0);
+                    }
+                    else if (newestFirst)
+                    {
+                        history = ReverseHistoryWindowEntries(history);
+                    }
+                }
+            }
+            else
+            {
+                history = await appServerControlRuntime.GetHistoryWindowAsync(
+                    id,
+                    startIndex,
+                    count,
+                    viewportWidth,
+                    ct: ct).ConfigureAwait(false);
+                if (history is null) return Results.NotFound();
+                if (newestFirst)
+                {
+                    history = ReverseHistoryWindowEntries(history);
+                }
+            }
+
+            return Results.Json(
+                ProjectHistoryWindow(history, includeMetadata),
+                AppJsonContext.Default.AppServerControlHistoryWindowResponse);
+        });
+
+        app.MapPost("/api/sessions/{id}/agent-control/configure", async (
+            string id,
+            AppServerControlConfigureRequest request,
+            CancellationToken ct) =>
+        {
+            var session = TryGetSessionDto(sessionManager, sessionSupervisor, appServerControlRuntime, id);
+            if (session is null) return Results.NotFound();
+
+            if (!appServerControlRuntime.IsAttached(id)
+                && !await appServerControlRuntime.EnsureAttachedAsync(id, session, ct: ct).ConfigureAwait(false))
+            {
+                return Results.Conflict("Agent Controller runtime is not available for this session.");
+            }
+
+            if (string.IsNullOrWhiteSpace(request.ExpectedThreadId))
+            {
+                var current = await appServerControlRuntime.GetHistoryWindowAsync(
+                    id,
+                    startIndex: null,
+                    count: 1,
+                    updateCache: false,
+                    ct: ct).ConfigureAwait(false);
+                if (current is not null && !string.IsNullOrWhiteSpace(current.Thread.ThreadId))
+                {
+                    request.ExpectedThreadId = current.Thread.ThreadId;
+                    if (request.ExpectedTurnId is null &&
+                        current.CurrentTurn.State is "running" or "starting" or "waiting" or "in_progress")
+                    {
+                        request.ExpectedTurnId = current.CurrentTurn.TurnId;
+                    }
+                }
+            }
+
+            try
+            {
+                var response = await appServerControlRuntime.ConfigureAsync(id, request, ct).ConfigureAwait(false);
+                return Results.Json(response, AppJsonContext.Default.AppServerControlConfigureResponse);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.Conflict(ex.Message);
+            }
+            catch (IOException)
+            {
+                return Results.Conflict("Agent Controller runtime disconnected while configuring session.");
+            }
         });
 
         app.MapPost("/api/sessions/{id}/agent-control/turn", async (
@@ -1003,7 +1124,8 @@ public static partial class SessionApiEndpoints
             string requestId,
             string decision,
             string expectedTurnId,
-            CancellationToken ct) =>
+            string? optionId = null,
+            CancellationToken ct = default) =>
         {
             if (decision is not ("accept" or "decline") || string.IsNullOrWhiteSpace(expectedTurnId))
             {
@@ -1029,7 +1151,51 @@ public static partial class SessionApiEndpoints
             try
             {
                 var response = await appServerControlRuntime.ResolveRequestAsync(
-                    id, requestId, new AppServerControlRequestDecisionRequest { Decision = decision }, ct).ConfigureAwait(false);
+                    id,
+                    requestId,
+                    new AppServerControlRequestDecisionRequest
+                    {
+                        Decision = decision,
+                        OptionId = string.IsNullOrWhiteSpace(optionId) ? null : optionId.Trim()
+                    },
+                    ct).ConfigureAwait(false);
+                return Results.Json(response, AppJsonContext.Default.AppServerControlCommandAcceptedResponse);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.Conflict(ex.Message);
+            }
+        });
+
+        app.MapPost("/api/sessions/{id}/agent-control/requests/{requestId}/user-input", async (
+            string id,
+            string requestId,
+            AppServerControlUserInputAnswerRequest request,
+            string? expectedTurnId = null,
+            CancellationToken ct = default) =>
+        {
+            if (sessionManager.GetSession(id) is null)
+            {
+                return Results.NotFound();
+            }
+
+            if (!appServerControlRuntime.IsAttached(id))
+            {
+                return Results.Conflict("Agent Controller runtime is not attached.");
+            }
+
+            if (!string.IsNullOrWhiteSpace(expectedTurnId))
+            {
+                var history = await appServerControlRuntime.GetHistoryWindowAsync(id, count: 1, updateCache: false, ct: ct).ConfigureAwait(false);
+                if (!IsOpenAgentRequestInTurn(history, requestId, expectedTurnId))
+                {
+                    return Results.Conflict("The user-input request is not open in the expected active turn. Read agent_history before responding.");
+                }
+            }
+
+            try
+            {
+                var response = await appServerControlRuntime.ResolveUserInputAsync(id, requestId, request, ct).ConfigureAwait(false);
                 return Results.Json(response, AppJsonContext.Default.AppServerControlCommandAcceptedResponse);
             }
             catch (InvalidOperationException ex)
@@ -2183,6 +2349,124 @@ public static partial class SessionApiEndpoints
         session.Supervisor = sessionSupervisor.Describe(session);
         session.HasAppServerControlHistory = appServerControlRuntime.HasHistory(session.Id);
     }
+
+    internal static bool IsValidHistoryOrder(string? order) =>
+        string.IsNullOrWhiteSpace(order)
+        || string.Equals(order, "oldestFirst", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(order, "newestFirst", StringComparison.OrdinalIgnoreCase);
+
+    internal static HashSet<string> ParseHistoryKindFilter(string? kind)
+    {
+        var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (string.IsNullOrWhiteSpace(kind))
+        {
+            return result;
+        }
+
+        foreach (var part in kind.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (!string.IsNullOrWhiteSpace(part))
+            {
+                result.Add(part);
+            }
+        }
+
+        return result;
+    }
+
+    internal static AppServerControlHistoryWindowResponse ReverseHistoryWindowEntries(
+        AppServerControlHistoryWindowResponse history)
+    {
+        var reversed = new List<AppServerControlHistoryItem>(history.History);
+        reversed.Reverse();
+        return CloneHistoryWindowMetadata(history, reversed, history.HistoryCount, history.HistoryWindowStart, history.HistoryWindowEnd, history.HasOlderHistory, history.HasNewerHistory);
+    }
+
+    internal static AppServerControlHistoryWindowResponse CreateEmptyHistoryWindow(
+        AppServerControlHistoryWindowResponse history,
+        bool hasNewerHistory,
+        bool hasOlderHistory = false) =>
+        CloneHistoryWindowMetadata(history, [], history.HistoryCount, 0, 0, hasOlderHistory, hasNewerHistory);
+
+    internal static AppServerControlHistoryWindowResponse FilterAndOrderHistoryWindow(
+        AppServerControlHistoryWindowResponse history,
+        IReadOnlySet<string> kindFilters,
+        int? startIndex,
+        int? beforeIndex,
+        int? count,
+        bool newestFirst)
+    {
+        var filtered = history.History
+            .Where(entry => kindFilters.Contains(entry.Kind))
+            .ToList();
+        var total = filtered.Count;
+        var effectiveCount = Math.Max(1, count ?? 80);
+
+        int sliceStart;
+        int sliceEnd;
+        if (beforeIndex is { } cursor)
+        {
+            sliceEnd = Math.Clamp(cursor, 0, total);
+            sliceStart = Math.Max(0, sliceEnd - effectiveCount);
+        }
+        else if (startIndex is { } explicitStart)
+        {
+            sliceStart = Math.Clamp(explicitStart, 0, total);
+            sliceEnd = Math.Min(total, sliceStart + effectiveCount);
+        }
+        else
+        {
+            sliceEnd = total;
+            sliceStart = Math.Max(0, sliceEnd - effectiveCount);
+        }
+
+        var slice = sliceEnd > sliceStart
+            ? filtered.GetRange(sliceStart, sliceEnd - sliceStart)
+            : [];
+        if (newestFirst && slice.Count > 1)
+        {
+            slice.Reverse();
+        }
+
+        return CloneHistoryWindowMetadata(
+            history,
+            slice,
+            total,
+            sliceStart,
+            sliceEnd,
+            hasOlderHistory: sliceStart > 0,
+            hasNewerHistory: sliceEnd < total);
+    }
+
+    private static AppServerControlHistoryWindowResponse CloneHistoryWindowMetadata(
+        AppServerControlHistoryWindowResponse history,
+        List<AppServerControlHistoryItem> entries,
+        int historyCount,
+        int historyWindowStart,
+        int historyWindowEnd,
+        bool hasOlderHistory,
+        bool hasNewerHistory) =>
+        new()
+        {
+            SessionId = history.SessionId,
+            Provider = history.Provider,
+            GeneratedAt = history.GeneratedAt,
+            LatestSequence = history.LatestSequence,
+            HistoryCount = historyCount,
+            HistoryWindowStart = historyWindowStart,
+            HistoryWindowEnd = historyWindowEnd,
+            HasOlderHistory = hasOlderHistory,
+            HasNewerHistory = hasNewerHistory,
+            Session = history.Session,
+            Thread = history.Thread,
+            CurrentTurn = history.CurrentTurn,
+            QuickSettings = history.QuickSettings,
+            Streams = history.Streams,
+            History = entries,
+            Items = history.Items,
+            Requests = history.Requests,
+            Notices = history.Notices
+        };
 
     internal static AppServerControlHistoryWindowResponse ProjectHistoryWindow(
         AppServerControlHistoryWindowResponse history,
