@@ -40,6 +40,84 @@ public sealed class TlbxMcpApiProtocolTests
         var unbound = new Dictionary<string, JsonElement>(args, StringComparer.Ordinal);
         unbound.Remove("targetSessionId");
         Assert.Throws<McpApiArgumentException>(() => operation.Bind(unbound, null));
+
+        var withOption = operation.Bind(
+            Args("""{"requestId":"req-1","expectedTurnId":"turn-1","decision":"accept","optionId":"allow_always","targetSessionId":"other"}"""),
+            "self");
+        Assert.Equal("allow_always", Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(withOption.Query.Value!)["optionId"].ToString());
+    }
+
+    [Fact]
+    public void AgentHistorySupportsNewestFirstReversePagingAndKindFilterAndOrchestrationToolsBindCleanly()
+    {
+        var historyOp = Operation("agent_history");
+        var bound = historyOp.Bind(
+            Args("""{"targetSessionId":"sess-1","order":"newestFirst","beforeIndex":42,"count":10,"kind":"assistant,user"}"""),
+            "self");
+        var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(bound.Query.Value!);
+        Assert.Equal("newestFirst", query["order"].ToString());
+        Assert.Equal("42", query["beforeIndex"].ToString());
+        Assert.Equal("10", query["count"].ToString());
+        Assert.Equal("assistant,user", query["kind"].ToString());
+
+        var configureOp = Operation("agent_configure");
+        var configBound = configureOp.Bind(
+            Args("""{"targetSessionId":"sess-1","expectedThreadId":"thr-1","settings":{"model":"gpt-6-astra","permissionMode":"auto"}}"""),
+            "self");
+        Assert.Equal("/api/sessions/sess-1/agent-control/configure", configBound.Path);
+        Assert.Equal("gpt-6-astra", JsonNode.Parse(configBound.Body!)!["settings"]!["model"]!.GetValue<string>());
+
+        var userInputOp = Operation("agent_user_input_respond");
+        var userInputBound = userInputOp.Bind(
+            Args("""{"targetSessionId":"sess-1","requestId":"req-q1","expectedTurnId":"turn-2","answers":[{"questionId":"q1","answers":["yes"]}]}"""),
+            "self");
+        Assert.Equal("/api/sessions/sess-1/agent-control/requests/req-q1/user-input", userInputBound.Path);
+        Assert.Equal("turn-2", Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(userInputBound.Query.Value!)["expectedTurnId"].ToString());
+
+        var window = new AppServerControlHistoryWindowResponse
+        {
+            SessionId = "sess-1",
+            HistoryCount = 5,
+            HistoryWindowStart = 0,
+            HistoryWindowEnd = 5,
+            History =
+            [
+                new() { EntryId = "e0", Order = 0, Kind = "user", Body = "first" },
+                new() { EntryId = "e1", Order = 1, Kind = "tool", Body = "run" },
+                new() { EntryId = "e2", Order = 2, Kind = "assistant", Body = "reply-1" },
+                new() { EntryId = "e3", Order = 3, Kind = "user", Body = "second" },
+                new() { EntryId = "e4", Order = 4, Kind = "assistant", Body = "reply-2" }
+            ]
+        };
+        var newestAll = SessionApiEndpoints.ReverseHistoryWindowEntries(window);
+        Assert.Equal(["e4", "e3", "e2", "e1", "e0"], newestAll.History.Select(e => e.EntryId), StringComparer.Ordinal);
+
+        var filteredPage1 = SessionApiEndpoints.FilterAndOrderHistoryWindow(
+            window,
+            SessionApiEndpoints.ParseHistoryKindFilter("assistant,user"),
+            startIndex: null,
+            beforeIndex: null,
+            count: 2,
+            newestFirst: true);
+        Assert.Equal(4, filteredPage1.HistoryCount);
+        Assert.Equal(2, filteredPage1.HistoryWindowStart);
+        Assert.Equal(4, filteredPage1.HistoryWindowEnd);
+        Assert.True(filteredPage1.HasOlderHistory);
+        Assert.False(filteredPage1.HasNewerHistory);
+        Assert.Equal(["e4", "e3"], filteredPage1.History.Select(e => e.EntryId), StringComparer.Ordinal);
+
+        var filteredPage2 = SessionApiEndpoints.FilterAndOrderHistoryWindow(
+            window,
+            SessionApiEndpoints.ParseHistoryKindFilter("assistant,user"),
+            startIndex: null,
+            beforeIndex: filteredPage1.HistoryWindowStart,
+            count: 2,
+            newestFirst: true);
+        Assert.Equal(0, filteredPage2.HistoryWindowStart);
+        Assert.Equal(2, filteredPage2.HistoryWindowEnd);
+        Assert.False(filteredPage2.HasOlderHistory);
+        Assert.True(filteredPage2.HasNewerHistory);
+        Assert.Equal(["e2", "e0"], filteredPage2.History.Select(e => e.EntryId), StringComparer.Ordinal);
     }
 
     [Theory]

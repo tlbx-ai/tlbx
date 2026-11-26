@@ -125,16 +125,34 @@ internal static partial class TlbxMcpApiTools
         agentNew.Defaults["injectGuidance"] = true;
         agentNew.Defaults["profile"] = "codex";
         yield return agentNew;
-        yield return Target("agent_history", "GET", "/api/sessions/{id}/agent-control/history", "Read canonical structured agent history, not terminal transcript scraping. Omits command/model catalogs and verbose telemetry notices by default; pass includeMetadata:true for the full UI bootstrap payload.")
-            .With(Q("startIndex", "integer"), Q("count", "integer"), Q("viewportWidth", "integer"), Q("includeMetadata", "boolean", "false"));
+        yield return Target("agent_history", "GET", "/api/sessions/{id}/agent-control/history", "Read canonical structured agent history, not terminal transcript scraping. Pass order:'newestFirst' (optionally with beforeIndex and comma-separated kind filter such as 'assistant,user') to walk messages backwards from newest. Omits command/model catalogs and verbose telemetry notices by default; pass includeMetadata:true for the full UI bootstrap payload.")
+            .With(
+                Q("startIndex", "integer"),
+                Q("count", "integer"),
+                Q("viewportWidth", "integer"),
+                Q("includeMetadata", "boolean", "false"),
+                new McpApiParameter("order", "order", new JsonObject
+                {
+                    ["type"] = "string",
+                    ["enum"] = new JsonArray("oldestFirst", "newestFirst"),
+                    ["description"] = "Message ordering: 'oldestFirst' (default) or 'newestFirst' to read from the newest message backwards."
+                }),
+                Q("beforeIndex", "integer"),
+                Q("kind"));
+        yield return Target("agent_configure", "POST", "/api/sessions/{id}/agent-control/configure", "Configure a structured agent session's model, reasoning effort, plan mode, permission mode, or native ACP config options.", AppJsonContext.Default.AppServerControlConfigureRequest);
         yield return Target("agent_turn", "POST", "/api/sessions/{id}/agent-control/turn", "Submit a structured agent turn with model/effort/plan/permission options and attachments.", AppJsonContext.Default.AppServerControlTurnRequest);
         yield return Target("agent_interrupt", "POST", "/api/sessions/{id}/agent-control/interrupt", "Interrupt the structured runtime, optionally targeting a specific turnId.", AppJsonContext.Default.AppServerControlInterruptRequest);
         yield return Target("agent_steer", "POST", "/api/sessions/{id}/agent-control/steer", "Steer the exact expected active turn with text/attachments, retaining concurrency checks.", AppJsonContext.Default.AppServerControlSteerRequest);
         yield return Target("agent_compact", "POST", "/api/sessions/{id}/agent-control/compact", "Compact the dedicated structured agent runtime.");
-        yield return Target("agent_request_decide", "POST", "/api/sessions/{id}/agent-control/requests/{requestId}/decision", "Accept or decline exactly one open approval from agent_history in the expected turn. Read its exact requested action first; never replay an uncertain decision.")
+        yield return Target("agent_request_decide", "POST", "/api/sessions/{id}/agent-control/requests/{requestId}/decision", "Accept or decline exactly one open approval from agent_history in the expected turn, optionally selecting an explicit native ACP optionId. Read its exact requested action first; never replay an uncertain decision.")
             .Path("requestId", "requestId")
-            .With(new McpApiParameter("decision", "decision", new JsonObject { ["type"] = "string", ["enum"] = new JsonArray("accept", "decline") }, Required: true),
-                Q("expectedTurnId", required: true));
+            .With(
+                new McpApiParameter("decision", "decision", new JsonObject { ["type"] = "string", ["enum"] = new JsonArray("accept", "decline") }, Required: true),
+                Q("expectedTurnId", required: true),
+                Q("optionId"));
+        yield return Target("agent_user_input_respond", "POST", "/api/sessions/{id}/agent-control/requests/{requestId}/user-input", "Respond to an open structured question or elicitation request from agent_history.", AppJsonContext.Default.AppServerControlUserInputAnswerRequest)
+            .Path("requestId", "requestId")
+            .With(Q("expectedTurnId"));
 
         yield return D("repos_list", "GET", "/api/git/repos", "List watched repositories with Git counts. details:true includes full file lists and commit history.").With(SessionQuery(), Q("details", "boolean", "false"));
         yield return ScopedBody("repo_bind", "POST", "/api/git/repos", "Bind a repository path to the target session with the existing role/label contract. Returns Git counts by default; details:true includes full file lists and commit history. After work is complete and pushed, offer the user release of the checkout; once accepted, clear its control-plane work assignment with work_update(sessionId:'') and remove this watch with repo_remove if no longer needed. A watch alone is not an exclusive checkout lock.", AppJsonContext.Default.GitRepoBindRequest).With(Q("details", "boolean", "false"));
