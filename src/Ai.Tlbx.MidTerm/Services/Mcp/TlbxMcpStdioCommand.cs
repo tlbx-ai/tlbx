@@ -117,6 +117,12 @@ internal static class TlbxMcpStdioCommand
                 {
                     freshness.Attach(request.Server);
                     var result = await ForwardAsync(upstream, request.JsonRpcRequest, McpClientJsonContext.Default.ListToolsResult, ct).ConfigureAwait(false);
+                    var isTwoTier = result.Tools.Any(tool => tool.Name == TlbxMcpDiscoverTool.ToolName);
+                    if (isTwoTier)
+                    {
+                        result.Tools = result.Tools.Select(tool => tool.Name == "update_apply" ? TlbxMcpUpdateWorkflow.ProtocolTool : tool).ToList();
+                        return result;
+                    }
                     result.Tools = result.Tools.Where(tool => tool.Name is not ("process_run_isolated" or TlbxMcpProcessWaitTool.ToolName or TlbxMcpFileCallTool.ToolName or TlbxMcpArtifactSaveTool.ToolName or TlbxMcpOutputFileTool.ToolName)).ToList();
                     result.Tools = result.Tools.Select(tool => tool.Name == "update_apply" ? TlbxMcpUpdateWorkflow.ProtocolTool : tool).ToList();
                     if (request.Params?.Cursor is null)
@@ -134,25 +140,48 @@ internal static class TlbxMcpStdioCommand
                     freshness.Attach(request.Server);
                     try
                     {
-                        var native = context is null ? null : await context.ResolveNativeCallAsync(request.JsonRpcRequest, request.Params?.Name == "context_repair", ct).ConfigureAwait(false);
+                        var callParams = request.Params;
+                        var isToolCallWrapper = callParams?.Name == TlbxMcpCallTool.ToolName;
+                        var effectiveParams = callParams;
+                        var unwrappedLocal = false;
+                        if (isToolCallWrapper && TryUnwrapNativeSubtool(callParams!, out var unwrapped, out var unwrapError))
+                        {
+                            if (unwrapError is not null) return unwrapError;
+                            effectiveParams = unwrapped;
+                            unwrappedLocal = true;
+                        }
+                        var native = context is null ? null : await context.ResolveNativeCallAsync(request.JsonRpcRequest, effectiveParams?.Name == "context_repair", ct).ConfigureAwait(false);
                         using var scope = context?.EnterNativeScope(native);
-                        if (request.Params?.Name == "process_run_isolated")
-                            return await TlbxMcpIsolatedProcessTool.InvokeLocalAsync(request.Params, ct).ConfigureAwait(false);
-                        if (request.Params?.Name == TlbxMcpProcessWaitTool.ToolName)
-                            return await TlbxMcpProcessWaitTool.InvokeLocalAsync(request.Params, ct).ConfigureAwait(false);
-                        if (request.Params?.Name is TlbxMcpFileCallTool.ToolName or TlbxMcpArtifactSaveTool.ToolName or TlbxMcpOutputFileTool.ToolName)
-                            return await TlbxMcpNativeWorkflow.InvokeNativeStepAsync(upstream, request.Params, ct).ConfigureAwait(false);
-                        if (request.Params?.Name == "context_repair" && context is not null)
+                        if (effectiveParams?.Name == "process_run_isolated")
+                            return await TlbxMcpIsolatedProcessTool.InvokeLocalAsync(effectiveParams, ct).ConfigureAwait(false);
+                        if (effectiveParams?.Name == TlbxMcpProcessWaitTool.ToolName)
+                            return await TlbxMcpProcessWaitTool.InvokeLocalAsync(effectiveParams, ct).ConfigureAwait(false);
+                        if (effectiveParams?.Name is TlbxMcpFileCallTool.ToolName or TlbxMcpArtifactSaveTool.ToolName or TlbxMcpOutputFileTool.ToolName)
+                            return await TlbxMcpNativeWorkflow.InvokeNativeStepAsync(upstream, effectiveParams, ct).ConfigureAwait(false);
+                        if (effectiveParams?.Name == "context_repair" && context is not null)
                             await context.EnsureAsync(force: true, ct).ConfigureAwait(false);
-                        if (request.Params?.Name == "workflow_run")
-                            return !TlbxMcpNativeWorkflow.RequiresCallerLocalExecution(request.Params)
-                                ? await ForwardAsync(upstream, request.JsonRpcRequest, McpClientJsonContext.Default.CallToolResult, ct).ConfigureAwait(false)
-                                : await TlbxMcpNativeWorkflow.InvokeAsync(request.Params, upstream, ct).ConfigureAwait(false);
-                        if (request.Params?.Name == "update_apply")
-                            return await TlbxMcpUpdateWorkflow.InvokeAsync(request.Params,
+                        if (effectiveParams?.Name == "workflow_run")
+                        {
+                            if (TlbxMcpNativeWorkflow.RequiresCallerLocalExecution(effectiveParams))
+                                return await TlbxMcpNativeWorkflow.InvokeAsync(effectiveParams, upstream, ct).ConfigureAwait(false);
+                            return unwrappedLocal
+                                ? await TlbxMcpNativeWorkflow.CallUpstreamAsync(upstream, "workflow_run", effectiveParams.Arguments ?? new Dictionary<string, JsonElement>(StringComparer.Ordinal), ct).ConfigureAwait(false)
+                                : await ForwardAsync(upstream, request.JsonRpcRequest, McpClientJsonContext.Default.CallToolResult, ct).ConfigureAwait(false);
+                        }
+                        if (effectiveParams?.Name == "update_apply")
+                            return await TlbxMcpUpdateWorkflow.InvokeAsync(effectiveParams,
                                 (name, arguments, token) => TlbxMcpNativeWorkflow.CallUpstreamAsync(upstream, name, arguments, token), ct).ConfigureAwait(false);
-                        var result = await ForwardAsync(upstream, request.JsonRpcRequest, McpClientJsonContext.Default.CallToolResult, ct).ConfigureAwait(false);
-                        return request.Params?.Name is "context_get" or "context_repair"
+                        if (effectiveParams?.Name == TlbxMcpDiscoverTool.ToolName)
+                        {
+                            var discovered = unwrappedLocal
+                                ? await TlbxMcpNativeWorkflow.CallUpstreamAsync(upstream, TlbxMcpDiscoverTool.ToolName, effectiveParams.Arguments ?? new Dictionary<string, JsonElement>(StringComparer.Ordinal), ct).ConfigureAwait(false)
+                                : await ForwardAsync(upstream, request.JsonRpcRequest, McpClientJsonContext.Default.CallToolResult, ct).ConfigureAwait(false);
+                            return PatchDiscoveredNativeSchemas(discovered);
+                        }
+                        var result = unwrappedLocal
+                            ? await TlbxMcpNativeWorkflow.CallUpstreamAsync(upstream, effectiveParams!.Name, effectiveParams.Arguments ?? new Dictionary<string, JsonElement>(StringComparer.Ordinal), ct).ConfigureAwait(false)
+                            : await ForwardAsync(upstream, request.JsonRpcRequest, McpClientJsonContext.Default.CallToolResult, ct).ConfigureAwait(false);
+                        return effectiveParams?.Name is "context_get" or "context_repair"
                             ? freshness.DescribeContext(result) : result;
                     }
                     catch (InvalidOperationException error) when (
@@ -204,6 +233,74 @@ internal static class TlbxMcpStdioCommand
             { Console.Error.WriteLine("TLBX_MCP_CANCEL: Upstream cancellation notification could not be delivered."); }
             throw;
         }
+    }
+
+    private static readonly Dictionary<string, Tool> NativeToolOverrides = new(StringComparer.Ordinal)
+    {
+        ["process_run_isolated"] = TlbxMcpIsolatedProcessTool.ProtocolTool,
+        [TlbxMcpProcessWaitTool.ToolName] = TlbxMcpProcessWaitTool.Definition,
+        [TlbxMcpFileCallTool.ToolName] = TlbxMcpFileCallTool.Definition,
+        [TlbxMcpArtifactSaveTool.ToolName] = TlbxMcpArtifactSaveTool.Definition,
+        [TlbxMcpOutputFileTool.ToolName] = TlbxMcpOutputFileTool.Definition,
+        ["update_apply"] = TlbxMcpUpdateWorkflow.ProtocolTool
+    };
+
+    private static bool TryUnwrapNativeSubtool(CallToolRequestParams wrapper, out CallToolRequestParams? unwrapped, out CallToolResult? error)
+    {
+        unwrapped = null;
+        error = null;
+        var args = wrapper.Arguments;
+        if (args is null || !args.TryGetValue("tool", out var toolVal) || toolVal.ValueKind != JsonValueKind.String
+            || string.IsNullOrWhiteSpace(toolVal.GetString()))
+            return false;
+        var name = toolVal.GetString()!.Trim();
+        if (name is not ("process_run_isolated" or TlbxMcpProcessWaitTool.ToolName or TlbxMcpFileCallTool.ToolName
+            or TlbxMcpArtifactSaveTool.ToolName or TlbxMcpOutputFileTool.ToolName or "update_apply"
+            or "workflow_run" or "context_get" or "context_repair" or TlbxMcpDiscoverTool.ToolName))
+            return false;
+        if (args.Keys.Any(key => key is not ("tool" or "arguments")))
+        {
+            error = McpApiResult.Error("TLBX_MCP_INVALID_ARGUMENT", "Unknown argument. Allowed: tool, arguments.");
+            return true;
+        }
+        var inner = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+        if (args.TryGetValue("arguments", out var rawArgs) && rawArgs.ValueKind != JsonValueKind.Null)
+        {
+            if (rawArgs.ValueKind != JsonValueKind.Object)
+            {
+                error = McpApiResult.Error("TLBX_MCP_INVALID_ARGUMENT", "arguments must be a JSON object.");
+                return true;
+            }
+            using var properties = rawArgs.EnumerateObject();
+            foreach (var property in properties)
+            {
+                inner[property.Name] = property.Value.Clone();
+            }
+        }
+        unwrapped = new CallToolRequestParams { Name = name, Arguments = inner };
+        return true;
+    }
+
+    private static CallToolResult PatchDiscoveredNativeSchemas(CallToolResult result)
+    {
+        if (result.IsError == true || result.StructuredContent is not { ValueKind: JsonValueKind.Object } structured)
+            return result;
+        if (JsonNode.Parse(structured.GetRawText()) is not JsonObject root || root["tools"] is not JsonArray toolsArray)
+            return result;
+        var changed = false;
+        foreach (var node in toolsArray)
+        {
+            if (node is not JsonObject entry || entry["name"]?.GetValue<string>() is not { } name
+                || !NativeToolOverrides.TryGetValue(name, out var nativeTool))
+                continue;
+            entry["description"] = nativeTool.Description ?? "";
+            if (entry.ContainsKey("inputSchema"))
+            {
+                entry["inputSchema"] = JsonNode.Parse(nativeTool.InputSchema.GetRawText());
+            }
+            changed = true;
+        }
+        return changed ? McpApiResult.Structured(root) : result;
     }
 
     private static async ValueTask<T> WithNativeScopeAsync<T>(McpStdioRuntimeContext? context, JsonRpcRequest request, Func<ValueTask<T>> operation, CancellationToken ct)

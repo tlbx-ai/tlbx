@@ -294,7 +294,7 @@ public static class TlbxDirectory
 
         ### MCP quick reference
 
-        Read each discovered tool's input schema instead of translating CLI flags literally.
+        tlbx uses a two-tier MCP surface to keep base context under 5,000 tokens. Tier-1 tools are directly declared (`tools_discover`, `tool_call`, `workflow_run`, `context_get`, `sessions_list`, `session_set_topic`, `repos_list`, `repo_bind`, `agent_session_create`, `agent_history`, `agent_turn`, `terminal_prompt`). Every other capability is listed by domain inside `tools_discover`: call `tools_discover` (by `domain`, `query`, or `tools`) for its exact input schema, then invoke it via `tool_call` or `workflow_run`. Read each discovered tool's input schema instead of translating CLI flags literally.
 
         | Work | MCP tools |
         |------|-----------|
