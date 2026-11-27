@@ -1,4 +1,5 @@
 import MarkdownIt from 'markdown-it';
+import { renderMarkdownLists } from './markdownLists';
 
 export interface MarkdownRenderOptions {
   preserveRawWindowsPaths?: boolean;
@@ -1292,15 +1293,8 @@ export function renderMarkdown(text: string, options: MarkdownRenderOptions = {}
   html = html.replace(/^---$/gm, '<hr>');
   html = html.replace(/^\*\*\*$/gm, '<hr>');
 
-  html = html.replace(/^- (.+)$/gm, '<li data-list="ul">$1</li>');
-  html = html.replace(/^\d+\. (.+)$/gm, '<li data-list="ol">$1</li>');
+  html = renderMarkdownLists(html);
   html = formatMarkdownInline(html, options);
-  html = html.replace(/((?:<li data-list="ul">.*?<\/li>\n?)+)/g, (match) => {
-    return `<ul>${match.replace(/\n/g, '').replace(/ data-list="ul"/g, '')}</ul>`;
-  });
-  html = html.replace(/((?:<li data-list="ol">.*?<\/li>\n?)+)/g, (match) => {
-    return `<ol>${match.replace(/\n/g, '').replace(/ data-list="ol"/g, '')}</ol>`;
-  });
 
   html = wrapMarkdownParagraphs(html);
 

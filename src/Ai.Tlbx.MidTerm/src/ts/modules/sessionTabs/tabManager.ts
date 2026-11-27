@@ -52,6 +52,24 @@ interface SessionTabState {
 }
 
 const sessionTabStates = new Map<string, SessionTabState>();
+const pendingGitIndicators = new Map<string, GitRepoBinding[] | GitStatusResponse | null>();
+
+function hydrateSessionTabBar(
+  tabBar: HTMLDivElement,
+  sessionId: string,
+  session: Session | null,
+): void {
+  const cwd =
+    $processStates.get()[sessionId]?.foregroundCwd ||
+    session?.currentDirectory ||
+    session?.workspacePath;
+  if (cwd) {
+    updateCwd(tabBar, cwd);
+  }
+  if (pendingGitIndicators.has(sessionId)) {
+    updateGitIndicator(tabBar, pendingGitIndicators.get(sessionId) ?? null);
+  }
+}
 
 const tabActivationCallbacks: Partial<
   Record<SessionTabId, Array<(sessionId: string, panel: HTMLDivElement) => void>>
@@ -196,10 +214,7 @@ export function ensureSessionWrapper(sessionId: string): SessionTabState {
     panels.terminal.appendChild(termState.container);
   }
 
-  const processState = $processStates.get()[sessionId];
-  if (processState?.foregroundCwd) {
-    updateCwd(tabBar, processState.foregroundCwd);
-  }
+  hydrateSessionTabBar(tabBar, sessionId, session);
 
   setActiveTab(tabBar, defaultTab);
   syncSessionTabCapabilities(sessionId, session);
@@ -214,6 +229,7 @@ export function ensureSessionWrapper(sessionId: string): SessionTabState {
  */
 export function destroySessionWrapper(sessionId: string): void {
   const state = sessionTabStates.get(sessionId);
+  pendingGitIndicators.delete(sessionId);
   if (!state) return;
 
   state.wrapper.remove();
@@ -434,6 +450,7 @@ export function updateGitIndicatorForSession(
   sessionId: string,
   status: GitRepoBinding[] | GitStatusResponse | null,
 ): void {
+  pendingGitIndicators.set(sessionId, status);
   const state = sessionTabStates.get(sessionId);
   if (!state) return;
   updateGitIndicator(state.tabBar, status);

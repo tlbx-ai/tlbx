@@ -2,6 +2,7 @@ import { t } from '../i18n';
 import { getCachedGitReposForSession } from '../git';
 import type { GitRepoBinding, GitStatusResponse } from '../git/types';
 import { getForegroundInfo } from '../process';
+import { getAgentSurfaceLabel, isAgentSurfaceSession } from '../sessionSurface';
 import { createForegroundIndicator } from './sessionList';
 
 const GIT_MONITOR_ICON =
@@ -19,6 +20,11 @@ export interface SpacesTreeSidebarSessionProcessEntry {
     currentDirectory?: string | null;
     workspacePath?: string | null;
     shellType?: string | null;
+    appServerControlOnly?: boolean | null;
+    profileHint?: string | null;
+    supervisor?: {
+      profile?: string | null;
+    } | null;
   };
 }
 
@@ -29,10 +35,13 @@ function getForegroundDisplay(entry: SpacesTreeSidebarSessionProcessEntry): {
   displayName: string | null;
 } {
   const foreground = getForegroundInfo(entry.id);
+  const fallbackName = isAgentSurfaceSession(entry.session)
+    ? getAgentSurfaceLabel(entry.session)
+    : entry.session.shellType || t('session.terminal');
   return {
     cwd: foreground.cwd || entry.session.currentDirectory || entry.session.workspacePath || null,
     commandLine: foreground.commandLine,
-    processName: foreground.name?.trim() || entry.session.shellType || t('session.terminal'),
+    processName: foreground.name?.trim() || fallbackName,
     displayName: foreground.displayName,
   };
 }
@@ -167,7 +176,9 @@ function buildExtraGitRepoTitle(repo: GitRepoBinding, status: GitStatusResponse 
   const branch = status?.branch || 'HEAD';
   const sync =
     status && (status.ahead > 0 || status.behind > 0)
-      ? `, ahead ${status.ahead}, behind ${status.behind}`
+      ? `, ${t('git.aheadBehind')
+          .replace('{ahead}', String(status.ahead))
+          .replace('{behind}', String(status.behind))}`
       : '';
   return `${repoName} - ${branch} - +${status?.totalAdditions ?? 0} -${status?.totalDeletions ?? 0}${sync}\n${repo.repoRoot}`;
 }

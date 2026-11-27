@@ -26,6 +26,11 @@ export function createMcpToolDisclosure(
   initialEntry: AppServerControlHistoryEntry,
   expanded: Set<string> | undefined,
   outputLines: (entry: AppServerControlHistoryEntry) => string[],
+  onToggle?: (
+    details: HTMLDetailsElement,
+    summary: HTMLElement,
+    performMutation: () => void,
+  ) => void,
 ): HTMLDetailsElement {
   let entry = initialEntry;
   const details = document.createElement('details');
@@ -99,10 +104,17 @@ export function createMcpToolDisclosure(
   details.open = expanded?.has(entry.id) === true;
   if (details.open) mount();
   details.addEventListener('toggle', () => {
-    if (details.open) {
-      expanded?.add(entry.id);
-      mount();
-    } else expanded?.delete(entry.id);
+    const apply = () => {
+      if (details.open) {
+        expanded?.add(entry.id);
+        mount();
+      } else expanded?.delete(entry.id);
+    };
+    if (onToggle) {
+      onToggle(details, summary, apply);
+    } else {
+      apply();
+    }
   });
   return details;
 }

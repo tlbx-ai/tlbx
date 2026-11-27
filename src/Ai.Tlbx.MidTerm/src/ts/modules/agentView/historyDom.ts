@@ -1,6 +1,16 @@
 import { t } from '../i18n';
+import {
+  anchorDisclosureToggleInViewport,
+  buildRuntimeStatLabels,
+  formatPercent,
+} from './runtimeStatsFormatting';
 import { createAttachmentControl } from './attachmentView';
-import { createToolActivityDisclosure, syncToolActivityDisclosure } from './toolActivityView';
+import {
+  createToolActivityDisclosure,
+  localizeToolPresentationLabel,
+  resolveToolCommandScript,
+  syncToolActivityDisclosure,
+} from './toolActivityView';
 import { createMcpToolDisclosure, isMcpToolEntry, syncMcpToolDisclosure } from './mcpToolView';
 import { appendHighlightedCommand, commandPreview } from './commandHighlight';
 import { createPdfView } from '../fileViewer/pdfView';
@@ -291,7 +301,8 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
       return;
     }
 
-    const labelText = entry.body || 'Working';
+    const labelText =
+      entry.body || appServerControlText('appServerControl.status.working', 'Working');
     const label = article.querySelector<HTMLElement>('.agent-history-busy-label');
     if (label) {
       label.dataset.text = labelText;
@@ -343,7 +354,10 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
       stats.secondaryRateLimitUsedPercent !== null
     ) {
       detailParts.push(
-        `Rate ${formatPercent(stats.primaryRateLimitUsedPercent)} / ${formatPercent(stats.secondaryRateLimitUsedPercent)}`,
+        appServerControlFormat('appServerControl.usage.rate', 'Rate {primary} / {secondary}', {
+          primary: formatPercent(stats.primaryRateLimitUsedPercent),
+          secondary: formatPercent(stats.secondaryRateLimitUsedPercent),
+        }),
       );
     }
 
@@ -367,6 +381,25 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     }
 
     host.appendChild(detail);
+  }
+
+  function anchorDisclosureToggle(
+    sessionId: string,
+    details: HTMLDetailsElement,
+    summary: HTMLElement,
+    performMutation: () => void,
+  ): void {
+    anchorDisclosureToggleInViewport(
+      details,
+      summary,
+      () => {
+        const state = deps.getState(sessionId);
+        if (state) {
+          state.historyAutoScrollPinned = false;
+        }
+      },
+      performMutation,
+    );
   }
 
   function createHistoryEntry(
@@ -396,6 +429,9 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
             syncHistoryEntry(element, item, sessionId);
           },
           expandedEntries,
+          (details, summary, performMutation) => {
+            anchorDisclosureToggle(sessionId, details, summary, performMutation);
+          },
         ),
       );
       return article;
@@ -403,7 +439,14 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
 
     if (isMcpToolEntry(entry)) {
       article.appendChild(
-        createMcpToolDisclosure(entry, expandedEntries, selectProjectedToolEvidenceLines),
+        createMcpToolDisclosure(
+          entry,
+          expandedEntries,
+          selectProjectedToolEvidenceLines,
+          (details, summary, performMutation) => {
+            anchorDisclosureToggle(sessionId, details, summary, performMutation);
+          },
+        ),
       );
       return article;
     }
@@ -759,7 +802,7 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
 
   function createCommandHistoryBody(
     entry: AppServerControlHistoryEntry,
-    command = entry.commandText ?? entry.body,
+    command = resolveToolCommandScript(entry) || entry.body,
     outputLines = clampToolCallOutputLines(entry.commandOutputTail ?? [], true),
   ): HTMLElement {
     const body = document.createElement('div');
@@ -782,9 +825,9 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
       const output = document.createElement('pre');
       output.className = 'agent-history-command-output-tail';
       output.setAttribute('aria-label', t('appServerControl.title.commandOutput'));
-      appendHighlightedCommand(output, outputLines.join('\n'));
+      output.textContent = outputLines.join('\n');
       // Keep folded command tails as raw terminal text instead of applying
-      // FileRadar-style enrichment or thumbnail previews to noisy output.
+      // shell syntax highlighting or FileRadar enrichment to arbitrary output.
       body.appendChild(output);
     }
 
@@ -807,14 +850,20 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
       0,
       (presentation.totalLineCount || visibleEvidence.length) - visibleEvidence.length,
     );
+    const omittedNotice = appServerControlFormat(
+      'appServerControl.activity.linesOmitted',
+      '... {count} lines omitted ...',
+      { count: omitted },
+    );
     const evidenceLines =
       resolveToolCallOutputLineLimit() <= 0
         ? []
         : omitted > 0
-          ? [`... ${omitted} lines omitted ...`, ...visibleEvidence]
+          ? [omittedNotice, ...visibleEvidence]
           : visibleEvidence;
-    if (presentation.category === 'command')
-      return createCommandHistoryBody(entry, presentation.subject ?? '', evidenceLines);
+    if (presentation.category === 'command') {
+      return createCommandHistoryBody(entry, resolveToolCommandScript(entry), evidenceLines);
+    }
 
     const outcomeIsError = presentation.evidenceKind === 'error';
     if (outcomeIsError && presentation.outcome) {
@@ -855,7 +904,7 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     if (visibleEvidence.length > 0) {
       const evidence = document.createElement('pre');
       evidence.className = 'agent-history-command-output-tail';
-      appendHighlightedCommand(evidence, evidenceLines.join('\n'));
+      evidence.textContent = evidenceLines.join('\n');
       body.appendChild(evidence);
     }
 
@@ -873,7 +922,8 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
 
     const label = document.createElement('span');
     label.className = 'agent-history-busy-label';
-    const labelText = entry.body || 'Working';
+    const labelText =
+      entry.body || appServerControlText('appServerControl.status.working', 'Working');
     label.dataset.text = labelText;
     const labelBase = document.createElement('span');
     labelBase.className = 'agent-history-busy-label-base';
@@ -911,20 +961,28 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     const label = document.createElement('span');
     label.className = 'agent-history-disclosure-label';
     label.textContent = command
-      ? entry.toolPresentation?.label ||
-        appServerControlText('appServerControl.title.commandOutput', 'Command output')
+      ? localizeToolPresentationLabel(
+          entry,
+          appServerControlText('appServerControl.title.commandOutput', 'Command output'),
+        )
       : appServerControlText('appServerControl.panel.details', 'Details');
     summary.appendChild(label);
     const meta = document.createElement('span');
     meta.className = 'agent-history-disclosure-meta';
+    const exitCodeMeta =
+      command && entry.toolPresentation?.exitCode != null
+        ? appServerControlFormat('appServerControl.activity.exitCode', 'exit {code}', {
+            code: entry.toolPresentation.exitCode,
+          })
+        : '';
     meta.textContent = command
-      ? (entry.toolPresentation?.outcome ?? '')
+      ? entry.toolPresentation?.outcome || exitCodeMeta
       : appServerControlFormat('appServerControl.panel.lines', '{count} lines', {
           count: presentation.lineCount,
         });
     meta.hidden = !meta.textContent;
     summary.appendChild(meta);
-    const script = command ? entry.commandText || entry.toolPresentation?.subject || '' : '';
+    const script = command ? resolveToolCommandScript(entry) : '';
     if (script || presentation.preview) {
       const preview = document.createElement('span');
       preview.className = 'agent-history-disclosure-preview';
@@ -961,23 +1019,26 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
         bodyMounted = true;
       }
     };
-    details.appendChild(createDisclosureSummary(entry, presentation, command));
+    const summary = createDisclosureSummary(entry, presentation, command);
+    details.appendChild(summary);
     if (details.open) {
       mountBody();
     }
     details.addEventListener('toggle', () => {
-      if (details.open) {
-        mountBody();
-      }
-      const state = deps.getState(sessionId);
-      if (!state) {
-        return;
-      }
-      if (details.open) {
-        state.historyExpandedEntries.add(entry.id);
-      } else {
-        state.historyExpandedEntries.delete(entry.id);
-      }
+      anchorDisclosureToggle(sessionId, details, summary, () => {
+        if (details.open) {
+          mountBody();
+        }
+        const state = deps.getState(sessionId);
+        if (!state) {
+          return;
+        }
+        if (details.open) {
+          state.historyExpandedEntries.add(entry.id);
+        } else {
+          state.historyExpandedEntries.delete(entry.id);
+        }
+      });
     });
     wrapper.appendChild(details);
     return wrapper;
@@ -1029,10 +1090,12 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     block.className = 'agent-history-placeholder';
     block.dataset.direction = args.direction;
     block.style.height = `${Math.max(0, Math.round(args.heightPx))}px`;
-    block.setAttribute(
-      'aria-label',
-      `${args.label}: ${args.itemCount} items represented by an estimated placeholder block`,
+    const itemCountLabel = appServerControlFormat(
+      'appServerControl.history.itemCount',
+      '{count} items',
+      { count: args.itemCount },
     );
+    block.setAttribute('aria-label', `${args.label}: ${itemCountLabel}`);
 
     const chip = document.createElement('div');
     chip.className = 'agent-history-placeholder-chip';
@@ -1044,7 +1107,7 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
 
     const meta = document.createElement('span');
     meta.className = 'agent-history-placeholder-meta';
-    meta.textContent = `${args.itemCount} items${args.rangeLabel ? ` • ${args.rangeLabel}` : ''}`;
+    meta.textContent = `${itemCountLabel}${args.rangeLabel ? ` • ${args.rangeLabel}` : ''}`;
     chip.appendChild(meta);
 
     block.appendChild(chip);
@@ -1213,82 +1276,6 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
       surface,
       state,
     });
-  }
-
-  function buildRuntimeStatLabels(
-    stats: AppServerControlRuntimeStatsSummary,
-    detail: boolean,
-  ): string[] {
-    const labels: string[] = [];
-    if (stats.windowTokenLimit !== null)
-      labels.push(detail ? formatTokenWindowDetail(stats) : formatTokenWindowCompact(stats));
-    if (stats.accumulatedInputTokens !== null)
-      labels.push(
-        `${detail ? 'Session in' : 'in'} ${formatTokenCount(stats.accumulatedInputTokens)}`,
-      );
-    if (stats.accumulatedOutputTokens !== null)
-      labels.push(
-        `${detail ? 'Session out' : 'out'} ${formatTokenCount(stats.accumulatedOutputTokens)}`,
-      );
-    if (stats.costAmount !== undefined && stats.costCurrency) {
-      const amount = new Intl.NumberFormat(undefined, { maximumSignificantDigits: 6 }).format(
-        stats.costAmount,
-      );
-      labels.push(
-        `${appServerControlText('appServerControl.usage.cost', 'Session cost')} ${amount} ${stats.costCurrency}`,
-      );
-    }
-    return labels;
-  }
-
-  function formatTokenCount(value: number): string {
-    if (value >= 1000) {
-      const compact = (value / 1000).toFixed(value >= 100000 ? 0 : 1);
-      return `${compact.replace(/\.0$/, '')}k`;
-    }
-
-    return String(value);
-  }
-
-  function formatTokenWindowCompact(stats: AppServerControlRuntimeStatsSummary): string {
-    if (stats.windowTokenLimit === null) {
-      return '--';
-    }
-
-    if (stats.windowUsedTokens === null) {
-      return `Window ${formatTokenCount(stats.windowTokenLimit)}`;
-    }
-
-    return `${formatTokenWindowPercent(stats.windowUsedTokens, stats.windowTokenLimit)} of ${formatTokenCount(stats.windowTokenLimit)}`;
-  }
-
-  function formatTokenWindowDetail(stats: AppServerControlRuntimeStatsSummary): string {
-    if (stats.windowTokenLimit === null) {
-      return 'Window --';
-    }
-
-    if (stats.windowUsedTokens === null) {
-      return `Window ${formatTokenCount(stats.windowTokenLimit)}`;
-    }
-
-    return `Context ${formatTokenWindowPercent(stats.windowUsedTokens, stats.windowTokenLimit)} of ${formatTokenCount(stats.windowTokenLimit)} (${formatTokenCount(stats.windowUsedTokens)} used)`;
-  }
-
-  function formatTokenWindowPercent(usedTokens: number, windowTokenLimit: number): string {
-    if (windowTokenLimit <= 0) {
-      return '--';
-    }
-
-    const percent = (usedTokens / windowTokenLimit) * 100;
-    if (!Number.isFinite(percent)) {
-      return '--';
-    }
-
-    return percent >= 10 ? `${Math.round(percent)}%` : `${percent.toFixed(1).replace(/\.0$/, '')}%`;
-  }
-
-  function formatPercent(value: number | null): string {
-    return value === null ? '--' : `${Math.round(value)}%`;
   }
 
   return {

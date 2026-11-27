@@ -26,6 +26,7 @@ vi.mock('../appServerControl/quickSettings', () => ({
 vi.mock('./nativeConfigControls', () => ({ syncNativeConfigControls: vi.fn() }));
 vi.mock('./smartInputView', () => ({
   formatAppServerControlQuickSettingsSummary: () => 'B / high',
+  localizeEffortLabel: (value: string | null | undefined) => value ?? 'Default',
   setAppServerControlQuickSettingsDropdownOptions: vi.fn(),
   setAppServerControlQuickSettingsDropdownDisabled: (
     select: { disabled: boolean },

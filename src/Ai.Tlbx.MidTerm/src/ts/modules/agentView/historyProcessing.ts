@@ -209,6 +209,8 @@ export function buildAppServerControlHistoryEntries(
       (entry) =>
         entry.body.trim() ||
         (entry.commandText?.trim() ?? '').length > 0 ||
+        entry.toolPresentation != null ||
+        (entry.kind === 'tool' && entry.title.trim().length > 0) ||
         (entry.attachments?.length ?? 0) > 0 ||
         entry.kind === 'request' ||
         entry.kind === 'system' ||

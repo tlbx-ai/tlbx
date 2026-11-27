@@ -7,15 +7,26 @@ import type {
   AppServerControlHistoryAction,
   SessionAppServerControlViewState,
 } from './types';
-import { t } from '../i18n';
+import { getCurrentLocale, t } from '../i18n';
 
 export const STALE_APP_SERVER_CONTROL_ACTIVATION = '__midterm_stale_appServerControl_activation__';
 
-const absoluteTimeFormatter = new Intl.DateTimeFormat(undefined, {
-  hour: '2-digit',
-  minute: '2-digit',
-  second: '2-digit',
-});
+let cachedTimeFormatterLocale: string | null = null;
+let cachedTimeFormatter: Intl.DateTimeFormat | null = null;
+
+function getAbsoluteTimeFormatter(): Intl.DateTimeFormat {
+  const locale = getCurrentLocale() || undefined;
+  const cacheKey = locale ?? '__default__';
+  if (!cachedTimeFormatter || cachedTimeFormatterLocale !== cacheKey) {
+    cachedTimeFormatterLocale = cacheKey;
+    cachedTimeFormatter = new Intl.DateTimeFormat(locale, {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+  }
+  return cachedTimeFormatter;
+}
 
 function appServerControlText(key: string, fallback: string): string {
   const translated = t(key);
@@ -50,11 +61,11 @@ export function formatAbsoluteTime(value: string): string {
     return value;
   }
 
-  return absoluteTimeFormatter.format(date);
+  return getAbsoluteTimeFormatter().format(date);
 }
 
 export function formatClockTime(value: Date): string {
-  return absoluteTimeFormatter.format(value);
+  return getAbsoluteTimeFormatter().format(value);
 }
 
 export function appendActivationTrace(

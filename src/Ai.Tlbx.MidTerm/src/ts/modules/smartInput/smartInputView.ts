@@ -87,50 +87,50 @@ export function createSmartInputDom(args: CreateSmartInputDomArgs): SmartInputDo
   const appServerControlModelSelect = document.createElement('select');
   appServerControlModelSelect.className = 'smart-input-appServerControl-control';
   setAppServerControlQuickSettingsDropdownOptions(appServerControlModelSelect, [
-    { value: '', label: 'Default model' },
+    { value: '', label: t('smartInput.defaultModel') },
   ]);
   appServerControlModelSelect.addEventListener('change', args.onAppServerControlModelChange);
 
   const appServerControlEffortSelect = document.createElement('select');
   appServerControlEffortSelect.className = 'smart-input-appServerControl-control';
-  for (const [value, label] of [
-    ['', 'Default'],
-    ['none', 'None'],
-    ['minimal', 'Minimal'],
-    ['low', 'Low'],
-    ['medium', 'Medium'],
-    ['high', 'High'],
-    ['xhigh', 'XHigh'],
+  for (const [value, key] of [
+    ['', 'smartInput.effortDefault'],
+    ['none', 'smartInput.effortNone'],
+    ['minimal', 'smartInput.effortMinimal'],
+    ['low', 'smartInput.effortLow'],
+    ['medium', 'smartInput.effortMedium'],
+    ['high', 'smartInput.effortHigh'],
+    ['xhigh', 'smartInput.effortXHigh'],
   ] as const) {
     const option = document.createElement('option');
     option.value = value;
-    option.textContent = label;
+    option.textContent = t(key);
     appServerControlEffortSelect.appendChild(option);
   }
   appServerControlEffortSelect.addEventListener('change', args.onAppServerControlEffortChange);
 
   const appServerControlPlanSelect = document.createElement('select');
   appServerControlPlanSelect.className = 'smart-input-appServerControl-control';
-  for (const [value, label] of [
-    ['off', 'Plan off'],
-    ['on', 'Plan on'],
+  for (const [value, key] of [
+    ['off', 'smartInput.planOff'],
+    ['on', 'smartInput.planOn'],
   ] as const) {
     const option = document.createElement('option');
     option.value = value;
-    option.textContent = label;
+    option.textContent = t(key);
     appServerControlPlanSelect.appendChild(option);
   }
   appServerControlPlanSelect.addEventListener('change', args.onAppServerControlPlanChange);
 
   const appServerControlPermissionSelect = document.createElement('select');
   appServerControlPermissionSelect.className = 'smart-input-appServerControl-control';
-  for (const [value, label] of [
-    ['manual', 'Manual'],
-    ['auto', 'Auto'],
+  for (const [value, key] of [
+    ['manual', 'smartInput.permissionManual'],
+    ['auto', 'smartInput.permissionAuto'],
   ] as const) {
     const option = document.createElement('option');
     option.value = value;
-    option.textContent = label;
+    option.textContent = t(key);
     appServerControlPermissionSelect.appendChild(option);
   }
   appServerControlPermissionSelect.addEventListener(
@@ -155,23 +155,26 @@ export function createSmartInputDom(args: CreateSmartInputDomArgs): SmartInputDo
   );
   appServerControlModelDropdown.classList.add('smart-input-appServerControl-model');
   appServerControlQuickSettingsRow.appendChild(
-    createAppServerControlQuickSettingsField('Model', appServerControlModelDropdown),
+    createAppServerControlQuickSettingsField(
+      t('smartInput.fieldModel'),
+      appServerControlModelDropdown,
+    ),
   );
   appServerControlQuickSettingsRow.appendChild(
     createAppServerControlQuickSettingsField(
-      'Effort',
+      t('smartInput.fieldEffort'),
       createAppServerControlQuickSettingsDropdown(appServerControlEffortSelect),
     ),
   );
   appServerControlQuickSettingsRow.appendChild(
     createAppServerControlQuickSettingsField(
-      'Plan',
+      t('smartInput.fieldPlan'),
       createAppServerControlQuickSettingsDropdown(appServerControlPlanSelect),
     ),
   );
   appServerControlQuickSettingsRow.appendChild(
     createAppServerControlQuickSettingsField(
-      'Permissions',
+      t('smartInput.fieldPermissions'),
       createAppServerControlQuickSettingsDropdown(appServerControlPermissionSelect),
     ),
   );
@@ -237,7 +240,7 @@ export function createSmartInputDom(args: CreateSmartInputDomArgs): SmartInputDo
   escapeBtn.type = 'button';
   escapeBtn.className = 'smart-input-escape-btn';
   escapeBtn.textContent = 'Esc';
-  escapeBtn.setAttribute('aria-label', 'Escape');
+  escapeBtn.setAttribute('aria-label', t('smartInput.escape'));
   escapeBtn.addEventListener('pointerdown', (event) => {
     event.preventDefault();
     event.stopPropagation();
@@ -449,6 +452,21 @@ export function createTerminalTouchToggleButton(
   return keysToggle;
 }
 
+export function localizeEffortLabel(value: string | null | undefined): string {
+  const normalized = value?.trim().toLowerCase();
+  if (!normalized) return t('smartInput.effortDefault');
+  const map: Record<string, string> = {
+    none: 'smartInput.effortNone',
+    minimal: 'smartInput.effortMinimal',
+    low: 'smartInput.effortLow',
+    medium: 'smartInput.effortMedium',
+    high: 'smartInput.effortHigh',
+    xhigh: 'smartInput.effortXHigh',
+  };
+  const key = map[normalized];
+  return key ? t(key) : (value ?? '').trim();
+}
+
 export function formatAppServerControlQuickSettingsSummary(draft: {
   effort?: string | null;
   fastMode?: string;
@@ -456,12 +474,12 @@ export function formatAppServerControlQuickSettingsSummary(draft: {
   planMode: string;
 }): string {
   const parts = [
-    draft.model?.trim() || 'Default',
-    draft.effort?.trim() || 'Default',
-    draft.planMode === 'on' ? 'PLAN ON' : 'Plan Off',
+    draft.model?.trim() || t('smartInput.effortDefault'),
+    localizeEffortLabel(draft.effort),
+    draft.planMode === 'on' ? t('smartInput.summaryPlanOn') : t('smartInput.summaryPlanOff'),
   ];
   if (draft.fastMode === 'on') {
-    parts.push('FAST');
+    parts.push(t('smartInput.summaryFast'));
   }
   return parts.join(' · ');
 }

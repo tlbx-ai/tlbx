@@ -15,7 +15,7 @@ import {
 import type { AppServerControlHistoryEntry } from './types';
 
 vi.mock('../../stores', () => ({ $currentSettings: { get: vi.fn() } }));
-vi.mock('../i18n', () => ({ t: (key: string) => key }));
+vi.mock('../i18n', () => ({ t: (key: string) => key, getCurrentLocale: () => 'en' }));
 vi.mock('../../api/client', () => ({ AppServerControlHttpError: class extends Error {} }));
 
 function entry(
