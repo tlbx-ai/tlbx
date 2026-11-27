@@ -181,7 +181,7 @@ internal sealed class TlbxMcpDiscoverTool : McpServerTool
         var domainEnum = new JsonArray();
         foreach (var domain in TlbxMcpCatalog.Domains)
         {
-            if (domain != "other") domainEnum.Add(domain);
+            if (domain != "other") domainEnum.Add((JsonNode?)JsonValue.Create(domain));
         }
         _definition = new Tool
         {
@@ -286,7 +286,7 @@ internal sealed class TlbxMcpDiscoverTool : McpServerTool
                 }
                 else
                 {
-                    unknownTools.Add(name);
+                    unknownTools.Add((JsonNode?)JsonValue.Create(name));
                 }
             }
         }
@@ -326,7 +326,7 @@ internal sealed class TlbxMcpDiscoverTool : McpServerTool
                     if (ann.Count > 0) obj["annotations"] = ann;
                 }
             }
-            items.Add(obj);
+            items.Add((JsonNode)obj);
         }
 
         var response = new JsonObject
