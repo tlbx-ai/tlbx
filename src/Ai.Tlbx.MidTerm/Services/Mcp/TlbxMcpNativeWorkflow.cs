@@ -30,6 +30,33 @@ internal static class TlbxMcpNativeWorkflow
             if (cursor is not null && (!cursors.Add(cursor) || cursors.Count > 128))
                 return McpApiResult.Error("TLBX_MCP_WORKFLOW_DISCOVERY", "Upstream tool discovery did not terminate; no workflow step was executed.");
         } while (cursor is not null);
+        if (tools.ContainsKey(TlbxMcpDiscoverTool.ToolName))
+        {
+            var discovered = await CallUpstreamAsync(upstream, TlbxMcpDiscoverTool.ToolName,
+                Arguments(new JsonObject { ["includeSchemas"] = true }), cancellationToken).ConfigureAwait(false);
+            if (discovered.IsError != true
+                && discovered.StructuredContent is { ValueKind: JsonValueKind.Object } payload
+                && payload.TryGetProperty("tools", out var subtools)
+                && subtools.ValueKind == JsonValueKind.Array)
+            {
+                for (var index = 0; index < subtools.GetArrayLength(); index++)
+                {
+                    var entry = subtools[index];
+                    if (entry.ValueKind != JsonValueKind.Object
+                        || !entry.TryGetProperty("name", out var nameProp) || nameProp.ValueKind != JsonValueKind.String
+                        || nameProp.GetString() is not { Length: > 0 } subName
+                        || !entry.TryGetProperty("inputSchema", out var schemaProp) || schemaProp.ValueKind != JsonValueKind.Object)
+                        continue;
+                    tools[subName] = new Tool
+                    {
+                        Name = subName,
+                        Description = entry.TryGetProperty("description", out var descProp) && descProp.ValueKind == JsonValueKind.String
+                            ? descProp.GetString() : null,
+                        InputSchema = schemaProp.Clone()
+                    };
+                }
+            }
+        }
         tools[TlbxMcpIsolatedProcessTool.ProtocolTool.Name] = TlbxMcpIsolatedProcessTool.ProtocolTool;
         tools[TlbxMcpProcessWaitTool.ToolName] = TlbxMcpProcessWaitTool.Definition;
         tools[TlbxMcpFileCallTool.ToolName] = TlbxMcpFileCallTool.Definition;

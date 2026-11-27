@@ -184,7 +184,15 @@ public sealed class TlbxMcpNativeProcessLifetimeTests
             };
             var transport = new StdioClientTransport(transportOptions);
             client = await McpClient.CreateAsync(transport, cancellationToken: ct);
-            Assert.Contains(await client.ListToolsAsync(cancellationToken: ct), tool => tool.Name == "process_run_isolated");
+            var listedTools = await client.ListToolsAsync(cancellationToken: ct);
+            if (listedTools.Any(tool => tool.Name == TlbxMcpDiscoverTool.ToolName))
+            {
+                Assert.Contains("process_run_isolated", listedTools.Single(tool => tool.Name == TlbxMcpDiscoverTool.ToolName).Description, StringComparison.Ordinal);
+            }
+            else
+            {
+                Assert.Contains(listedTools, tool => tool.Name == "process_run_isolated");
+            }
             var savedPath = Path.Combine(cwd, "native-original.bin");
             var saved = await client.CallToolAsync("artifact_save", new Dictionary<string, object?>(StringComparer.Ordinal)
             {

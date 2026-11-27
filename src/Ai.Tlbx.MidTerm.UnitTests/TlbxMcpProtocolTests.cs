@@ -135,7 +135,9 @@ public sealed class TlbxMcpProtocolTests
                 });
                 await using var client = await McpClient.CreateAsync(transport, cancellationToken: ct);
                 var tools = await client.ListToolsAsync(cancellationToken: ct);
-                Assert.Contains(tools, t => t.Name == "browser_screenshot");
+                Assert.Contains(tools, t => t.Name == TlbxMcpDiscoverTool.ToolName);
+                Assert.Contains(tools, t => t.Name == TlbxMcpCallTool.ToolName);
+                Assert.Contains("browser_screenshot", tools.Single(t => t.Name == TlbxMcpDiscoverTool.ToolName).Description, StringComparison.Ordinal);
                 var result = await client.CallToolAsync("context_get", cancellationToken: ct);
                 Assert.Equal(expected, result.StructuredContent!.Value.GetProperty("sessionId").GetString());
                 var repaired = await client.CallToolAsync("context_repair", cancellationToken: ct);

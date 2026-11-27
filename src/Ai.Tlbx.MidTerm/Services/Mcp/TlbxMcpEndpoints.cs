@@ -4,6 +4,8 @@ using System.Text;
 using System.Text.Json;
 using Ai.Tlbx.MidTerm.Services.Sessions;
 using ModelContextProtocol.AspNetCore;
+using ModelContextProtocol.Protocol;
+using ModelContextProtocol.Server;
 
 namespace Ai.Tlbx.MidTerm.Services.Mcp;
 
@@ -25,7 +27,7 @@ internal static class TlbxMcpEndpoints
         services.AddSingleton<TlbxMcpArtifactStore>();
         services.AddSingleton<TlbxMcpTmuxRuntime>();
         services.AddSingleton<Browser.BrowserPreviewOperations>();
-        var tools = TlbxMcpTool.CreateTools()
+        var baseTools = TlbxMcpTool.CreateTools()
             .Concat(TlbxMcpApiTools.CreateTools())
             .Concat(TlbxMcpTmuxTool.CreateTools())
             .Concat(TlbxMcpArtifactTools.CreateTools())
@@ -35,14 +37,36 @@ internal static class TlbxMcpEndpoints
             .Append(new TlbxMcpArtifactSaveTool())
             .Append(new TlbxMcpOutputFileTool())
             .Concat(TlbxMcpBrowserTools.CreateTools()).ToArray();
+        var workflowTool = new TlbxMcpWorkflowTool(baseTools);
+        var catalog = new TlbxMcpCatalog([.. baseTools, workflowTool]);
+        services.AddSingleton(catalog);
         services.AddMcpServer(options =>
         {
             options.ServerInfo = new() { Name = "TLBX MCP", Version = Startup.CliCommands.GetVersion() };
-            options.ServerInstructions = "Verify self with context_get; omit unused optional args. Operators need explicit targets. Previews belong to session+previewName. workflow_run chains/parallelizes calls. Mutations run once: inspect uncertain outcomes before retrying. Prefer MCP; use CLI only for a concrete gap.";
+            options.ServerInstructions = "Verify self with context_get; omit unused optional args. Tier-1 tools cover common/agent workflows; call tools_discover for schemas of any listed subtool and invoke via tool_call or workflow_run. Operators need explicit targets. Mutations run once: inspect uncertain outcomes before retrying.";
+            options.Capabilities = new ServerCapabilities
+            {
+                Tools = new ToolsCapability { ListChanged = true },
+                Resources = new ResourcesCapability()
+            };
         }).WithHttpTransport(options => options.SessionMode = HttpServerSessionMode.Stateless)
-          // Named arguments select the SDK's non-reflective tool-instance overload.
-          .WithTools(tools: tools)
-          .WithTools(tools: [new TlbxMcpWorkflowTool(tools)])
+          .WithListToolsHandler((request, ct) =>
+          {
+              ct.ThrowIfCancellationRequested();
+              var cat = request.Services!.GetRequiredService<TlbxMcpCatalog>();
+              return ValueTask.FromResult(new ListToolsResult { Tools = [.. cat.Tier1Tools] });
+          })
+          .WithCallToolHandler(async (request, ct) =>
+          {
+              var cat = request.Services!.GetRequiredService<TlbxMcpCatalog>();
+              var name = request.Params?.Name;
+              if (string.IsNullOrWhiteSpace(name) || !cat.TryGetCallable(name, out var tool))
+              {
+                  return McpApiResult.Error("TLBX_MCP_UNKNOWN_TOOL", "Unknown tlbx tool '" + (name ?? "") + "'. Call tools_discover to inspect available subtools.");
+              }
+              request.MatchedPrimitive = tool;
+              return await tool.InvokeAsync(request, ct).ConfigureAwait(false);
+          })
           .WithListResourcesHandler((request, ct) => request.Services!.GetRequiredService<TlbxMcpArtifactStore>().ListAsync(request, ct))
           .WithReadResourceHandler((request, ct) => request.Services!.GetRequiredService<TlbxMcpArtifactStore>().ReadAsync(request, ct));
     }
