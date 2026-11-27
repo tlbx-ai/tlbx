@@ -288,10 +288,30 @@ export class RichComposer {
     if (!draft.richDoc) this.callbacks.changed(sessionId, canonicalDraft, false);
     if (!this.view) this.createView(state);
     else if (this.view.state !== state) this.view.updateState(state);
+    this.syncPlaceholder(state.doc);
     for (const refresh of this.refreshers) refresh();
     this.setSubmitting(sessionId, this.submitting.has(sessionId));
     this.syncTools();
     this.renderError();
+  }
+
+  private syncPlaceholder(doc: ProseMirrorNode): void {
+    const dom = this.view?.dom;
+    if (!dom) return;
+    let hasContent = doc.textContent.trim().length > 0;
+    if (!hasContent) {
+      doc.descendants((node) => {
+        if (node.type.name === 'attachment' || node.type.name === 'table') {
+          hasContent = true;
+          return false;
+        }
+        return true;
+      });
+    }
+    const placeholder = t('smartInput.placeholder');
+    dom.dataset.empty = hasContent ? 'false' : 'true';
+    dom.dataset.placeholder = placeholder;
+    dom.setAttribute('aria-label', placeholder);
   }
 
   private restoreState(
@@ -435,6 +455,7 @@ export class RichComposer {
       draft,
       next.transactions.some((transaction) => transaction.docChanged),
     );
+    this.syncPlaceholder(next.state.doc);
     this.syncTools();
   }
 

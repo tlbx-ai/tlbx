@@ -1410,20 +1410,38 @@ export function showSmartInput(): void {
 export function hideSmartInput(): void {
   syncSmartInputVisibility();
 }
+function resolveSmartInputStopState(sessionId: string | null): {
+  agent: boolean;
+  pending: boolean;
+  idle: boolean;
+  label: string;
+} {
+  const agent = isAppServerControlActiveSession(sessionId);
+  if (!agent) {
+    return { agent: false, pending: false, idle: false, label: t('smartInput.escape') };
+  }
+  const pending = !!sessionId && isAppServerControlStopPending(sessionId);
+  const interruptible = !!sessionId && hasInterruptibleAppServerControlTurnWork(sessionId);
+  return {
+    agent: true,
+    pending,
+    idle: !interruptible && !pending,
+    label: t(pending ? 'smartInput.stopping' : 'commands.stop'),
+  };
+}
+
 function syncSmartInputStopButton(): void {
   const button = dockedBar?.querySelector<HTMLButtonElement>('.smart-input-escape-btn');
   if (!button) return;
-  const sessionId = $activeSessionId.get();
-  const agent = isAppServerControlActiveSession(sessionId);
-  const pending = agent && !!sessionId && isAppServerControlStopPending(sessionId);
-  const label = agent ? t(pending ? 'smartInput.stopping' : 'commands.stop') : 'Escape';
+  const { agent, pending, idle, label } = resolveSmartInputStopState($activeSessionId.get());
   if (agent && !button.querySelector('svg')) {
     button.innerHTML =
       '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true" focusable="false"><rect x="5" y="5" width="14" height="14" rx="1"/></svg>';
   } else if (!agent && button.textContent !== 'Esc') {
     button.textContent = 'Esc';
   }
-  button.disabled = pending;
+  button.disabled = pending || idle;
+  button.dataset.idle = String(idle);
   button.title = label;
   button.setAttribute('aria-label', label);
   button.setAttribute('aria-busy', String(pending));

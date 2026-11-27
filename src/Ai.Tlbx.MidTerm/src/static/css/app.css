@@ -14208,16 +14208,17 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
 
 .agent-scroll-to-bottom {
   position: absolute;
-  bottom: 8px;
-  left: 50%;
+  bottom: 14px;
+  right: 18px;
+  left: auto;
   z-index: 4;
-  width: 44px;
-  height: 44px;
-  min-height: 44px;
+  width: 40px;
+  height: 40px;
+  min-height: 40px;
   margin: 0;
   padding: 0;
   border-radius: 50%;
-  transform: translateX(-50%);
+  transform: none;
   background: var(--bg-elevated-opaque);
   display: inline-flex;
   align-items: center;
@@ -14226,7 +14227,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
   border: 1px solid
     var(--command-bay-ui-reactive-border, color-mix(in srgb, var(--bg-surface) 84%, transparent));
   color: var(--command-bay-action-ink, color-mix(in srgb, var(--text-secondary) 93%, transparent));
-  box-shadow: var(--command-bay-shadow, none);
+  box-shadow: 0 4px 14px color-mix(in srgb, black 28%, transparent);
   font-family: var(--font-ui);
   font-size: var(--command-bay-automation-chip-font-size, 0.729rem);
   font-weight: 500;
@@ -14402,14 +14403,16 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
   line-height: 18px;
 }
 
-.agent-history-assistant:has(+ .agent-history-tool-activity) { padding-bottom: 0; }
-.agent-history-tool-activity + .agent-history-assistant { padding-top: 2px; gap: 0; }
+.agent-history-assistant:has(+ .agent-history-tool-activity) { padding-bottom: 4px; }
+.agent-history-user + .agent-history-tool-activity { margin-top: 6px; }
+.agent-history-tool-activity + .agent-history-assistant { padding-top: 10px; gap: 4px; }
 
 .agent-tool-activity > summary {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 6px;
   min-width: 0;
+  padding: 4px 0;
   cursor: pointer;
   list-style: none;
 }
@@ -14417,11 +14420,34 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
 .agent-tool-activity > summary::-webkit-details-marker { display: none; }
 .agent-tool-activity > summary::before { content: '▸'; flex: 0 0 auto; }
 .agent-tool-activity[open] > summary::before { content: '▾'; }
-.agent-tool-activity-label { flex: 0 0 auto; }
-.agent-tool-activity-names { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.agent-tool-activity-list { padding-top: 4px; min-width: 0; }
+.agent-tool-activity-label { flex: 0 0 auto; font-weight: 500; }
+.agent-tool-activity-count {
+  flex: 0 0 auto;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-secondary) 14%, transparent);
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  line-height: 16px;
+}
+.agent-tool-activity-names { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: 0.85; }
+.agent-tool-activity-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 4px 0 6px 5px;
+  padding: 4px 0 4px 12px;
+  border-left: 1px solid color-mix(in srgb, var(--border-color) 65%, transparent);
+  min-width: 0;
+}
 .agent-tool-activity-list > .agent-history-entry { max-width: 100%; border: 0; padding-block: 3px; }
-.agent-tool-activity-list .agent-history-title { font-size: 11px; font-weight: 400; line-height: 1.5; overflow-wrap: anywhere; }
+.agent-tool-activity-list > .agent-history-tool:not(.agent-history-command-entry) {
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--bg-surface) 38%, transparent);
+}
+.agent-tool-activity-list .agent-history-title { font-size: 11px; font-weight: 500; line-height: 1.45; overflow-wrap: anywhere; color: var(--text-primary); }
 .agent-tool-activity-list .agent-history-command-disclosure pre {
   padding: 6px 8px;
   color: var(--text-primary);
@@ -14935,6 +14961,8 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
   tab-size: 2;
 }
 .agent-history-command-disclosure .agent-history-command-output-tail {
+  max-height: 280px;
+  overflow: auto;
   padding-top: 6px;
   border-top: 1px solid color-mix(in srgb, var(--text-muted) 20%, transparent);
   color: var(--text-secondary);
@@ -15183,6 +15211,23 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
   inset-inline-start: 0.2rem;
   inline-size: 0.95rem;
   text-align: center;
+}
+
+.agent-history-markdown ul ul,
+.agent-history-markdown ul ol,
+.agent-history-markdown ol ul,
+.agent-history-markdown ol ol {
+  margin-top: 0.35em;
+  padding-inline-start: 1.25rem;
+}
+
+.agent-history-markdown ul ul > li::before {
+  content: '◦';
+}
+
+.agent-history-markdown ul ul ul > li::before {
+  content: '▪';
+  font-size: 0.78em;
 }
 
 .agent-history-markdown ol > li {
@@ -22340,6 +22385,7 @@ button.tree-expand { height: 22px; padding: 0; border: 0; background: transparen
 .rich-composer-tools button:hover,
 .rich-composer-attachment button:hover { background: var(--bg-hover); }
 .smart-input-rich-composer .ProseMirror {
+  position: relative;
   min-height: 56px;
   max-height: min(34dvh, 300px);
   padding: 6px 48px 6px 10px;
@@ -22349,6 +22395,18 @@ button.tree-expand { height: 22px; padding: 0; border: 0; background: transparen
   outline: none;
   line-height: 1.45;
   overscroll-behavior: contain;
+}
+.smart-input-rich-composer .ProseMirror[data-empty='true']::before {
+  content: attr(data-placeholder);
+  position: absolute;
+  top: 6px;
+  left: 10px;
+  right: 16px;
+  color: color-mix(in srgb, var(--text-muted) 86%, transparent);
+  pointer-events: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .smart-input-rich-composer .ProseMirror p { margin: 0 0 0.35em; }
 .smart-input-rich-composer .ProseMirror > :last-child { margin-bottom: 0; }
@@ -22476,6 +22534,10 @@ button.tree-expand { height: 22px; padding: 0; border: 0; background: transparen
 .adaptive-footer-dock[data-surface='appServerControl'] .smart-input-tools-toggle { grid-column: 3; grid-row: 2; }
 .adaptive-footer-dock[data-surface='appServerControl'] .smart-input-expand-toggle { grid-column: 4; grid-row: 2; }
 .adaptive-footer-dock[data-surface='appServerControl'] .smart-input-escape-btn { grid-column: 3; grid-row: 3; }
+.adaptive-footer-dock[data-surface='appServerControl'] .smart-input-escape-btn[data-idle='true'] {
+  opacity: 0.32;
+  cursor: default;
+}
 .adaptive-footer-dock[data-surface='appServerControl'] .smart-input-send-btn { grid-column: 4; grid-row: 3; }
 .adaptive-footer-dock[data-surface='appServerControl'] .smart-input-inline-tools { grid-column: 2; grid-row: 1 / -1; align-self: end; }
 

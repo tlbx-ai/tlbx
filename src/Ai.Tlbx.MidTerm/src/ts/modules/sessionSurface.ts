@@ -1,7 +1,8 @@
 import { t } from './i18n';
 
 export type SessionSurfaceMode = 'terminal' | 'agent';
-export type SessionAgentProfile = 'codex' | 'claude' | 'grok' | null;
+export type SessionAgentProfile =
+  'codex' | 'claude' | 'grok' | 'antigravity' | 'copilot' | 'gemini' | 'opencode' | null;
 
 export interface SessionSurfaceLike {
   appServerControlOnly?: boolean | null;
@@ -12,7 +13,19 @@ export interface SessionSurfaceLike {
 }
 
 export function normalizeAgentProfile(profile: string | null | undefined): SessionAgentProfile {
-  return profile === 'codex' || profile === 'claude' || profile === 'grok' ? profile : null;
+  const normalized = profile?.trim().toLowerCase();
+  if (
+    normalized === 'codex' ||
+    normalized === 'claude' ||
+    normalized === 'grok' ||
+    normalized === 'antigravity' ||
+    normalized === 'copilot' ||
+    normalized === 'gemini' ||
+    normalized === 'opencode'
+  ) {
+    return normalized;
+  }
+  return null;
 }
 
 export function resolveSessionAgentProfile(
@@ -43,6 +56,22 @@ export function getAgentSurfaceLabel(session: SessionSurfaceLike | null | undefi
 
   if (profile === 'grok') {
     return 'Grok';
+  }
+
+  if (profile === 'antigravity') {
+    return 'Antigravity';
+  }
+
+  if (profile === 'copilot') {
+    return 'Copilot';
+  }
+
+  if (profile === 'gemini') {
+    return 'Gemini';
+  }
+
+  if (profile === 'opencode') {
+    return 'OpenCode';
   }
 
   return t('sessionTabs.agent');

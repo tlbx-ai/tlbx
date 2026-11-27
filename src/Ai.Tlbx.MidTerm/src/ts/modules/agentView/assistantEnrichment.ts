@@ -8,6 +8,7 @@ import type {
   AppServerControlInlineFileReference,
   AppServerControlInlineImagePreview,
 } from '../../api/types';
+import { $sessions } from '../../stores';
 import {
   QUOTED_ABSOLUTE_PATH_PATTERN_GLOBAL,
   RELATIVE_PATH_PATTERN,
@@ -22,8 +23,8 @@ import {
 const IMAGE_EXTENSION_PATTERN = /\.(?:avif|bmp|gif|ico|jpe?g|png|svg|tiff?|webp)$/i;
 const BARE_URL_PATTERN = /(?:https?:\/\/|mailto:|www\.)[^\s<>"')\]]+/gi;
 const GIT_HASH_PATTERN = /\b[0-9a-f]{7,40}\b/gi;
-const NUMBER_PATTERN =
-  /\b(?:v?\d+\.\d+(?:\.\d+){0,3}(?:-[a-z0-9.-]+)?|\d+(?:,\d{3})*(?:\.\d+)?(?:%|ms|s|m|h|kb|mb|gb|tb|px|ch)?|\d+\/\d+)\b/gi;
+const NON_COMMIT_HASH_PREFIX_PATTERN =
+  /(?:session|sitzung|thread|turn|instance|serverinstanceid|sessionid|conversation|request)\s*(?:id)?\s*[:=#(\s`"'_-]*$/i;
 const TABLE_RULE_PATTERN = /[|+\-=:~\u2500-\u257f]/g;
 const TRAILING_URL_PUNCTUATION = /[.,;!?]+$/;
 const MAX_IMAGE_CANDIDATES = 6;
@@ -290,6 +291,11 @@ function collectRelativePathMatches(
       continue;
     }
 
+    const followingChar = text[tokenEnd] ?? '';
+    if (followingChar === '<' || followingChar === '(') {
+      continue;
+    }
+
     const normalizedPath = normalizePathCandidate(matchedPath);
     if (!normalizedPath || shouldRejectRelativeMatch(normalizedPath)) {
       continue;
@@ -344,11 +350,20 @@ function collectProvidedFileMatches(
       }
 
       const tokenEnd = tokenStart + displayText.length;
-      addMatch(
-        matches,
-        createProvidedFileToken(mention, displayText, filePath, tokenStart, tokenEnd),
-      );
-      addProvidedImageCandidate(imageCandidates, mention, displayText);
+      const followingChar = text[tokenEnd] ?? '';
+      const looksLikeCodeMember =
+        !mention.exists &&
+        !/[\\/]/.test(filePath) &&
+        (followingChar === '<' ||
+          followingChar === '(' ||
+          /^[A-Z][A-Za-z0-9_]*\.[A-Z][A-Za-z0-9_]*$/.test(displayText));
+      if (!looksLikeCodeMember) {
+        addMatch(
+          matches,
+          createProvidedFileToken(mention, displayText, filePath, tokenStart, tokenEnd),
+        );
+        addProvidedImageCandidate(imageCandidates, mention, displayText);
+      }
 
       searchStart = tokenEnd;
     }
@@ -401,6 +416,17 @@ function addProvidedImageCandidate(
   });
 }
 
+function isKnownSessionIdPrefix(hash: string): boolean {
+  const lower = hash.toLowerCase();
+  const sessions = $sessions.get();
+  for (const sessionId of Object.keys(sessions)) {
+    if (sessionId.toLowerCase().startsWith(lower)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function collectGitHashMatches(text: string, matches: AssistantInlineToken[]): void {
   GIT_HASH_PATTERN.lastIndex = 0;
   for (const match of text.matchAll(GIT_HASH_PATTERN)) {
@@ -410,30 +436,25 @@ function collectGitHashMatches(text: string, matches: AssistantInlineToken[]): v
       continue;
     }
 
+    if (!/\d/.test(hash) || !/[a-f]/i.test(hash)) {
+      continue;
+    }
+
+    if (isKnownSessionIdPrefix(hash)) {
+      continue;
+    }
+
+    const prefixWindow = text.slice(Math.max(0, start - 32), start);
+    if (NON_COMMIT_HASH_PREFIX_PATTERN.test(prefixWindow)) {
+      continue;
+    }
+
     addMatch(matches, {
       kind: 'git',
       start,
       end: start + hash.length,
       text: hash,
       hash,
-    });
-  }
-}
-
-function collectNumberMatches(text: string, matches: AssistantInlineToken[]): void {
-  NUMBER_PATTERN.lastIndex = 0;
-  for (const match of text.matchAll(NUMBER_PATTERN)) {
-    const value = match[0];
-    const start = match.index;
-    if (!value || start < 0) {
-      continue;
-    }
-
-    addMatch(matches, {
-      kind: 'number',
-      start,
-      end: start + value.length,
-      text: value,
     });
   }
 }
@@ -504,7 +525,6 @@ function buildInlineMatches(
     collectRelativePathMatches(text, matches, imageCandidates);
   }
   collectGitHashMatches(text, matches);
-  collectNumberMatches(text, matches);
   collectTableRuleMatches(text, matches);
   return matches.sort((left, right) => left.start - right.start || left.end - right.end);
 }

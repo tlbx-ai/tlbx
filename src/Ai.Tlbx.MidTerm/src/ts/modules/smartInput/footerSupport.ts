@@ -31,6 +31,7 @@ import {
 } from './visibility';
 import {
   formatAppServerControlQuickSettingsSummary,
+  localizeEffortLabel,
   setAppServerControlQuickSettingsDropdownDisabled,
   setAppServerControlQuickSettingsDropdownOptions,
 } from './smartInputView';
@@ -172,7 +173,13 @@ export function syncAppServerControlQuickSettingsControls(args: {
       modelOptions: preferQuickSettingsOptions(draft, effective, 'modelOptions'),
       currentValues: [draft.effort, effective.effort],
       catalogOptions: preferQuickSettingsOptions(draft, effective, 'effortOptions'),
-    }),
+    }).map((option) => ({
+      ...option,
+      label:
+        option.value === ''
+          ? t('smartInput.effortDefault')
+          : localizeEffortLabel(option.value) || option.label,
+    })),
   );
 
   syncAppServerControlQuickSettingSelect(appServerControlModelSelect, draft.model ?? '');
@@ -215,9 +222,11 @@ function syncPermissionOptions(
   draft: AppServerControlQuickSettingsSummary,
   effective: AppServerControlQuickSettingsSummary,
 ): void {
-  const options: AppServerControlQuickSettingsOption[] = [{ value: 'manual', label: 'Manual' }];
+  const options: AppServerControlQuickSettingsOption[] = [
+    { value: 'manual', label: t('smartInput.permissionManual') },
+  ];
   if (provider !== 'antigravity' || supportsAntigravityAutoMode(effective)) {
-    options.push({ value: 'auto', label: 'Auto' });
+    options.push({ value: 'auto', label: t('smartInput.permissionAuto') });
   }
   if (provider === 'antigravity') {
     options.push({

@@ -178,8 +178,8 @@ function createGitIndicatorGroup(sessionId: string): HTMLDivElement {
   const overflow = document.createElement('button');
   overflow.className = 'ide-bar-btn git-indicator-overflow';
   overflow.type = 'button';
-  overflow.title = 'Git repositories';
-  overflow.setAttribute('aria-label', 'Git repositories');
+  overflow.title = t('git.repositories');
+  overflow.setAttribute('aria-label', t('git.repositories'));
   overflow.textContent = '+';
   overflow.addEventListener('click', (event) => {
     event.stopPropagation();
@@ -420,7 +420,10 @@ function syncGitIndicatorOverflow(group: HTMLElement): void {
   const hiddenCount = Math.max(0, repos.length - visibleCount);
   overflow.hidden = false;
   overflow.textContent = hiddenCount > 0 ? `+${hiddenCount}` : '+';
-  overflow.title = hiddenCount > 0 ? `${hiddenCount} more repositories` : 'Git repositories';
+  overflow.title =
+    hiddenCount > 0
+      ? t('git.moreRepositories').replace('{count}', String(hiddenCount))
+      : t('git.repositories');
 }
 
 function getGitRepoChipElements(strip: HTMLElement): HTMLElement[] {
@@ -523,7 +526,7 @@ function readGitIndicatorData(group: HTMLElement): GitRepoBinding[] {
 function buildGitRepoPopoverHtml(repos: GitRepoBinding[]): string {
   const rows =
     repos.length === 0
-      ? '<div class="git-repo-popover-empty">No repository tracked</div>'
+      ? `<div class="git-repo-popover-empty">${escapeHtml(t('git.noRepositoryTracked'))}</div>`
       : repos
           .map((repo) => {
             const status = repo.status ?? null;
@@ -536,13 +539,13 @@ function buildGitRepoPopoverHtml(repos: GitRepoBinding[]): string {
               : 0;
             const removeButton = repo.isPrimary
               ? ''
-              : `<button type="button" class="git-repo-menu-btn" data-git-repo-action="remove" data-repo-root="${escapeAttribute(repo.repoRoot)}">Remove</button>`;
+              : `<button type="button" class="git-repo-menu-btn" data-git-repo-action="remove" data-repo-root="${escapeAttribute(repo.repoRoot)}">${escapeHtml(t('git.removeRepo'))}</button>`;
             return `<div class="git-repo-popover-row">
               <button type="button" class="git-repo-popover-main" data-git-repo-action="open" data-repo-root="${escapeAttribute(repo.repoRoot)}">
                 <span class="git-repo-popover-label">${escapeHtml(repo.label || repo.role)}</span>
                 <span class="git-repo-popover-meta">${escapeHtml(branch)} · ${changeCount}</span>
               </button>
-              <button type="button" class="git-repo-menu-btn" data-git-repo-action="refresh" data-repo-root="${escapeAttribute(repo.repoRoot)}">Refresh</button>
+              <button type="button" class="git-repo-menu-btn" data-git-repo-action="refresh" data-repo-root="${escapeAttribute(repo.repoRoot)}">${escapeHtml(t('git.refresh'))}</button>
               ${removeButton}
             </div>`;
           })
@@ -550,7 +553,7 @@ function buildGitRepoPopoverHtml(repos: GitRepoBinding[]): string {
 
   return `<div class="git-repo-popover-list">${rows}</div>
     <div class="git-repo-popover-actions">
-      <button type="button" class="git-repo-menu-btn git-repo-add" data-git-repo-action="add">Add repo</button>
+      <button type="button" class="git-repo-menu-btn git-repo-add" data-git-repo-action="add">${escapeHtml(t('git.addRepo'))}</button>
     </div>`;
 }
 
@@ -789,7 +792,7 @@ export function updateGitIndicator(bar: HTMLDivElement, input: GitIndicatorInput
   group.classList.toggle('git-indicator-group-empty', repos.length === 0);
   overflow.hidden = false;
   overflow.textContent = '+';
-  overflow.title = 'Git repositories';
+  overflow.title = t('git.repositories');
   queueGitIndicatorOverflowSync(group);
 
   const openPopover = group.querySelector<HTMLElement>('.git-repo-popover');
