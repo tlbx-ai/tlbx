@@ -1926,5 +1926,16 @@
   "smartInput.summaryFast": "Rápido",
   "smartInput.permissionManual": "Manual",
   "smartInput.permissionAuto": "Auto",
-  "smartInput.escape": "Esc"
+  "smartInput.escape": "Esc",
+  "appServerControl.activity.badgeMcp": "MCP",
+  "appServerControl.activity.badgeShell": "Shell",
+  "appServerControl.activity.badgeRead": "Leitura",
+  "appServerControl.activity.badgeEdit": "Edição",
+  "appServerControl.activity.badgeSearch": "Busca",
+  "appServerControl.activity.badgeTool": "Ferramenta",
+  "appServerControl.activity.statusDone": "Concluído",
+  "appServerControl.activity.statusFailed": "Falhou",
+  "appServerControl.activity.statusRunning": "Executando",
+  "appServerControl.activity.copyCommand": "Copiar",
+  "appServerControl.activity.copied": "Copiado"
 }

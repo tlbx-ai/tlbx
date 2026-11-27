@@ -13799,15 +13799,27 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
   --agent-appServerControl-assistant-text: var(--text-on-accent);
   --agent-appServerControl-user-text: color-mix(
     in srgb,
-    var(--accent-blue) 20%,
-    var(--text-primary) 80%
+    var(--accent-blue) 12%,
+    var(--text-primary) 88%
   );
   --agent-appServerControl-user-label: color-mix(
     in srgb,
-    var(--accent-blue) 54%,
-    var(--text-muted) 46%
+    var(--accent-blue) 74%,
+    white 26%
   );
-  --agent-appServerControl-assistant-label: color-mix(in srgb, var(--text-muted) 84%, transparent);
+  --agent-appServerControl-assistant-label: color-mix(
+    in srgb,
+    var(--text-primary) 78%,
+    var(--text-secondary) 22%
+  );
+  --agent-glass-user-bg: color-mix(in srgb, var(--bg-primary) 74%, var(--accent-blue) 12%);
+  --agent-glass-assistant-bg: color-mix(in srgb, var(--bg-primary) 64%, transparent);
+  --agent-glass-tool-bg: color-mix(in srgb, var(--bg-primary) 74%, transparent);
+  --agent-glass-tool-row-bg: color-mix(in srgb, var(--bg-surface) 58%, transparent);
+  --agent-glass-code-bg: color-mix(in srgb, var(--bg-primary) 92%, black 8%);
+  --agent-glass-border: color-mix(in srgb, var(--border-color) 72%, var(--text-primary) 12%);
+  --agent-ink-secondary: color-mix(in srgb, var(--text-primary) 80%, var(--text-secondary) 20%);
+  --agent-ink-meta: color-mix(in srgb, var(--text-primary) 68%, var(--text-secondary) 32%);
   --agent-history-message-font-family: var(--font-ui);
   --agent-history-user-font-family: var(--agent-history-message-font-family);
   --agent-history-prose-font-size: calc((1.0625rem - 1pt) * var(--agent-chat-font-scale, 1));
@@ -14287,17 +14299,30 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
 .agent-history-user {
   align-self: stretch;
   width: var(--agent-appServerControl-user-width);
-  padding: 8px 0;
-  border-radius: 0;
-  border: 0;
-  background: transparent;
+  padding: 12px 16px;
+  border-top: 8px solid transparent;
+  border-radius: 12px;
+  background: var(--agent-glass-user-bg);
+  background-clip: padding-box;
+  clip-path: inset(8px 0 0 0 round 12px);
+  backdrop-filter: blur(12px) saturate(1.18);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--accent-blue) 36%, var(--agent-glass-border)),
+    inset 3px 0 0 0 var(--accent-blue);
 }
 
 .agent-history-assistant {
   align-self: flex-start;
   width: var(--agent-appServerControl-content-width);
-  padding: 6px 0 8px;
+  padding: 14px 18px;
+  border-top: 8px solid transparent;
   border-bottom: 0;
+  border-radius: 12px;
+  background: var(--agent-glass-assistant-bg);
+  background-clip: padding-box;
+  clip-path: inset(8px 0 0 0 round 12px);
+  backdrop-filter: blur(10px) saturate(1.12);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--border-color) 52%, transparent);
 }
 
 .agent-history-assistant.agent-history-live .agent-history-badge-assistant {
@@ -14396,63 +14421,235 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
 }
 
 .agent-history-entry.agent-history-tool-activity {
-  padding: 0;
+  padding: 6px 0;
   border: 0;
-  color: var(--text-secondary);
-  font-size: 11px;
-  line-height: 18px;
+  color: var(--text-primary);
+  font-size: 12px;
+  line-height: 1.45;
 }
 
-.agent-history-assistant:has(+ .agent-history-tool-activity) { padding-bottom: 4px; }
-.agent-history-user + .agent-history-tool-activity { margin-top: 6px; }
-.agent-history-tool-activity + .agent-history-assistant { padding-top: 10px; gap: 4px; }
+.agent-tool-activity {
+  border-radius: 10px;
+  background: var(--agent-glass-tool-bg);
+  backdrop-filter: blur(12px) saturate(1.15);
+  border: 1px solid var(--agent-glass-border);
+  overflow: hidden;
+}
 
 .agent-tool-activity > summary {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   min-width: 0;
-  padding: 4px 0;
+  padding: 9px 14px;
   cursor: pointer;
   list-style: none;
+  color: var(--text-primary);
+  transition: background-color 120ms ease;
+}
+
+.agent-tool-activity > summary:hover {
+  background: color-mix(in srgb, var(--text-primary) 6%, transparent);
+}
+
+.agent-tool-activity > summary:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: -2px;
+  border-radius: 9px;
 }
 
 .agent-tool-activity > summary::-webkit-details-marker { display: none; }
-.agent-tool-activity > summary::before { content: '▸'; flex: 0 0 auto; }
+.agent-tool-activity > summary::before {
+  content: '▸';
+  flex: 0 0 auto;
+  color: var(--agent-ink-secondary);
+  font-size: 11px;
+}
 .agent-tool-activity[open] > summary::before { content: '▾'; }
-.agent-tool-activity-label { flex: 0 0 auto; font-weight: 500; }
+.agent-tool-activity-label { flex: 0 0 auto; font-weight: 600; color: var(--text-primary); }
 .agent-tool-activity-count {
   flex: 0 0 auto;
-  padding: 0 6px;
+  padding: 1px 7px;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--text-secondary) 14%, transparent);
-  color: var(--text-secondary);
-  font-size: 10px;
+  background: color-mix(in srgb, var(--accent-blue) 24%, var(--bg-surface));
+  border: 1px solid color-mix(in srgb, var(--accent-blue) 45%, transparent);
+  color: var(--text-primary);
+  font-size: 11px;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
   line-height: 16px;
 }
-.agent-tool-activity-names { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: 0.85; }
+.agent-tool-activity-names {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--agent-ink-secondary);
+  font-size: 11.5px;
+}
 .agent-tool-activity-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  margin: 4px 0 6px 5px;
-  padding: 4px 0 4px 12px;
-  border-left: 1px solid color-mix(in srgb, var(--border-color) 65%, transparent);
+  gap: 5px;
+  padding: 8px 10px 10px;
+  border-top: 1px solid color-mix(in srgb, var(--border-color) 55%, transparent);
   min-width: 0;
 }
-.agent-tool-activity-list > .agent-history-entry { max-width: 100%; border: 0; padding-block: 3px; }
-.agent-tool-activity-list > .agent-history-tool:not(.agent-history-command-entry) {
-  padding: 5px 8px;
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--bg-surface) 38%, transparent);
+.agent-tool-activity-list > .agent-history-entry {
+  max-width: 100%;
+  border: 0;
+  padding: 0;
+  background: transparent;
 }
-.agent-tool-activity-list .agent-history-title { font-size: 11px; font-weight: 500; line-height: 1.45; overflow-wrap: anywhere; color: var(--text-primary); }
-.agent-tool-activity-list .agent-history-command-disclosure pre {
-  padding: 6px 8px;
+.agent-history-compact-tool {
+  padding: 0;
+  border: 0;
+}
+.agent-tool-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  min-width: 0;
+  padding: 4px 10px;
+  border-radius: 7px;
+  background: var(--agent-glass-tool-row-bg);
+  border: 1px solid color-mix(in srgb, var(--border-color) 48%, transparent);
   color: var(--text-primary);
-  background: color-mix(in srgb, var(--bg-primary) 90%, transparent);
-  border-radius: 3px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+.agent-tool-row-disclosure > .agent-tool-row-summary {
+  padding: 0;
+}
+.agent-tool-row-disclosure > .agent-tool-row-summary > .agent-tool-row {
+  flex: 1 1 auto;
+  border: 0;
+  background: transparent;
+  padding: 4px 6px 4px 0;
+}
+.agent-tool-badge {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: 5px;
+  font-family: var(--font-ui);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  line-height: 15px;
+  background: color-mix(in srgb, var(--text-secondary) 22%, var(--bg-primary));
+  color: var(--text-primary);
+  border: 1px solid color-mix(in srgb, var(--border-color) 65%, transparent);
+}
+.agent-tool-badge-mcp {
+  background: color-mix(in srgb, var(--accent-violet) 26%, var(--bg-primary));
+  border-color: color-mix(in srgb, var(--accent-violet) 52%, transparent);
+  color: color-mix(in srgb, var(--accent-violet) 32%, white 68%);
+}
+.agent-tool-badge-read {
+  background: color-mix(in srgb, var(--accent-blue) 24%, var(--bg-primary));
+  border-color: color-mix(in srgb, var(--accent-blue) 48%, transparent);
+  color: color-mix(in srgb, var(--accent-blue) 30%, white 70%);
+}
+.agent-tool-badge-command {
+  background: color-mix(in srgb, var(--accent-gold) 22%, var(--bg-primary));
+  border-color: color-mix(in srgb, var(--accent-gold) 48%, transparent);
+  color: color-mix(in srgb, var(--accent-gold) 36%, white 64%);
+}
+.agent-tool-badge-edit {
+  background: color-mix(in srgb, var(--accent-green) 22%, var(--bg-primary));
+  border-color: color-mix(in srgb, var(--accent-green) 48%, transparent);
+  color: color-mix(in srgb, var(--accent-green) 34%, white 66%);
+}
+.agent-tool-badge-search {
+  background: color-mix(in srgb, var(--accent-cyan) 22%, var(--bg-primary));
+  border-color: color-mix(in srgb, var(--accent-cyan) 48%, transparent);
+  color: color-mix(in srgb, var(--accent-cyan) 34%, white 66%);
+}
+.agent-tool-server {
+  flex: 0 0 auto;
+  color: var(--agent-ink-meta);
+  font-family: var(--agent-history-mono-font-family, var(--font-mono));
+  font-size: 11.5px;
+}
+.agent-tool-server::after {
+  content: '·';
+  margin-inline-start: 6px;
+  opacity: 0.6;
+}
+.agent-tool-primary,
+.agent-tool-primary-link {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--agent-history-mono-font-family, var(--font-mono));
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+.agent-tool-primary-link {
+  color: color-mix(in srgb, var(--accent-cyan) 76%, white 24%);
+}
+.agent-tool-secondary {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--agent-ink-meta);
+  font-family: var(--agent-history-mono-font-family, var(--font-mono));
+  font-size: 11px;
+}
+.agent-tool-status {
+  flex: 0 0 auto;
+  margin-left: auto;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+.agent-tool-status[data-status='done'] {
+  color: color-mix(in srgb, var(--accent-green) 78%, white 22%);
+}
+.agent-tool-status[data-status='error'] {
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--accent-red) 24%, var(--bg-primary));
+  color: color-mix(in srgb, var(--accent-red) 35%, white 65%);
+}
+.agent-tool-status[data-status='running'] {
+  color: color-mix(in srgb, var(--accent-blue) 75%, white 25%);
+}
+.agent-tool-activity-list .agent-history-title { font-size: 12px; font-weight: 500; line-height: 1.45; overflow-wrap: anywhere; color: var(--text-primary); }
+.agent-tool-activity-list .agent-history-command-disclosure {
+  border-radius: 7px;
+  background: var(--agent-glass-tool-row-bg);
+  border: 1px solid color-mix(in srgb, var(--border-color) 48%, transparent);
+  overflow: hidden;
+}
+.agent-tool-activity-list .agent-history-command-disclosure[open] {
+  border-color: color-mix(in srgb, var(--accent-gold) 42%, var(--border-color));
+}
+.agent-tool-activity-list .agent-history-command-disclosure > .agent-history-disclosure-summary {
+  padding: 5px 10px;
+}
+.agent-tool-activity-list .agent-history-command-disclosure > .agent-history-disclosure-summary:hover {
+  background: color-mix(in srgb, var(--text-primary) 5%, transparent);
+}
+.agent-tool-activity-list .agent-history-command-disclosure > .agent-history-disclosure-summary:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: -2px;
+}
+.agent-tool-activity-list .agent-history-command-disclosure pre {
+  padding: 8px 10px;
+  color: var(--text-primary);
+  background: var(--agent-glass-code-bg);
+  border-radius: 6px;
 }
 
 @media (pointer: coarse) {
@@ -14912,9 +15109,11 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
 
 .agent-history-command-disclosure > .agent-history-disclosure-summary {
   flex-wrap: nowrap;
-  min-height: 28px;
+  gap: 8px;
+  min-height: 30px;
   font-family: var(--font-ui);
   letter-spacing: normal;
+  color: var(--text-primary);
 }
 .agent-history-command-disclosure .agent-history-disclosure-label,
 .agent-history-command-disclosure .agent-history-disclosure-meta {
@@ -14926,33 +15125,83 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
 .agent-history-command-disclosure .agent-history-disclosure-meta {
   flex: 0 0 auto;
   margin-left: auto;
-  color: var(--text-muted);
+  color: var(--agent-ink-meta);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.agent-history-command-disclosure .agent-history-disclosure-meta + .agent-tool-status {
+  margin-left: 4px;
+}
 .agent-history-command-disclosure .agent-history-disclosure-label[hidden] { display: none; }
-.agent-history-command-disclosure .agent-history-disclosure-preview,
-.agent-history-disclosure.agent-history-command-disclosure[open] .agent-history-disclosure-preview {
+.agent-history-command-disclosure .agent-history-disclosure-preview {
   display: block;
   flex: 1 1 0;
-  color: var(--workspace-reading-text-primary, var(--text-primary));
+  color: var(--text-primary);
   font-size: 0.76rem;
 }
+.agent-history-disclosure.agent-history-command-disclosure[open] .agent-history-disclosure-preview {
+  display: none;
+}
 .agent-history-command-disclosure .agent-history-command-body {
-  gap: 6px;
+  gap: 8px;
   margin-top: 0;
-  padding: 2px 0 6px 16px;
+  padding: 6px 10px 10px;
+  border-top: 1px solid color-mix(in srgb, var(--border-color) 42%, transparent);
+}
+.agent-command-block {
+  position: relative;
+}
+.agent-command-block > .agent-history-command-script {
+  padding-right: 68px;
+}
+.agent-command-copy-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  padding: 2px 8px;
+  min-height: 24px;
+  border-radius: 5px;
+  border: 1px solid color-mix(in srgb, var(--border-color) 72%, transparent);
+  background: color-mix(in srgb, var(--bg-surface) 88%, var(--bg-primary));
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.agent-command-copy-btn:hover {
+  border-color: var(--accent-blue);
+  background: var(--bg-surface);
+}
+.agent-command-copy-btn:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 1px;
+}
+.agent-command-copy-btn[data-copied='true'] {
+  border-color: color-mix(in srgb, var(--accent-green) 60%, transparent);
+  color: color-mix(in srgb, var(--accent-green) 72%, white 28%);
+}
+.agent-command-output-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.agent-command-omitted-banner {
+  padding: 2px 8px;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  color: var(--agent-ink-meta);
 }
 .agent-history-command-disclosure pre {
   margin: 0;
-  padding: 2px 0;
+  padding: 8px 10px;
   max-height: none;
   overflow: visible;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  color: var(--workspace-reading-text-primary, var(--text-primary));
+  border: 1px solid color-mix(in srgb, var(--border-color) 42%, transparent);
+  border-radius: 6px;
+  background: var(--agent-glass-code-bg);
+  color: var(--text-primary);
   font: 400 0.76rem/1.5 var(--agent-history-mono-font-family, var(--font-mono));
   letter-spacing: normal;
   white-space: pre-wrap;
@@ -14963,9 +15212,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
 .agent-history-command-disclosure .agent-history-command-output-tail {
   max-height: 280px;
   overflow: auto;
-  padding-top: 6px;
-  border-top: 1px solid color-mix(in srgb, var(--text-muted) 20%, transparent);
-  color: var(--text-secondary);
+  color: color-mix(in srgb, var(--text-primary) 90%, var(--text-secondary) 10%);
 }
 .agent-command-string { color: var(--accent-gold); }
 .agent-mcp-tool {
@@ -22402,7 +22649,7 @@ button.tree-expand { height: 22px; padding: 0; border: 0; background: transparen
   top: 6px;
   left: 10px;
   right: 16px;
-  color: color-mix(in srgb, var(--text-muted) 86%, transparent);
+  color: color-mix(in srgb, var(--text-primary) 58%, transparent);
   pointer-events: none;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -22489,9 +22736,36 @@ button.tree-expand { height: 22px; padding: 0; border: 0; background: transparen
 }
 .adaptive-footer-dock[data-surface='appServerControl']:not([data-composer-expanded='true']) .smart-input-row {
   padding: 2px;
-  border: 1px solid var(--border-color);
-  border-radius: 10px;
-  background: var(--bg-input);
+  border: 1px solid color-mix(in srgb, var(--border-color) 76%, var(--text-primary) 12%);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--bg-primary) 78%, transparent);
+  backdrop-filter: blur(14px) saturate(1.15);
+  box-shadow: 0 6px 24px color-mix(in srgb, black 28%, transparent);
+}
+.adaptive-footer-dock[data-surface='appServerControl'] .adaptive-footer-context {
+  padding: 3px 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-primary) 68%, transparent);
+  backdrop-filter: blur(10px);
+  border: 1px solid color-mix(in srgb, var(--border-color) 46%, transparent);
+}
+.agent-view-panel .agent-history-meta {
+  color: var(--agent-ink-meta);
+}
+@media (prefers-reduced-transparency: reduce) {
+  .agent-view-panel {
+    --agent-glass-user-bg: color-mix(in srgb, var(--bg-primary) 94%, var(--accent-blue) 6%);
+    --agent-glass-assistant-bg: color-mix(in srgb, var(--bg-primary) 94%, transparent);
+    --agent-glass-tool-bg: color-mix(in srgb, var(--bg-primary) 95%, transparent);
+    --agent-glass-tool-row-bg: var(--bg-surface);
+  }
+  .agent-history-user,
+  .agent-history-assistant,
+  .agent-tool-activity,
+  .adaptive-footer-dock[data-surface='appServerControl']:not([data-composer-expanded='true']) .smart-input-row,
+  .adaptive-footer-dock[data-surface='appServerControl'] .adaptive-footer-context {
+    backdrop-filter: none;
+  }
 }
 .adaptive-footer-dock[data-surface='appServerControl']:not([data-composer-expanded='true']) .smart-input-row:focus-within {
   border-color: var(--accent-blue);

@@ -1926,5 +1926,16 @@
   "smartInput.summaryFast": "高速",
   "smartInput.permissionManual": "手動",
   "smartInput.permissionAuto": "自動",
-  "smartInput.escape": "Escape"
+  "smartInput.escape": "Escape",
+  "appServerControl.activity.badgeMcp": "MCP",
+  "appServerControl.activity.badgeShell": "Shell",
+  "appServerControl.activity.badgeRead": "読取",
+  "appServerControl.activity.badgeEdit": "編集",
+  "appServerControl.activity.badgeSearch": "検索",
+  "appServerControl.activity.badgeTool": "ツール",
+  "appServerControl.activity.statusDone": "完了",
+  "appServerControl.activity.statusFailed": "失敗",
+  "appServerControl.activity.statusRunning": "実行中",
+  "appServerControl.activity.copyCommand": "コピー",
+  "appServerControl.activity.copied": "コピー済"
 }

@@ -1926,5 +1926,16 @@
   "smartInput.summaryFast": "तेज़",
   "smartInput.permissionManual": "मैनुअल",
   "smartInput.permissionAuto": "ऑटो",
-  "smartInput.escape": "Escape"
+  "smartInput.escape": "Escape",
+  "appServerControl.activity.badgeMcp": "MCP",
+  "appServerControl.activity.badgeShell": "Shell",
+  "appServerControl.activity.badgeRead": "पढ़ें",
+  "appServerControl.activity.badgeEdit": "संपादन",
+  "appServerControl.activity.badgeSearch": "खोज",
+  "appServerControl.activity.badgeTool": "टूल",
+  "appServerControl.activity.statusDone": "पूर्ण",
+  "appServerControl.activity.statusFailed": "विफल",
+  "appServerControl.activity.statusRunning": "चालू",
+  "appServerControl.activity.copyCommand": "कॉपी",
+  "appServerControl.activity.copied": "कॉपी हुआ"
 }
