@@ -1926,5 +1926,16 @@
   "smartInput.summaryFast": "দ্রুত",
   "smartInput.permissionManual": "ম্যানুয়াল",
   "smartInput.permissionAuto": "অটো",
-  "smartInput.escape": "Escape"
+  "smartInput.escape": "Escape",
+  "appServerControl.activity.badgeMcp": "MCP",
+  "appServerControl.activity.badgeShell": "Shell",
+  "appServerControl.activity.badgeRead": "পড়া",
+  "appServerControl.activity.badgeEdit": "সম্পাদনা",
+  "appServerControl.activity.badgeSearch": "অনুসন্ধান",
+  "appServerControl.activity.badgeTool": "টুল",
+  "appServerControl.activity.statusDone": "সম্পন্ন",
+  "appServerControl.activity.statusFailed": "ব্যর্থ",
+  "appServerControl.activity.statusRunning": "চলছে",
+  "appServerControl.activity.copyCommand": "কপি",
+  "appServerControl.activity.copied": "কপি হয়েছে"
 }

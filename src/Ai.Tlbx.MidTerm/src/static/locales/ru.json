@@ -1926,5 +1926,16 @@
   "smartInput.summaryFast": "Быстро",
   "smartInput.permissionManual": "Вручную",
   "smartInput.permissionAuto": "Авто",
-  "smartInput.escape": "Escape"
+  "smartInput.escape": "Escape",
+  "appServerControl.activity.badgeMcp": "MCP",
+  "appServerControl.activity.badgeShell": "Shell",
+  "appServerControl.activity.badgeRead": "Чтение",
+  "appServerControl.activity.badgeEdit": "Правка",
+  "appServerControl.activity.badgeSearch": "Поиск",
+  "appServerControl.activity.badgeTool": "Инструмент",
+  "appServerControl.activity.statusDone": "Готово",
+  "appServerControl.activity.statusFailed": "Ошибка",
+  "appServerControl.activity.statusRunning": "Выполняется",
+  "appServerControl.activity.copyCommand": "Копировать",
+  "appServerControl.activity.copied": "Скопировано"
 }

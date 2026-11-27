@@ -1926,5 +1926,16 @@
   "smartInput.summaryFast": "快速",
   "smartInput.permissionManual": "手动",
   "smartInput.permissionAuto": "自动",
-  "smartInput.escape": "Escape"
+  "smartInput.escape": "Escape",
+  "appServerControl.activity.badgeMcp": "MCP",
+  "appServerControl.activity.badgeShell": "Shell",
+  "appServerControl.activity.badgeRead": "读取",
+  "appServerControl.activity.badgeEdit": "编辑",
+  "appServerControl.activity.badgeSearch": "搜索",
+  "appServerControl.activity.badgeTool": "工具",
+  "appServerControl.activity.statusDone": "完成",
+  "appServerControl.activity.statusFailed": "失败",
+  "appServerControl.activity.statusRunning": "运行中",
+  "appServerControl.activity.copyCommand": "复制",
+  "appServerControl.activity.copied": "已复制"
 }

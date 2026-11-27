@@ -3,6 +3,12 @@ import { renderMarkdown } from '../../utils/markdown';
 import { scanAssistantTextEnrichment } from './assistantEnrichment';
 import { buildAppServerControlHistoryEntries } from './historyProcessing';
 import { resolveToolCommandScript } from './toolActivityView';
+import { selectProjectedToolEvidenceLines } from './toolOutput';
+import {
+  normalizeDisplayPath,
+  parseCompactToolRow,
+  summarizeToolActivityGroup,
+} from './toolRowPresentation';
 import { $sessions } from '../../stores';
 import type { AppServerControlHistorySnapshot } from '../../api/types';
 import type { AppServerControlHistoryEntry } from './types';
@@ -83,5 +89,66 @@ describe('ACP UI and markdown regressions', () => {
     expect(resolveToolCommandScript(entries[1] as AppServerControlHistoryEntry)).toBe(
       'git status --short',
     );
+  });
+
+  it('normalizes POSIX-prefixed Windows paths and formats compact MCP/read tool rows cleanly', () => {
+    expect(normalizeDisplayPath('/Q:/repos/Jpa/.memory/dev-projects.md')).toBe(
+      'Q:\\repos\\Jpa\\.memory\\dev-projects.md',
+    );
+
+    const readEntry = {
+      id: 'r1',
+      kind: 'tool',
+      title: 'Read file',
+      sourceStatus: 'completed',
+      toolPresentation: {
+        category: 'read',
+        label: 'Read file',
+        toolName: 'File /Q:/repos/Jpa/.memory/dev-projects.md',
+        paths: [],
+      },
+    } as unknown as AppServerControlHistoryEntry;
+    const readRow = parseCompactToolRow(readEntry);
+    expect(readRow.badgeTone).toBe('read');
+    expect(readRow.primaryText).toBe('dev-projects.md');
+    expect(readRow.secondaryPath).toBe('Q:\\repos\\Jpa\\.memory');
+    expect(readRow.secondaryPathRaw).toBe('Q:\\repos\\Jpa\\.memory\\dev-projects.md');
+    expect(readRow.statusKind).toBe('done');
+
+    const mcpEntry = {
+      id: 'm1',
+      kind: 'tool',
+      title: 'Used tool',
+      sourceStatus: 'completed',
+      toolPresentation: {
+        category: 'other',
+        label: 'Used tool',
+        toolName: 'Run mcp_tlbx_repo_bind',
+        paths: ['Q:\\repos\\tlbx-1'],
+      },
+    } as unknown as AppServerControlHistoryEntry;
+    const mcpRow = parseCompactToolRow(mcpEntry);
+    expect(mcpRow.badgeTone).toBe('mcp');
+    expect(mcpRow.serverName).toBe('tlbx');
+    expect(mcpRow.primaryText).toBe('repo_bind');
+    expect(mcpRow.secondaryPath).toBe('Q:\\repos\\tlbx-1');
+
+    const cmdEntry = {
+      id: 'c1',
+      kind: 'tool',
+      title: 'Ran command',
+      sourceStatus: 'completed',
+      toolPresentation: {
+        category: 'command',
+        label: 'Ran command',
+        toolName: 'foreach ($i in 1..4) { Write-Output $i }',
+        evidence: 'l1\nl2\nl3\nl4\nl5\nl6\nl7',
+        totalLineCount: 15,
+        omittedLineCount: 8,
+        paths: [],
+      },
+    } as unknown as AppServerControlHistoryEntry;
+    expect(selectProjectedToolEvidenceLines(cmdEntry, { expanded: true })).toHaveLength(7);
+    expect(summarizeToolActivityGroup([mcpEntry, readEntry, cmdEntry])).toContain('MCP (tlbx)');
   });
 });

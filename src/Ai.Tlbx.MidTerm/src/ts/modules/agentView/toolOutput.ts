@@ -17,13 +17,19 @@ export function clampToolCallOutputLines(lines: readonly string[], fromEnd = fal
   return fromEnd ? lines.slice(-lineLimit) : lines.slice(0, lineLimit);
 }
 
-export function selectProjectedToolEvidenceLines(entry: AppServerControlHistoryEntry): string[] {
+export function selectProjectedToolEvidenceLines(
+  entry: AppServerControlHistoryEntry,
+  options: { expanded?: boolean } = {},
+): string[] {
   const presentation = entry.toolPresentation;
   if (!presentation?.evidence) {
     return [];
   }
 
   const lines = presentation.evidence.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+  if (options.expanded) {
+    return lines;
+  }
   const lineLimit = resolveToolCallOutputLineLimit();
   if (lineLimit <= 0 || lines.length === 0) {
     return [];

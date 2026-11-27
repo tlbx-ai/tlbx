@@ -11,6 +11,12 @@ import {
   resolveToolCommandScript,
   syncToolActivityDisclosure,
 } from './toolActivityView';
+import {
+  createCommandHistoryBodyElement,
+  createCompactToolRowElement,
+  isCompactProjectedToolEntry,
+} from './toolRowDom';
+import { resolveCommandRunnerLabel, resolveToolStatus } from './toolRowPresentation';
 import { createMcpToolDisclosure, isMcpToolEntry, syncMcpToolDisclosure } from './mcpToolView';
 import { appendHighlightedCommand, commandPreview } from './commandHighlight';
 import { createPdfView } from '../fileViewer/pdfView';
@@ -402,6 +408,72 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     );
   }
 
+  function appendSpecializedHistoryEntry(
+    article: HTMLElement,
+    entry: AppServerControlHistoryEntry,
+    sessionId: string,
+    expandedEntries: Set<string> | undefined,
+  ): boolean {
+    const onToggle = (
+      details: HTMLDetailsElement,
+      summary: HTMLElement,
+      performMutation: () => void,
+    ) => {
+      anchorDisclosureToggle(sessionId, details, summary, performMutation);
+    };
+
+    if (entry.toolActivityCount != null) {
+      article.className = 'agent-history-entry agent-history-tool-activity';
+      article.appendChild(
+        createToolActivityDisclosure(
+          entry,
+          (item) => createHistoryEntry(item, sessionId),
+          (element, item) => {
+            syncHistoryEntry(element, item, sessionId);
+          },
+          expandedEntries,
+          onToggle,
+        ),
+      );
+      return true;
+    }
+
+    if (isMcpToolEntry(entry)) {
+      article.appendChild(
+        createMcpToolDisclosure(entry, expandedEntries, selectProjectedToolEvidenceLines, onToggle),
+      );
+      return true;
+    }
+
+    if (isFileChangeHistoryEntry(entry)) {
+      article.appendChild(
+        createFileChangeHistoryBody(
+          entry,
+          sessionId,
+          getSession(sessionId)?.currentDirectory,
+          () => deps.getState(sessionId)?.historyEntries ?? [],
+          (diff) => createDiffHistoryBody(diff, sessionId),
+        ),
+      );
+      return true;
+    }
+
+    if (isCompactProjectedToolEntry(entry)) {
+      article.classList.add('agent-history-compact-tool');
+      article.appendChild(
+        createCompactToolRowElement({
+          entry,
+          sessionId,
+          expanded: expandedEntries,
+          onToggle,
+        }),
+      );
+      return true;
+    }
+
+    return false;
+  }
+
   function createHistoryEntry(
     entry: AppServerControlHistoryEntry,
     sessionId: string,
@@ -418,49 +490,7 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
 
     const article = document.createElement('article');
     applyHistoryEntryChrome(article, entry, artifactCluster);
-
-    if (entry.toolActivityCount != null) {
-      article.className = 'agent-history-entry agent-history-tool-activity';
-      article.appendChild(
-        createToolActivityDisclosure(
-          entry,
-          (item) => createHistoryEntry(item, sessionId),
-          (element, item) => {
-            syncHistoryEntry(element, item, sessionId);
-          },
-          expandedEntries,
-          (details, summary, performMutation) => {
-            anchorDisclosureToggle(sessionId, details, summary, performMutation);
-          },
-        ),
-      );
-      return article;
-    }
-
-    if (isMcpToolEntry(entry)) {
-      article.appendChild(
-        createMcpToolDisclosure(
-          entry,
-          expandedEntries,
-          selectProjectedToolEvidenceLines,
-          (details, summary, performMutation) => {
-            anchorDisclosureToggle(sessionId, details, summary, performMutation);
-          },
-        ),
-      );
-      return article;
-    }
-
-    if (isFileChangeHistoryEntry(entry)) {
-      article.appendChild(
-        createFileChangeHistoryBody(
-          entry,
-          sessionId,
-          getSession(sessionId)?.currentDirectory,
-          () => deps.getState(sessionId)?.historyEntries ?? [],
-          (diff) => createDiffHistoryBody(diff, sessionId),
-        ),
-      );
+    if (appendSpecializedHistoryEntry(article, entry, sessionId, expandedEntries)) {
       return article;
     }
 
@@ -696,7 +726,7 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
         return body;
       }
       case 'command':
-        return createCommandHistoryBody(entry);
+        return createCommandHistoryBodyElement(entry);
       case 'tool':
         return createProjectedToolHistoryBody(entry, sessionId);
       case 'streaming':
@@ -800,43 +830,10 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     }
   }
 
-  function createCommandHistoryBody(
-    entry: AppServerControlHistoryEntry,
-    command = resolveToolCommandScript(entry) || entry.body,
-    outputLines = clampToolCallOutputLines(entry.commandOutputTail ?? [], true),
-  ): HTMLElement {
-    const body = document.createElement('div');
-    body.className = 'agent-history-body agent-history-command-body';
-    if (command) {
-      const script = Boolean(entry.commandText || entry.toolPresentation?.category === 'command');
-      const commandLine = document.createElement('pre');
-      commandLine.className = script
-        ? 'agent-history-command-script'
-        : 'agent-history-command-output-tail';
-      commandLine.setAttribute(
-        'aria-label',
-        t(script ? 'appServerControl.commands.title' : 'appServerControl.panel.details'),
-      );
-      if (script) appendHighlightedCommand(commandLine, command);
-      else commandLine.textContent = command;
-      body.appendChild(commandLine);
-    }
-    if (outputLines.length > 0) {
-      const output = document.createElement('pre');
-      output.className = 'agent-history-command-output-tail';
-      output.setAttribute('aria-label', t('appServerControl.title.commandOutput'));
-      output.textContent = outputLines.join('\n');
-      // Keep folded command tails as raw terminal text instead of applying
-      // shell syntax highlighting or FileRadar enrichment to arbitrary output.
-      body.appendChild(output);
-    }
-
-    return body;
-  }
-
   function createProjectedToolHistoryBody(
     entry: AppServerControlHistoryEntry,
     sessionId: string,
+    expanded = false,
   ): HTMLElement {
     const body = document.createElement('div');
     body.className = 'agent-history-body agent-history-command-body';
@@ -845,24 +842,21 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
       return body;
     }
 
-    const visibleEvidence = selectProjectedToolEvidenceLines(entry);
-    const omitted = Math.max(
-      0,
-      (presentation.totalLineCount || visibleEvidence.length) - visibleEvidence.length,
-    );
-    const omittedNotice = appServerControlFormat(
-      'appServerControl.activity.linesOmitted',
-      '... {count} lines omitted ...',
-      { count: omitted },
-    );
-    const evidenceLines =
-      resolveToolCallOutputLineLimit() <= 0
-        ? []
-        : omitted > 0
-          ? [omittedNotice, ...visibleEvidence]
-          : visibleEvidence;
+    const visibleEvidence = selectProjectedToolEvidenceLines(entry, { expanded });
+    const omitted = expanded
+      ? Math.max(0, presentation.omittedLineCount)
+      : Math.max(
+          0,
+          (presentation.totalLineCount || visibleEvidence.length) - visibleEvidence.length,
+        );
+    const evidenceLines = !expanded && resolveToolCallOutputLineLimit() <= 0 ? [] : visibleEvidence;
     if (presentation.category === 'command') {
-      return createCommandHistoryBody(entry, resolveToolCommandScript(entry), evidenceLines);
+      return createCommandHistoryBodyElement(
+        entry,
+        resolveToolCommandScript(entry),
+        evidenceLines,
+        omitted,
+      );
     }
 
     const outcomeIsError = presentation.evidenceKind === 'error';
@@ -958,42 +952,57 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
   ): HTMLElement {
     const summary = document.createElement('summary');
     summary.className = 'agent-history-disclosure-summary';
+    const script = command ? resolveToolCommandScript(entry) : '';
     const label = document.createElement('span');
-    label.className = 'agent-history-disclosure-label';
+    label.className = command
+      ? 'agent-tool-badge agent-tool-badge-command'
+      : 'agent-history-disclosure-label';
     label.textContent = command
-      ? localizeToolPresentationLabel(
-          entry,
-          appServerControlText('appServerControl.title.commandOutput', 'Command output'),
-        )
+      ? script
+        ? resolveCommandRunnerLabel(script)
+        : localizeToolPresentationLabel(
+            entry,
+            appServerControlText('appServerControl.activity.badgeShell', 'Shell'),
+          )
       : appServerControlText('appServerControl.panel.details', 'Details');
     summary.appendChild(label);
-    const meta = document.createElement('span');
-    meta.className = 'agent-history-disclosure-meta';
-    const exitCodeMeta =
-      command && entry.toolPresentation?.exitCode != null
-        ? appServerControlFormat('appServerControl.activity.exitCode', 'exit {code}', {
-            code: entry.toolPresentation.exitCode,
-          })
-        : '';
-    meta.textContent = command
-      ? entry.toolPresentation?.outcome || exitCodeMeta
-      : appServerControlFormat('appServerControl.panel.lines', '{count} lines', {
-          count: presentation.lineCount,
-        });
-    meta.hidden = !meta.textContent;
-    summary.appendChild(meta);
-    const script = command ? resolveToolCommandScript(entry) : '';
+
     if (script || presentation.preview) {
       const preview = document.createElement('span');
       preview.className = 'agent-history-disclosure-preview';
       if (script) {
         appendHighlightedCommand(preview, commandPreview(script));
-        label.hidden = true;
-        summary.insertBefore(preview, meta);
       } else {
         preview.textContent = presentation.preview;
-        summary.appendChild(preview);
       }
+      summary.appendChild(preview);
+    }
+
+    const meta = document.createElement('span');
+    meta.className = 'agent-history-disclosure-meta';
+    const totalLines = entry.toolPresentation?.totalLineCount ?? 0;
+    meta.textContent = command
+      ? totalLines > 0
+        ? appServerControlFormat('appServerControl.panel.lines', '{count} lines', {
+            count: totalLines,
+          })
+        : ''
+      : appServerControlFormat('appServerControl.panel.lines', '{count} lines', {
+          count: presentation.lineCount,
+        });
+    meta.hidden = !meta.textContent;
+    summary.appendChild(meta);
+
+    if (command) {
+      const { statusKind, statusText } = resolveToolStatus(entry);
+      const status = document.createElement('span');
+      status.className = 'agent-tool-status';
+      status.dataset.status = statusKind;
+      status.title = statusText;
+      status.setAttribute('aria-label', statusText);
+      status.textContent =
+        statusKind === 'done' ? '✓' : statusKind === 'error' ? `✕ ${statusText}` : '…';
+      summary.appendChild(status);
     }
     return summary;
   }
@@ -1015,7 +1024,11 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     let bodyMounted = false;
     const mountBody = () => {
       if (!bodyMounted) {
-        details.appendChild(createHistoryBodyContent(entry, sessionId, presentation));
+        const content =
+          presentation.mode === 'tool'
+            ? createProjectedToolHistoryBody(entry, sessionId, true)
+            : createHistoryBodyContent(entry, sessionId, presentation);
+        details.appendChild(content);
         bodyMounted = true;
       }
     };
