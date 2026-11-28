@@ -42,6 +42,10 @@ def sign_connect_bundle(source, staging, identity):
                 signed.writestr(name, data)
             signed.writestr("manifest.json", json.dumps(manifest, indent=2))
 
+    with zipfile.ZipFile(staging / "bundle.zip") as signed:
+        if json.loads(signed.read("manifest.json")) != manifest:
+            raise ValueError("Signed Connect manifest changed during packaging")
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
