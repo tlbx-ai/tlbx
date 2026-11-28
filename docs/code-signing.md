@@ -100,10 +100,12 @@ Apple Developer ID Application certificate for Johannes Schmidt (Team ID: `FK7G5
 
 ```
 1. Import P12 certificate from GitHub secret into a temporary keychain
-2. codesign --force --sign "Developer ID Application: ..." --options runtime --timestamp
-3. codesign --verify --strict confirms valid signature
-4. Notarize via xcrun notarytool submit (mt, mthost when present, and mtagenthost zipped together)
-5. Gatekeeper verifies notarization online when users download the binary
+2. Verify the frozen Connect bundle, then sign release copies of its dylibs and the SQLite and Skia dylibs with the same Developer ID
+3. Update the Connect runtime hashes and embed the signed libraries in mt
+4. Sign the executables with Hardened Runtime and a secure timestamp, and verify the signatures
+5. Submit the executables and the same signed dylib bytes to notarytool, and require Accepted
+6. Sign the release manifest over the final packaged bytes
+7. Gatekeeper verifies notarization online when users download the binary
 ```
 
 Stapling is not supported for standalone Mach-O binaries distributed as tarballs. macOS checks notarization status online via the quarantine extended attribute set on download.
@@ -135,7 +137,7 @@ Release archives may still carry host binaries in web-only releases for fresh in
 3. Verifies the ECDSA P-384 signature against the hardcoded public key
 4. Verifies SHA-256 hashes of the downloaded binaries listed in the manifest match the checksums
 
-The public key is embedded in the binary. Unsigned releases (missing `signature` field) are accepted with a warning — this maintains backward compatibility.
+The public key is embedded in the binary. Native installers and the current updater require a valid signed manifest and hashes for the complete package before replacing installed files.
 
 ## Runtime Self-Check
 

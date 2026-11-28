@@ -99,7 +99,7 @@
     <_SqliteNativeFileName Condition="$(RuntimeIdentifier.StartsWith('osx'))">libe_sqlite3.dylib</_SqliteNativeFileName>
     <_SqliteNativeLibPath>$([MSBuild]::EnsureTrailingSlash('$(NuGetPackageRoot)'))sourcegear.sqlite3/$(SqliteNativeVersion)/runtimes/$(RuntimeIdentifier)/native/$(_SqliteNativeFileName)</_SqliteNativeLibPath>
   </PropertyGroup>
-  <ItemGroup Condition="'$(RuntimeIdentifier)' != '' And Exists('$(_SqliteNativeLibPath)')">
+  <ItemGroup Condition="'$(TLBX_MACOS_SIGNED_NATIVE_DIR)' == '' And '$(RuntimeIdentifier)' != '' And Exists('$(_SqliteNativeLibPath)')">
     <EmbeddedResource Include="$(_SqliteNativeLibPath)" LogicalName="tlbx.native.$(_SqliteNativeFileName)" />
   </ItemGroup>
   <Target Name="VerifySqliteNativeEmbed" BeforeTargets="PrepareForBuild" Condition="'$(RuntimeIdentifier)' != ''">
@@ -118,7 +118,7 @@
     <_SkiaNativeFileName Condition="$(RuntimeIdentifier.StartsWith('osx'))">libSkiaSharp.dylib</_SkiaNativeFileName>
     <_SkiaNativeLibPath>$([MSBuild]::EnsureTrailingSlash('$(NuGetPackageRoot)'))$(_SkiaNativePackage)/$(SkiaSharpVersion)/runtimes/$(_SkiaNativeRid)/native/$(_SkiaNativeFileName)</_SkiaNativeLibPath>
   </PropertyGroup>
-  <ItemGroup Condition="'$(RuntimeIdentifier)' != '' And Exists('$(_SkiaNativeLibPath)')">
+  <ItemGroup Condition="'$(TLBX_MACOS_SIGNED_NATIVE_DIR)' == '' And '$(RuntimeIdentifier)' != '' And Exists('$(_SkiaNativeLibPath)')">
     <EmbeddedResource Include="$(_SkiaNativeLibPath)" LogicalName="tlbx.native.$(_SkiaNativeFileName)" />
   </ItemGroup>
   <Target Name="VerifySkiaNativeEmbed" BeforeTargets="PrepareForBuild" Condition="'$(RuntimeIdentifier)' != ''">
