@@ -40,7 +40,11 @@ def sign_connect_bundle(source, staging, identity):
                     data = library.read_bytes()
                     entry["sha256"] = hashlib.sha256(data).hexdigest()
                 signed.writestr(name, data)
-            signed.writestr("manifest.json", json.dumps(manifest, indent=2) + "\\n")
+            signed.writestr("manifest.json", json.dumps(manifest, indent=2))
+
+    with zipfile.ZipFile(staging / "bundle.zip") as signed:
+        if json.loads(signed.read("manifest.json")) != manifest:
+            raise ValueError("Signed Connect manifest changed during packaging")
 
 
 def main():
