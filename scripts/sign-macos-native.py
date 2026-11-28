@@ -40,7 +40,7 @@ def sign_connect_bundle(source, staging, identity):
                     data = library.read_bytes()
                     entry["sha256"] = hashlib.sha256(data).hexdigest()
                 signed.writestr(name, data)
-            signed.writestr("manifest.json", json.dumps(manifest, indent=2) + "\\n")
+            signed.writestr("manifest.json", json.dumps(manifest, indent=2))
 
 
 def main():
