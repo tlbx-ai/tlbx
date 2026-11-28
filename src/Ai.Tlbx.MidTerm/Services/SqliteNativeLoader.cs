@@ -1,5 +1,5 @@
 using System.Runtime.InteropServices;
-using Ai.Tlbx.MidTerm.Common.Logging;
+using System.Security.Cryptography;
 
 namespace Ai.Tlbx.MidTerm.Services;
 
@@ -8,7 +8,7 @@ namespace Ai.Tlbx.MidTerm.Services;
 ///
 /// Native AOT single-file publishes embed the RID-matching e_sqlite3 library as a
 /// manifest resource (see Ai.Tlbx.MidTerm.csproj); this loader extracts it to
-/// &lt;settings&gt;/native, loads it, and registers the SQLitePCL provider explicitly so
+/// &lt;settings&gt;/native/sqlite, loads it, and registers the SQLitePCL provider explicitly so
 /// Microsoft.Data.Sqlite's reflection-based bundle init never has to resolve the
 /// library from the install directory (which only ever contains mt itself — release
 /// archives and the web-only updater move single binaries, never sidecar files).
@@ -53,41 +53,33 @@ internal static class SqliteNativeLoader
 
     private static string ExtractNativeLibrary(Stream stream, string settingsDirectory, string fileName)
     {
-        var nativeDir = Path.Combine(settingsDirectory, "native");
+        var digest = SHA256.HashData(stream);
+        stream.Position = 0;
+        var nativeDir = Path.Combine(settingsDirectory, "native", "sqlite", Convert.ToHexStringLower(digest));
         Directory.CreateDirectory(nativeDir);
         var libPath = Path.Combine(nativeDir, fileName);
 
-        if (File.Exists(libPath) && new FileInfo(libPath).Length == stream.Length)
+        if (File.Exists(libPath))
         {
-            return libPath;
+            using var cached = File.OpenRead(libPath);
+            if (SHA256.HashData(cached).AsSpan().SequenceEqual(digest))
+            {
+                return libPath;
+            }
         }
 
         var tempPath = $"{libPath}.{Guid.NewGuid():N}.tmp";
         try
         {
-            using (var file = File.Create(tempPath))
+            using (var file = new FileStream(tempPath, FileMode.CreateNew, FileAccess.Write))
             {
                 stream.CopyTo(file);
             }
             File.Move(tempPath, libPath, overwrite: true);
         }
-        catch (IOException ex) when (File.Exists(libPath))
-        {
-            // A concurrent or still-loaded copy blocks the swap; the existing file is loadable.
-            Log.Warn(() => $"SqliteNativeLoader: keeping existing {fileName} ({ex.Message})");
-        }
         finally
         {
-            if (File.Exists(tempPath))
-            {
-                try
-                {
-                    File.Delete(tempPath);
-                }
-                catch (IOException)
-                {
-                }
-            }
+            File.Delete(tempPath);
         }
 
         return libPath;

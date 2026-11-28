@@ -248,6 +248,8 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
           echo "KEYCHAIN_PASSWORD=$KEYCHAIN_PASSWORD" >> "$GITHUB_ENV"
+          echo "TLBX_MACOS_SIGNING_IDENTITY=Developer ID Application: Johannes Schmidt (FK7G5C74WH)" >> "$GITHUB_ENV"
+          echo "TLBX_MACOS_SIGNED_NATIVE_DIR=$(mktemp -d "$RUNNER_TEMP/signed-native.XXXXXXXX")" >> "$GITHUB_ENV"
 
       - name: Build server and reuse verified unchanged hosts
         shell: pwsh
@@ -277,14 +279,14 @@ jobs:
           if [[ "${{ matrix.rid }}" == osx-* ]]; then
             security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
             codesign --force \
-              --sign "Developer ID Application: Johannes Schmidt (FK7G5C74WH)" \
+              --sign "$TLBX_MACOS_SIGNING_IDENTITY" \
               --options runtime \
               --timestamp \
               staging/${{ matrix.rid }}/mt
             codesign --verify --strict staging/${{ matrix.rid }}/mt
             if [[ "${TLBX_HOSTS_REUSED:-false}" != "true" && -f staging/${{ matrix.rid }}/mthost ]]; then
               codesign --force \
-                --sign "Developer ID Application: Johannes Schmidt (FK7G5C74WH)" \
+                --sign "$TLBX_MACOS_SIGNING_IDENTITY" \
                 --options runtime \
                 --timestamp \
                 staging/${{ matrix.rid }}/mthost
@@ -292,7 +294,7 @@ jobs:
             fi
             if [[ "${TLBX_HOSTS_REUSED:-false}" != "true" ]]; then
               codesign --force \
-                --sign "Developer ID Application: Johannes Schmidt (FK7G5C74WH)" \
+                --sign "$TLBX_MACOS_SIGNING_IDENTITY" \
                 --options runtime \
                 --timestamp \
                 staging/${{ matrix.rid }}/mtagenthost
@@ -321,6 +323,7 @@ jobs:
 
       - name: Notarize
         if: startsWith(matrix.rid, 'osx-')
+        shell: bash
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
@@ -330,12 +333,14 @@ jobs:
           if [[ -f staging/${{ matrix.rid }}/mthost ]]; then
             files+=(staging/${{ matrix.rid }}/mthost)
           fi
+          files+=("$TLBX_MACOS_SIGNED_NATIVE_DIR"/*.dylib)
           zip -j "$RUNNER_TEMP/notarize.zip" "${files[@]}"
           xcrun notarytool submit "$RUNNER_TEMP/notarize.zip" \
             --apple-id "$APPLE_ID" \
             --password "$APPLE_ID_PASSWORD" \
             --team-id "$APPLE_TEAM_ID" \
-            --wait
+            --wait --output-format json | tee "$RUNNER_TEMP/notarization.json"
+          python -c 'import json, sys; sys.exit(0 if json.load(sys.stdin)["status"] == "Accepted" else "Apple did not accept the notarization submission")' < "$RUNNER_TEMP/notarization.json"
 
       - name: Sign version.json
         shell: pwsh
@@ -464,6 +469,8 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
           echo "KEYCHAIN_PASSWORD=$KEYCHAIN_PASSWORD" >> "$GITHUB_ENV"
+          echo "TLBX_MACOS_SIGNING_IDENTITY=Developer ID Application: Johannes Schmidt (FK7G5C74WH)" >> "$GITHUB_ENV"
+          echo "TLBX_MACOS_SIGNED_NATIVE_DIR=$(mktemp -d "$RUNNER_TEMP/signed-native.XXXXXXXX")" >> "$GITHUB_ENV"
 
       - name: Build server and reuse verified unchanged hosts
         shell: pwsh
@@ -490,14 +497,14 @@ jobs:
           if [[ "${{ matrix.rid }}" == osx-* ]]; then
             security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
             codesign --force \
-              --sign "Developer ID Application: Johannes Schmidt (FK7G5C74WH)" \
+              --sign "$TLBX_MACOS_SIGNING_IDENTITY" \
               --options runtime \
               --timestamp \
               staging/${{ matrix.rid }}/mt
             codesign --verify --strict staging/${{ matrix.rid }}/mt
             if [[ "${TLBX_HOSTS_REUSED:-false}" != "true" && -f staging/${{ matrix.rid }}/mthost ]]; then
               codesign --force \
-                --sign "Developer ID Application: Johannes Schmidt (FK7G5C74WH)" \
+                --sign "$TLBX_MACOS_SIGNING_IDENTITY" \
                 --options runtime \
                 --timestamp \
                 staging/${{ matrix.rid }}/mthost
@@ -505,7 +512,7 @@ jobs:
             fi
             if [[ "${TLBX_HOSTS_REUSED:-false}" != "true" ]]; then
               codesign --force \
-                --sign "Developer ID Application: Johannes Schmidt (FK7G5C74WH)" \
+                --sign "$TLBX_MACOS_SIGNING_IDENTITY" \
                 --options runtime \
                 --timestamp \
                 staging/${{ matrix.rid }}/mtagenthost
@@ -531,6 +538,7 @@ jobs:
 
       - name: Notarize
         if: startsWith(matrix.rid, 'osx-')
+        shell: bash
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
@@ -540,12 +548,14 @@ jobs:
           if [[ -f staging/${{ matrix.rid }}/mthost ]]; then
             files+=(staging/${{ matrix.rid }}/mthost)
           fi
+          files+=("$TLBX_MACOS_SIGNED_NATIVE_DIR"/*.dylib)
           zip -j "$RUNNER_TEMP/notarize.zip" "${files[@]}"
           xcrun notarytool submit "$RUNNER_TEMP/notarize.zip" \
             --apple-id "$APPLE_ID" \
             --password "$APPLE_ID_PASSWORD" \
             --team-id "$APPLE_TEAM_ID" \
-            --wait
+            --wait --output-format json | tee "$RUNNER_TEMP/notarization.json"
+          python -c 'import json, sys; sys.exit(0 if json.load(sys.stdin)["status"] == "Accepted" else "Apple did not accept the notarization submission")' < "$RUNNER_TEMP/notarization.json"
 
       - name: Sign version.json
         shell: pwsh

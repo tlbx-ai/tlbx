@@ -15,8 +15,20 @@
     <!-- Always verify the committed artifact hashes; never compile dependencies implicitly. -->
     <Exec Command="pwsh -NoProfile -File &quot;$(_ConnectNativeRoot)/prepare.ps1&quot; -RuntimeIdentifier $(_ConnectNativeRid)" WorkingDirectory="$(_ConnectNativeRoot)" IgnoreStandardErrorWarningFormat="true" />
   </Target>
+  <Target Name="SignMacOsNativeResources" DependsOnTargets="BuildConnectNative" Condition="'$(TLBX_MACOS_SIGNED_NATIVE_DIR)' != ''">
+    <Error Condition="!$(RuntimeIdentifier.StartsWith('osx-')) Or '$(SkipConnectNativeBuild)' == 'true' Or '$(TLBX_MACOS_SIGNING_IDENTITY)' == ''"
+           Text="Distribution signing of native resources requires a macOS RID, Connect bundle and Developer ID identity." />
+    <Exec Command="python &quot;$(MSBuildProjectDirectory)/../../scripts/sign-macos-native.py&quot; &quot;$(TLBX_MACOS_SIGNING_IDENTITY)&quot; &quot;$(TLBX_MACOS_SIGNED_NATIVE_DIR)&quot; &quot;$(_ConnectNativeBundle)&quot; &quot;$(_SqliteNativeLibPath)&quot; &quot;$(_SkiaNativeLibPath)&quot;" />
+    <PropertyGroup>
+      <_ConnectNativeBundle>$(TLBX_MACOS_SIGNED_NATIVE_DIR)/bundle.zip</_ConnectNativeBundle>
+    </PropertyGroup>
+    <ItemGroup>
+      <EmbeddedResource Include="$(TLBX_MACOS_SIGNED_NATIVE_DIR)/$(_SqliteNativeFileName)" LogicalName="tlbx.native.$(_SqliteNativeFileName)" />
+      <EmbeddedResource Include="$(TLBX_MACOS_SIGNED_NATIVE_DIR)/$(_SkiaNativeFileName)" LogicalName="tlbx.native.$(_SkiaNativeFileName)" />
+    </ItemGroup>
+  </Target>
   <!-- Vulnerability scans run in Tests (on demand); hash verification remains automatic. -->
-  <Target Name="EmbedConnectNative" BeforeTargets="AssignTargetPaths" DependsOnTargets="BuildConnectNative" Condition="'$(SkipConnectNativeBuild)' != 'true'">
+  <Target Name="EmbedConnectNative" BeforeTargets="AssignTargetPaths" DependsOnTargets="BuildConnectNative;SignMacOsNativeResources" Condition="'$(SkipConnectNativeBuild)' != 'true'">
     <Error Condition="!Exists('$(_ConnectNativeBundle)')" Text="The matching in-process Connect native bundle is required." />
     <ItemGroup>
       <EmbeddedResource Include="$(_ConnectNativeBundle)" LogicalName="tlbx.native.connect.bundle" />
